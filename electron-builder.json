@@ -1,0 +1,28 @@
+{
+  "appId": "com.navreach.app",
+  "productName": "NavReach",
+  "directories": {
+    "buildResources": "build"
+  },
+  "files": [
+    "out/**/*"
+  ],
+  "mac": {
+    "target": ["dmg", "zip"],
+    "icon": "build/icon.icns",
+    "category": "public.app-category.productivity"
+  },
+  "win": {
+    "target": ["nsis", "zip"],
+    "icon": "build/icon.ico"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "icon": "build/icon.png",
+    "category": "Utility"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}
