@@ -1,19 +1,43 @@
 import { useState, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ArrowRight, RotateCw, X, Bug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBrowserStore } from '@/stores/browser.store';
 import { useDebugStore } from '@/stores/debug.store';
+import { useAppStore } from '@/stores/app.store';
+import { useChatStore } from '@/stores/chat.store';
+import navreachLogo from '@assets/navreach-white-welcome.png';
 
-const INITIAL_URL = 'https://www.google.com';
+const INITIAL_URL = 'about:blank';
 
 export function BrowserView() {
   const { tabId, url, title, isLoading, setUrl, setTitle, setIsLoading, setWebContentsId } = useBrowserStore();
   const { isDebugPanelOpen, toggleDebugPanel } = useDebugStore();
-  const [urlInput, setUrlInput] = useState(url || INITIAL_URL);
+  const { hasStarted } = useAppStore();
+  const { isStreaming } = useChatStore();
+  const [urlInput, setUrlInput] = useState(url || '');
   const webviewRef = useRef<HTMLElement | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const [showLoader, setShowLoader] = useState(true);
+  const [pageLoaded, setPageLoaded] = useState(false);
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+
+  // Minimum 2 second display time
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMinTimeElapsed(true);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Hide loader when page has loaded AND minimum time has passed
+  useEffect(() => {
+    if (pageLoaded && minTimeElapsed) {
+      setShowLoader(false);
+    }
+  }, [pageLoaded, minTimeElapsed]);
 
   // Navigate programmatically when url changes (after webview is ready)
   useEffect(() => {
@@ -57,6 +81,11 @@ export function BrowserView() {
 
     const handleStopLoading = () => {
       setIsLoading(false);
+      // Mark page as loaded to hide the loader (only for real pages, not about:blank)
+      const currentUrl = webview.getURL?.() || '';
+      if (!pageLoaded && currentUrl && currentUrl !== 'about:blank') {
+        setPageLoaded(true);
+      }
     };
 
     const handleTitleUpdate = (e: any) => {
@@ -132,46 +161,66 @@ export function BrowserView() {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      <div className="flex items-center h-12 px-3 gap-2 border-b border-border">
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoBack}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoForward}>
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-          {isLoading ? (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleStop}>
-              <X className="h-4 w-4" />
+      {!showLoader && (
+        <div className="flex items-center h-12 px-3 gap-2 border-b border-border">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoBack}>
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-          ) : (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleReload}>
-              <RotateCw className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoForward}>
+              <ArrowRight className="h-4 w-4" />
             </Button>
-          )}
-        </div>
+            {isLoading ? (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleStop}>
+                <X className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleReload}>
+                <RotateCw className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
 
-        <form onSubmit={handleNavigate} className="flex-1 flex items-center gap-2">
-          <Input
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="Enter URL or search..."
-            className="h-8 text-sm"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={`h-8 w-8 ${isDebugPanelOpen ? 'text-primary' : ''}`}
-            onClick={toggleDebugPanel}
-            title="Toggle debug panel"
-          >
-            <Bug className="h-4 w-4" />
-          </Button>
-        </form>
-      </div>
+          <form onSubmit={handleNavigate} className="flex-1 flex items-center gap-2">
+            <Input
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="Enter URL or search..."
+              className="h-8 text-sm focus-visible:ring-border focus-visible:ring-1"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 ${isDebugPanelOpen ? 'text-primary' : ''}`}
+              onClick={toggleDebugPanel}
+              title="Toggle debug panel"
+            >
+              <Bug className="h-4 w-4" />
+            </Button>
+          </form>
+        </div>
+      )}
 
       <div className="flex-1 relative">
+        <AnimatePresence>
+          {showLoader && (
+            <motion.div
+              className="absolute inset-0 z-10 flex items-center justify-center bg-background"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.3 }}
+            >
+              <img
+                src={navreachLogo}
+                alt="NavReach"
+                className="h-8 opacity-70"
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <webview
           ref={webviewRef as any}
           src={INITIAL_URL}

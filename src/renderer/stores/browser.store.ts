@@ -14,7 +14,7 @@ interface BrowserState {
 
 export const useBrowserStore = create<BrowserState>((set) => ({
   tabId: 'main-tab',
-  url: 'https://www.google.com',
+  url: '',
   title: 'New Tab',
   isLoading: false,
   webContentsId: null,

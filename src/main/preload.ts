@@ -48,8 +48,9 @@ const windowAPI = {
 const aiAPI = {
   chat: (request: unknown) => ipcRenderer.invoke('ai:chat', request),
   chatSync: (request: unknown) => ipcRenderer.invoke('ai:chat-sync', request),
-  onStreamChunk: (callback: (data: { content: string; done: boolean }) => void) => {
-    const handler = (_event: unknown, data: { content: string; done: boolean }) => callback(data);
+  stop: () => ipcRenderer.invoke('ai:stop'),
+  onStreamChunk: (callback: (data: { content: string; done: boolean; isNarration?: boolean; toolCall?: any; toolResult?: any }) => void) => {
+    const handler = (_event: unknown, data: { content: string; done: boolean; isNarration?: boolean; toolCall?: any; toolResult?: any }) => callback(data);
     ipcRenderer.on('ai:stream-chunk', handler);
     return () => ipcRenderer.removeListener('ai:stream-chunk', handler);
   },
@@ -81,6 +82,7 @@ declare global {
       settings: SettingsAPI;
       mcp: MCPAPI;
       window: WindowAPI;
+      ai: typeof aiAPI;
       debug: DebugAPI;
     };
   }

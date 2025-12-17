@@ -1,4 +1,4 @@
-export {};
+export { };
 
 declare global {
   interface Window {
@@ -66,7 +66,8 @@ declare global {
           infiniteMode?: boolean;
           initialUserPrompt?: string;
         }) => Promise<{ success: boolean; response?: string; error?: string }>;
-        onStreamChunk: (callback: (data: { content: string; done: boolean }) => void) => () => void;
+        stop: () => Promise<void>;
+        onStreamChunk: (callback: (data: { content: string; done: boolean; toolCall?: any; toolResult?: any }) => void) => () => void;
       };
       debug: {
         onLog: (callback: (data: { type: string; message: string; data?: any }) => void) => () => void;

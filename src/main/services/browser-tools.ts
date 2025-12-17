@@ -29,7 +29,7 @@ export function isNavigationBlocked(): boolean {
 
 export function registerWebviewContents(tabId: string, contents: Electron.WebContents) {
   webviewContents.set(tabId, contents);
-  
+
   // Allow all navigation like a regular browser - no blocking
   // Just log for debugging purposes
   contents.on('will-navigate', (_event, url) => {
@@ -58,7 +58,7 @@ function getContents(): Electron.WebContents {
 export function createBrowserTools(): DynamicStructuredTool[] {
   const navigateTool = new DynamicStructuredTool({
     name: 'browser_navigate',
-    description: 'Navigate the browser to a specific URL. Use this to open websites.',
+    description: 'Navigate the browser to a specific URL. Use this to open websites. WARNING: Before navigating after completing an action (reply, post, like, etc.), you MUST take a browser snapshot first to verify the action completed successfully.',
     schema: z.object({
       url: z.string().describe('The URL to navigate to. Must include protocol (http:// or https://)'),
     }),
@@ -69,7 +69,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
         if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
           targetUrl = `https://${targetUrl}`;
         }
-        
+
         try {
           await contents.loadURL(targetUrl);
         } catch (navError: any) {
@@ -83,7 +83,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
           }
           throw navError;
         }
-        
+
         const finalUrl = contents.getURL();
         return JSON.stringify({ success: true, url: finalUrl, message: `Navigated to ${finalUrl}` });
       } catch (error) {
@@ -103,7 +103,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
       const targetIndex = index ?? 0;
       try {
         const contents = getContents();
-        
+
         const result = await contents.executeJavaScript(`
           (async function() {
             const host = window.location.hostname || '';
@@ -274,20 +274,20 @@ export function createBrowserTools(): DynamicStructuredTool[] {
                   <feComposite in="SourceGraphic" in2="goo" operator="atop"/>
                 </filter>
                 <filter id="glass-shadow" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#8B5CF6" flood-opacity="0.3"/>
+                  <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.4"/>
                 </filter>
                 
                 <!-- Main Body with Glass Gradient -->
-                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#glass-gradient)" filter="url(#glass-shadow)" stroke="rgba(255,255,255,0.6)" stroke-width="1"/>
+                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#glass-gradient)" filter="url(#glass-shadow)" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/>
                 
                 <!-- Glossy Highlight -->
                 <path d="M8 7L13 20L15.5 14.5L21 12L8 7Z" fill="url(#gloss-gradient)" opacity="0.7"/>
                 
                 <defs>
                   <linearGradient id="glass-gradient" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stop-color="rgba(139, 92, 246, 0.9)"/>
-                    <stop offset="50%" stop-color="rgba(124, 58, 237, 0.8)"/>
-                    <stop offset="100%" stop-color="rgba(167, 139, 250, 0.9)"/>
+                    <stop offset="0%" stop-color="rgba(80, 80, 80, 0.95)"/>
+                    <stop offset="50%" stop-color="rgba(40, 40, 40, 0.95)"/>
+                    <stop offset="100%" stop-color="rgba(10, 10, 10, 0.95)"/>
                   </linearGradient>
                   <linearGradient id="gloss-gradient" x1="8" y1="7" x2="18" y2="18" gradientUnits="userSpaceOnUse">
                     <stop offset="0%" stop-color="rgba(255, 255, 255, 0.9)"/>
@@ -361,7 +361,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             return { success: true, message: 'Clicked element: ${selector}', domainWarning: xDomain ? 'You are on X/Twitter. Prefer the dedicated x_like/x_reply/x_follow/x_post tools before generic clicks. Use browser_click/browser_click_coordinates only if the x_ tool you need has already failed.' : null };
           })()
         `);
-        
+
         // Auto-capture snapshot after click to show agent the result
         await new Promise(resolve => setTimeout(resolve, 1000));
         const snapshot = await contents.executeJavaScript(`
@@ -394,7 +394,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             return { url: window.location.href, hasModal, counts: grouped, elements: elements.slice(0, 50) };
           })()
         `);
-        
+
         // Format snapshot for agent
         let snapshotText = `\n\n--- PAGE STATE AFTER CLICK ---\nURL: ${snapshot.url}\nModal Open: ${snapshot.hasModal}\n`;
         snapshotText += `Elements: Reply(${snapshot.counts.reply}) Like(${snapshot.counts.like}) TweetButton(${snapshot.counts.tweetButton}) TextInput(${snapshot.counts.tweetTextarea})\n`;
@@ -407,9 +407,9 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             snapshotText += `  [${i}] ${el.testId} - "${el.label}" -> ${el.selector}\n`;
           }
         });
-        
-        return JSON.stringify({ 
-          success: result.success, 
+
+        return JSON.stringify({
+          success: result.success,
           message: result.message,
           pageState: snapshotText,
           domainWarning: result.domainWarning,
@@ -513,13 +513,13 @@ export function createBrowserTools(): DynamicStructuredTool[] {
                   <feComposite in="SourceGraphic" in2="goo" operator="atop"/>
                 </filter>
                 <filter id="glass-shadow-type" x="-20%" y="-20%" width="140%" height="140%">
-                  <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#8B5CF6" flood-opacity="0.3"/>
+                  <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.4"/>
                 </filter>
-                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#glass-gradient-type)" filter="url(#glass-shadow-type)" stroke="rgba(255,255,255,0.6)" stroke-width="1"/>
+                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#glass-gradient-type)" filter="url(#glass-shadow-type)" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/>
                 <path d="M8 7L13 20L15.5 14.5L21 12L8 7Z" fill="url(#gloss-gradient-type)" opacity="0.7"/>
                 <defs>
                   <linearGradient id="glass-gradient-type" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse">
-                    <stop offset="0%" stop-color="rgba(139, 92, 246, 0.9)"/><stop offset="100%" stop-color="rgba(167, 139, 250, 0.9)"/>
+                    <stop offset="0%" stop-color="rgba(80, 80, 80, 0.95)"/><stop offset="100%" stop-color="rgba(10, 10, 10, 0.95)"/>
                   </linearGradient>
                   <linearGradient id="gloss-gradient-type" x1="8" y1="7" x2="18" y2="18" gradientUnits="userSpaceOnUse">
                     <stop offset="0%" stop-color="rgba(255, 255, 255, 0.9)"/><stop offset="100%" stop-color="rgba(255, 255, 255, 0.1)"/>
@@ -683,7 +683,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             return { success: true, message: 'Typed "${text.replace(/"/g, '\\"').slice(0, 30)}..." into: ${selector}' };
           })()
         `);
-        
+
         // Auto-capture snapshot after type to show submit button
         await new Promise(resolve => setTimeout(resolve, 500));
         const snapshot = await contents.executeJavaScript(`
@@ -710,16 +710,16 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             return { url: window.location.href, hasModal, hasTweetButton, elements: elements.slice(0, 30) };
           })()
         `);
-        
+
         // Format snapshot with clear next action
         let nextAction = `\n\n--- PAGE STATE AFTER TYPING ---\nModal Open: ${snapshot.hasModal}\n`;
         if (snapshot.hasTweetButton) {
           nextAction += `\n⚠️ NEXT ACTION REQUIRED: Click the submit button to post your reply!\n`;
           nextAction += `Command: browser_click selector='[data-testid="tweetButton"]'\n`;
         }
-        
-        return JSON.stringify({ 
-          success: result.success, 
+
+        return JSON.stringify({
+          success: result.success,
           message: result.message,
           typed: result.typed,
           nextAction: nextAction
@@ -1243,7 +1243,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
     func: async ({ x, y }) => {
       try {
         const contents = getContents();
-        
+
         // Show visual indicator
         await contents.executeJavaScript(`
           (function() {
@@ -1258,14 +1258,14 @@ export function createBrowserTools(): DynamicStructuredTool[] {
         contents.sendInputEvent({ type: 'mouseMove', x, y });
         contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
         contents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
-        
+
         // Auto-capture snapshot after click to verify result
         await new Promise(resolve => setTimeout(resolve, 1000));
-        
+
         const currentUrl = contents.getURL();
         const xDomain = currentUrl.includes('x.com') || currentUrl.includes('twitter.com');
-        return JSON.stringify({ 
-          success: true, 
+        return JSON.stringify({
+          success: true,
           message: `Clicked at ${x},${y}`,
           nextAction: 'Action performed. Call browser_snapshot to verify result.',
           domainWarning: xDomain ? 'You are on X/Twitter. Use x_like/x_reply/x_follow/x_post before relying on browser_click_coordinates; only fall back here after the x_ tool has failed.' : null,
@@ -1285,20 +1285,20 @@ export function createBrowserTools(): DynamicStructuredTool[] {
         const contents = getContents();
         const image = await contents.capturePage();
         const buffer = image.toPNG();
-        
+
         // Save to temp file
         const fs = require('fs');
         const path = require('path');
         const os = require('os');
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         const filePath = path.join(os.tmpdir(), `staylert-screenshot-${timestamp}.png`);
-        
+
         fs.writeFileSync(filePath, buffer);
-        
-        return JSON.stringify({ 
-          success: true, 
-          message: `Screenshot saved to ${filePath}`, 
-          filePath: filePath 
+
+        return JSON.stringify({
+          success: true,
+          message: `Screenshot saved to ${filePath}`,
+          filePath: filePath
         });
       } catch (error) {
         return JSON.stringify({ success: false, error: String(error) });
@@ -1344,186 +1344,83 @@ export function createBrowserTools(): DynamicStructuredTool[] {
     },
   });
 
-  // Snapshot tool - captures page elements in a simple format focused on interactive elements
+  // Snapshot tool - captures page elements in YAML format with multiple selector options
   const snapshotTool = new DynamicStructuredTool({
     name: 'browser_snapshot',
-    description: 'Capture a snapshot of all interactive elements on the page. Shows buttons, links, inputs with their selectors. Use this to understand what you can click/interact with.',
+    description: 'Capture a YAML snapshot of all interactive elements on the page. Shows buttons, links, inputs with multiple selector options (data-testid, aria-label, CSS selector). Use this to understand what you can click/interact with.',
     schema: z.object({}),
     func: async () => {
       try {
         const contents = getContents();
         const result = await contents.executeJavaScript(`
           (function() {
-            const elements = [];
-            
-            // Check if element is visible
-            function isVisible(el) {
-              const rect = el.getBoundingClientRect();
-              if (rect.width === 0 || rect.height === 0) return false;
-              const style = window.getComputedStyle(el);
-              return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-            }
-            
-            // Get element description
-            function getDesc(el) {
-              const ariaLabel = el.getAttribute('aria-label');
-              if (ariaLabel) return ariaLabel;
-              const testId = el.getAttribute('data-testid');
-              if (testId) return testId;
-              const text = el.textContent?.trim();
-              if (text && text.length < 80) return text;
-              return el.tagName.toLowerCase();
-            }
-
-            function getRect(el) {
-                const r = el.getBoundingClientRect();
-                return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
-            }
-            
-            // X/Twitter specific elements (PRIORITY)
-            document.querySelectorAll('[data-testid]').forEach((el, i) => {
-              if (!isVisible(el)) return;
-              const testId = el.getAttribute('data-testid');
-              const ariaLabel = el.getAttribute('aria-label') || '';
-              elements.push({
-                type: 'testid',
-                testId: testId,
-                label: ariaLabel.slice(0, 60),
-                selector: '[data-testid="' + testId + '"]',
-                rect: getRect(el)
-              });
-            });
-            
-            // Buttons
-            document.querySelectorAll('button').forEach((el, i) => {
-              if (!isVisible(el) || el.getAttribute('data-testid')) return;
-              const text = getDesc(el);
-              elements.push({
-                type: 'button',
-                text: text.slice(0, 60),
-                selector: el.id ? '#' + el.id : 'button',
-                rect: getRect(el)
-              });
-            });
-            
-            // Links
-            document.querySelectorAll('a[href]').forEach((el, i) => {
-              if (!isVisible(el) || el.getAttribute('data-testid')) return;
-              const text = getDesc(el);
-              elements.push({
-                type: 'link',
-                text: text.slice(0, 60),
-                href: el.href?.slice(0, 80),
-                rect: getRect(el)
-              });
-            });
-            
-            // Inputs
-            document.querySelectorAll('input:not([type="hidden"]), textarea, [contenteditable="true"]').forEach((el, i) => {
-              if (!isVisible(el)) return;
-              const testId = el.getAttribute('data-testid');
-              elements.push({
-                type: 'input',
-                inputType: el.type || 'text',
-                placeholder: el.placeholder || '',
-                selector: testId ? '[data-testid="' + testId + '"]' : (el.id ? '#' + el.id : 'input'),
-                rect: getRect(el)
-              });
-            });
-            
-            // Check for modals/dialogs
-            const modals = document.querySelectorAll('[role="dialog"], [aria-modal="true"], [data-testid="sheetDialog"]');
-            const hasModal = modals.length > 0;
-            
-            // Group by testId for X/Twitter
-            const grouped = {
-              reply: elements.filter(e => e.testId === 'reply').length,
-              like: elements.filter(e => e.testId === 'like').length,
-              retweet: elements.filter(e => e.testId === 'retweet').length,
-              tweetButton: elements.filter(e => e.testId === 'tweetButton').length,
-              tweetTextarea: elements.filter(e => e.testId?.includes('tweetTextarea')).length,
-            };
-            
-            return {
+            const snapshot = {
               url: window.location.href,
               title: document.title,
-              hasModal: hasModal,
-              counts: grouped,
-              viewport: { w: window.innerWidth, h: window.innerHeight },
-              elements: elements.slice(0, 100)
+              elements: []
             };
+            
+            // Helper to check visibility
+            function isElementVisible(element) {
+                const style = window.getComputedStyle(element);
+                const rect = element.getBoundingClientRect();
+                
+                // Allow elements that are in the document flow even if scrolled out
+                // Just check they aren't strictly hidden by CSS or 0x0 size
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                
+                // Relaxed size check - sometimes valid elements have 0 height but visible children, 
+                // checking width > 0 is usually safer.
+                return rect.width > 0 && rect.height > 0;
+            }
+
+            // Interactive elements + headings + text
+            const interactiveSelector = 
+              'button, a, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="switch"], [role="menuitem"], [tabindex], h1, h2, h3, h4, h5, h6, [data-testid]';
+
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, {
+                acceptNode: (node) => {
+                    if (!isElementVisible(node)) return NodeFilter.FILTER_REJECT;
+                    
+                    // Accept semantic/interactive nodes
+                    if (node.matches(interactiveSelector)) return NodeFilter.FILTER_ACCEPT;
+                    
+                    // Accept purely text nodes if they have meaningful content
+                    if (node.childNodes.length === 1 && node.childNodes[0].nodeType === Node.TEXT_NODE && node.innerText.trim().length > 0) {
+                         return NodeFilter.FILTER_ACCEPT;
+                    }
+                    
+                    return NodeFilter.FILTER_SKIP;
+                }
+            });
+
+            let node;
+            let index = 0;
+            while (node = walker.nextNode()) {
+                if (index > 1200) break; // Increased safety limit
+                
+                const testId = node.getAttribute('data-testid');
+                const ariaLabel = node.getAttribute('aria-label') || '';
+                const role = node.getAttribute('role') || node.tagName.toLowerCase();
+                const text = (node.innerText || '').replace(/\\s+/g, ' ').trim();
+                
+                // Construct a compact representation
+                snapshot.elements.push({
+                    id: index++,
+                    role: role,
+                    name: (ariaLabel || text || testId || '').slice(0, 80),
+                    testId: testId,
+                    selector: testId ? \`[data-testid="\${testId}"]\` : null,
+                    value: node.value,
+                    checked: node.checked,
+                    href: node.href
+                });
+            }
+            
+            return snapshot;
           })()
         `);
-        
-        // Format output as YAML for better agent understanding
-        let yaml = `page:\n  title: "${result.title}"\n  url: "${result.url}"\n  viewport: ${result.viewport.w}x${result.viewport.h}\n  modal_open: ${result.hasModal}\n\n`;
-        yaml += `counts:\n`;
-        yaml += `  reply_buttons: ${result.counts.reply}\n`;
-        yaml += `  like_buttons: ${result.counts.like}\n`;
-        yaml += `  retweet_buttons: ${result.counts.retweet}\n`;
-        yaml += `  submit_buttons: ${result.counts.tweetButton}\n`;
-        yaml += `  text_inputs: ${result.counts.tweetTextarea}\n\n`;
-        
-        // Group elements by type for cleaner output
-        const actionButtons = result.elements.filter((e: any) => 
-          ['reply', 'like', 'retweet', 'bookmark', 'tweetButton', 'tweetButtonInline'].includes(e.testId)
-        );
-        const textInputs = result.elements.filter((e: any) => 
-          e.testId?.includes('tweetTextarea') || e.type === 'input'
-        );
-        const navElements = result.elements.filter((e: any) => 
-          e.testId?.includes('AppTabBar') || e.testId?.includes('SideNav')
-        );
-        
-        if (actionButtons.length > 0) {
-          yaml += `action_buttons:\n`;
-          actionButtons.forEach((el: any, i: number) => {
-            yaml += `  - id: ${el.testId}\n`;
-            yaml += `    label: "${el.label}"\n`;
-            yaml += `    selector: '${el.selector}'\n`;
-            yaml += `    index: ${i}\n`;
-            if (el.rect) yaml += `    rect: { x: ${el.rect.x}, y: ${el.rect.y}, w: ${el.rect.w}, h: ${el.rect.h} }\n`;
-          });
-          yaml += `\n`;
-        }
-        
-        if (textInputs.length > 0) {
-          yaml += `text_inputs:\n`;
-          textInputs.forEach((el: any) => {
-            yaml += `  - id: ${el.testId || 'input'}\n`;
-            yaml += `    selector: '${el.selector}'\n`;
-            if (el.placeholder) yaml += `    placeholder: "${el.placeholder}"\n`;
-            if (el.rect) yaml += `    rect: { x: ${el.rect.x}, y: ${el.rect.y}, w: ${el.rect.w}, h: ${el.rect.h} }\n`;
-          });
-          yaml += `\n`;
-        }
-        
-        if (navElements.length > 0) {
-          yaml += `navigation:\n`;
-          navElements.forEach((el: any) => {
-            yaml += `  - id: ${el.testId}\n`;
-            yaml += `    label: "${el.label}"\n`;
-            yaml += `    selector: '${el.selector}'\n`;
-            if (el.rect) yaml += `    rect: { x: ${el.rect.x}, y: ${el.rect.y}, w: ${el.rect.w}, h: ${el.rect.h} }\n`;
-          });
-          yaml += `\n`;
-        }
-        
-        // Add instructions based on state
-        yaml += `instructions:\n`;
-        if (result.hasModal) {
-          yaml += `  - "Modal is open. Look for text_inputs to type and submit_buttons to click."\n`;
-          yaml += `  - "Use browser_type with selector from text_inputs"\n`;
-          yaml += `  - "Then browser_click on tweetButton to submit"\n`;
-        } else if (result.counts.reply > 0) {
-          yaml += `  - "Posts are visible. Use action_buttons to interact."\n`;
-          yaml += `  - "To reply: browser_click selector='[data-testid=\"reply\"]' index=0"\n`;
-          yaml += `  - "To like: browser_click selector='[data-testid=\"like\"]' index=0"\n`;
-        } else {
-          yaml += `  - "No posts visible yet. Try browser_scroll down 500 then browser_snapshot again."\n`;
-        }
-        
-        return JSON.stringify({ success: true, content: yaml });
+        return JSON.stringify({ success: true, snapshot: result });
       } catch (error) {
         return JSON.stringify({ success: false, error: String(error) });
       }

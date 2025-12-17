@@ -7,11 +7,13 @@ interface AppState {
   chatPanelWidth: number;
   theme: 'light' | 'dark' | 'system';
   activeView: 'browser' | 'settings';
+  hasStarted: boolean;
   toggleSidebar: () => void;
   toggleChatPanel: () => void;
   setChatPanelWidth: (width: number) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setActiveView: (view: 'browser' | 'settings') => void;
+  setHasStarted: (started: boolean) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -22,6 +24,7 @@ export const useAppStore = create<AppState>()(
       chatPanelWidth: 400,
       theme: 'dark',
       activeView: 'browser',
+      hasStarted: false,
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       toggleChatPanel: () => set((state) => ({ chatPanelCollapsed: !state.chatPanelCollapsed })),
       setChatPanelWidth: (width) => set({ chatPanelWidth: width }),
@@ -35,6 +38,7 @@ export const useAppStore = create<AppState>()(
         set({ theme });
       },
       setActiveView: (activeView) => set({ activeView }),
+      setHasStarted: (hasStarted) => set({ hasStarted }),
     }),
     {
       name: 'navreach-app-store',
