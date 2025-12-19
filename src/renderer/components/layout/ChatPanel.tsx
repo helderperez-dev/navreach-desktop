@@ -87,6 +87,7 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   x_reply: 'Reply on X',
   x_post: 'Post on X',
   x_follow: 'Follow on X',
+  x_engage: 'Engaging on X',
 };
 
 const TOOL_SUMMARY_HINTS: Record<string, string> = {
@@ -103,6 +104,7 @@ const TOOL_SUMMARY_HINTS: Record<string, string> = {
   x_reply: 'Preparing or sending a reply on X.',
   x_post: 'Composing a new post on X.',
   x_follow: 'Followed a user on X.',
+  x_engage: 'Performing multi-action engagement on a post.',
 };
 
 function getToolDisplayName(name: string) {
@@ -143,6 +145,10 @@ export function ChatPanel() {
   const toolHistoryRef = useRef<{ name: string; message?: string }[]>([]);
   const lastCycleHistoryCountRef = useRef(0);
   const [liveNarration, setLiveNarration] = useState<string[]>([]);
+  const [workflows, setWorkflows] = useState<{ name: string }[]>([]);
+  const [matchedWorkflows, setMatchedWorkflows] = useState<{ name: string }[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
 
   const {
     conversations,
@@ -166,6 +172,10 @@ export function ChatPanel() {
   const { toggleChatPanel, setHasStarted } = useAppStore();
   const { addLog } = useDebugStore();
   const activeConversation = getActiveConversation();
+
+  useEffect(() => {
+    window.api.ai.listWorkflows().then(setWorkflows);
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -443,9 +453,44 @@ export function ChatPanel() {
   }, [input, isStreaming, selectedModel, modelProviders, activeConversationId, createConversation, addMessage, setIsStreaming]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showSuggestions) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev + 1) % matchedWorkflows.length);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedSuggestionIndex((prev) => (prev - 1 + matchedWorkflows.length) % matchedWorkflows.length);
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const selected = matchedWorkflows[selectedSuggestionIndex];
+        if (selected) {
+          setInput(`/${selected.name} `);
+          setShowSuggestions(false);
+        }
+      } else if (e.key === 'Escape') {
+        setShowSuggestions(false);
+      }
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit(e);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInput(value);
+
+    if (value.startsWith('/')) {
+      const query = value.slice(1).toLowerCase();
+      const matches = workflows.filter((w) => w.name.toLowerCase().includes(query));
+      setMatchedWorkflows(matches);
+      setShowSuggestions(matches.length > 0);
+      setSelectedSuggestionIndex(0);
+    } else {
+      setShowSuggestions(false);
     }
   };
 
@@ -591,10 +636,13 @@ export function ChatPanel() {
                         'browser_type': 'Typing',
                         'browser_scroll': 'Scrolling',
                         'browser_snapshot': 'Snapshot',
+                        'browser_wait': 'Waiting',
                         'x_search': 'Searching X',
                         'x_like': 'Liking Post',
                         'x_reply': 'Replying',
                         'x_post': 'Posting',
+                        'x_engage': 'Engaging',
+                        'browser_get_visible_text': 'Read text',
                       };
 
                       const label = toolLabels[tool.name] || tool.name;
@@ -633,26 +681,7 @@ export function ChatPanel() {
                                 )}
                               </div>
 
-                              {/* Show args snippet if running (hide for snapshots) */}
-                              {isRunning && tool.args && tool.name !== 'browser_snapshot' && (
-                                <div className="text-[11px] text-muted-foreground truncate mt-0.5 opacity-70 font-mono">
-                                  {JSON.stringify(tool.args).slice(0, 50)}
-                                </div>
-                              )}
-
-                              {/* Show result snippet if done (hide for snapshots) */}
-                              {!isRunning && isSuccess && tool.result && tool.name !== 'browser_snapshot' && (
-                                <div className="text-[11px] text-muted-foreground/60 truncate mt-0.5 opacity-70 font-mono">
-                                  {JSON.stringify(tool.result).slice(0, 50)}
-                                </div>
-                              )}
-
-                              {/* Error Message */}
-                              {isFailed && tool.result?.error && (
-                                <div className="text-[11px] text-red-400/80 truncate mt-0.5">
-                                  {tool.result.error}
-                                </div>
-                              )}
+                              {/* Hide args/result snippet to keep UI focused on action only */}
                             </div>
                           </div>
                         </div>
@@ -678,10 +707,46 @@ export function ChatPanel() {
       <div className="p-3 space-y-2">
         <form onSubmit={handleSubmit}>
           <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border focus-within:bg-secondary/40 transition-all overflow-hidden">
+            {showSuggestions && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 mx-3 bg-[#1e1e20] border border-border/50 rounded-xl shadow-2xl overflow-hidden z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                <div className="px-3 py-2 border-b border-border/30 bg-secondary/20">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-2">
+                    <ScrollText className="h-3 w-3" /> Growth Aliases
+                  </span>
+                </div>
+                <div className="max-h-[200px] overflow-y-auto py-1">
+                  {matchedWorkflows.map((workflow, idx) => (
+                    <button
+                      key={workflow.name}
+                      onMouseMove={() => setSelectedSuggestionIndex(idx)}
+                      onClick={() => {
+                        setInput(`/${workflow.name} `);
+                        setShowSuggestions(false);
+                      }}
+                      className={cn(
+                        "w-full px-3 py-2 text-sm text-left flex items-center gap-3 transition-colors",
+                        idx === selectedSuggestionIndex ? "bg-white/5 text-white" : "text-gray-400 hover:text-gray-200"
+                      )}
+                    >
+                      <div className={cn(
+                        "w-6 h-6 rounded flex items-center justify-center border",
+                        idx === selectedSuggestionIndex ? "border-white/20 bg-white/5" : "border-transparent"
+                      )}>
+                        <FileText className="h-3.5 w-3.5" />
+                      </div>
+                      <span className="font-medium">/{workflow.name}</span>
+                      {idx === selectedSuggestionIndex && (
+                        <span className="ml-auto text-[10px] text-muted-foreground font-mono bg-white/5 px-1.5 py-0.5 rounded">Enter</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <textarea
               ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder="Message NavReach..."
               rows={1}

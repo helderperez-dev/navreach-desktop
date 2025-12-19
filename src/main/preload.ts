@@ -34,7 +34,7 @@ const mcpAPI = {
   connect: (serverId: string) => ipcRenderer.invoke('mcp:connect', serverId),
   disconnect: (serverId: string) => ipcRenderer.invoke('mcp:disconnect', serverId),
   listTools: (serverId: string) => ipcRenderer.invoke('mcp:list-tools', serverId),
-  callTool: (serverId: string, toolName: string, args: Record<string, unknown>) => 
+  callTool: (serverId: string, toolName: string, args: Record<string, unknown>) =>
     ipcRenderer.invoke('mcp:call-tool', serverId, toolName, args),
   getStatus: (serverId: string) => ipcRenderer.invoke('mcp:get-status', serverId),
 };
@@ -54,6 +54,7 @@ const aiAPI = {
     ipcRenderer.on('ai:stream-chunk', handler);
     return () => ipcRenderer.removeListener('ai:stream-chunk', handler);
   },
+  listWorkflows: () => ipcRenderer.invoke('ai:list-workflows'),
 };
 
 const debugAPI = {
@@ -64,6 +65,14 @@ const debugAPI = {
   },
 };
 
+const authAPI = {
+  onAuthCallback: (callback: (hash: string) => void) => {
+    const handler = (_event: unknown, hash: string) => callback(hash);
+    ipcRenderer.on('supabase:auth-callback', handler);
+    return () => ipcRenderer.removeListener('supabase:auth-callback', handler);
+  },
+};
+
 contextBridge.exposeInMainWorld('api', {
   browser: browserAPI,
   settings: settingsAPI,
@@ -71,6 +80,7 @@ contextBridge.exposeInMainWorld('api', {
   window: windowAPI,
   ai: aiAPI,
   debug: debugAPI,
+  auth: authAPI,
 });
 
 export type DebugAPI = typeof debugAPI;

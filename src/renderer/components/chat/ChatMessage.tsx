@@ -144,6 +144,8 @@ const toolAliases: Record<string, string> = {
   'x_reply': 'Replying',
   'x_post': 'Posting',
   'x_follow': 'Following User',
+  'x_engage': 'Engaging',
+  'browser_get_visible_text': 'Reading Visible Text',
   'unknown_tool': 'Running Action'
 };
 
@@ -222,39 +224,25 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
         {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />}
       </button>
 
-      {/* Expanded Details */}
-      {isExpanded && (
+      {/* Expanded Details - Only show if there's meaningful text or error */}
+      {isExpanded && resultDisplay && (
         <div className="px-3 py-3 border-t border-white/5 bg-black/20 text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
-          {/* Input Arguments */}
-          {toolCall.arguments && Object.keys(toolCall.arguments).length > 0 && (
-            <div>
-              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-gray-500 mb-1.5 font-semibold">
-                <Terminal className="h-3 w-3" /> Input
-              </div>
-              <div className="bg-[#151517] rounded border border-white/5 p-2 text-gray-400 overflow-x-auto">
-                <pre>{JSON.stringify(toolCall.arguments, null, 2)}</pre>
-              </div>
-            </div>
-          )}
-
           {/* Output Result */}
-          {resultDisplay && (
-            <div>
-              <div className={cn(
-                "flex items-center gap-1.5 text-[10px] uppercase tracking-wider mb-1.5 font-semibold",
-                isFailed ? "text-red-500/50" : "text-emerald-500/50"
-              )}>
-                {isFailed ? <AlertCircle className="h-3 w-3" /> : <Activity className="h-3 w-3" />}
-                {isFailed ? 'Error' : 'Output'}
-              </div>
-              <div className={cn(
-                "rounded border p-2 overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar",
-                isFailed ? "bg-red-950/20 border-red-500/20 text-red-300/90" : "bg-[#151517] border-white/5 text-gray-400"
-              )}>
-                {resultDisplay}
-              </div>
+          <div>
+            <div className={cn(
+              "flex items-center gap-1.5 text-[10px] uppercase tracking-wider mb-1.5 font-semibold",
+              isFailed ? "text-red-500/50" : "text-emerald-500/50"
+            )}>
+              {isFailed ? <AlertCircle className="h-3 w-3" /> : <Activity className="h-3 w-3" />}
+              {isFailed ? 'Error' : 'Output'}
             </div>
-          )}
+            <div className={cn(
+              "rounded border p-2 overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar",
+              isFailed ? "bg-red-950/20 border-red-500/20 text-red-300/90" : "bg-[#151517] border-white/5 text-gray-400"
+            )}>
+              {resultDisplay}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -476,32 +464,23 @@ function LegacyToolGroup({ block }: { block: any }) {
         </div>
       </button>
 
-      {/* Tool Details (Params & Result) */}
-      {isExpanded && (
+      {/* Tool Details (Result only, no params) */}
+      {isExpanded && block.result && block.result.trim() && (
         <div className="px-3 py-2 border-t border-white/5 bg-black/20 text-xs font-mono space-y-2">
-          {block.params && block.params.trim() && (
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-gray-600 mb-1">Input</div>
-              <div className="text-gray-400 whitespace-pre-wrap pl-2 border-l border-white/10">{block.params.trim()}</div>
+          <div>
+            <div className={cn(
+              "text-[10px] uppercase tracking-wider mb-1",
+              isFailed ? "text-red-500/50" : "text-emerald-500/50"
+            )}>
+              {isFailed ? 'Error' : 'Output'}
             </div>
-          )}
-
-          {block.result && block.result.trim() && (
-            <div>
-              <div className={cn(
-                "text-[10px] uppercase tracking-wider mb-1",
-                isFailed ? "text-red-500/50" : "text-emerald-500/50"
-              )}>
-                {isFailed ? 'Error' : 'Output'}
-              </div>
-              <div className={cn(
-                "whitespace-pre-wrap pl-2 border-l",
-                isFailed ? "text-red-300/80 border-red-500/20" : "text-gray-400 border-white/10"
-              )}>
-                {block.result.trim()}
-              </div>
+            <div className={cn(
+              "whitespace-pre-wrap pl-2 border-l",
+              isFailed ? "text-red-300/80 border-red-500/20" : "text-gray-400 border-white/10"
+            )}>
+              {block.result.trim()}
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>

@@ -18,17 +18,16 @@ export function MainLayout() {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    
+
     isResizingRef.current = true;
     setIsResizing(true);
     const startX = e.clientX;
     const startWidth = chatPanelWidth;
-    
+
     // Apply styles immediately
     document.body.style.cursor = 'col-resize';
     document.body.style.userSelect = 'none';
-    document.body.style.pointerEvents = 'none';
-    
+
     // Create overlay to capture all mouse events
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;cursor:col-resize;';
@@ -37,7 +36,9 @@ export function MainLayout() {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizingRef.current) return;
       const delta = e.clientX - startX;
-      const newWidth = Math.min(Math.max(startWidth + delta, 280), 600);
+      // Use the actual sidebar width if possible, but 400 is the default in store
+      // The logic here should simply be: new width = startWidth + delta
+      const newWidth = Math.min(Math.max(startWidth + delta, 500), 700);
       setChatPanelWidth(newWidth);
     };
 
@@ -46,7 +47,6 @@ export function MainLayout() {
       setIsResizing(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
-      document.body.style.pointerEvents = '';
       overlay.remove();
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
@@ -60,7 +60,7 @@ export function MainLayout() {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
       <TitleBar />
-      
+
       <AnimatePresence mode="wait">
         {!hasStarted && activeView === 'browser' ? (
           <motion.div
@@ -74,7 +74,7 @@ export function MainLayout() {
             <div className="flex h-full">
               <Sidebar />
               <div className="flex-1">
-                <WelcomeScreen onSubmit={() => {}} />
+                <WelcomeScreen onSubmit={() => { }} />
               </div>
             </div>
           </motion.div>
@@ -87,16 +87,16 @@ export function MainLayout() {
             transition={{ duration: 0.3, delay: 0.1 }}
           >
             <Sidebar />
-            
+
             <AnimatePresence initial={false}>
               {!chatPanelCollapsed && activeView === 'browser' && (
-                <motion.div 
+                <motion.div
                   ref={containerRef}
                   initial={{ width: 0, opacity: 0 }}
                   animate={{ width: chatPanelWidth, opacity: 1 }}
                   exit={{ width: 0, opacity: 0 }}
                   transition={isResizing ? { duration: 0 } : { duration: 0.2, ease: 'easeInOut' }}
-                  className="h-full flex-shrink-0 overflow-hidden"
+                  className="h-full flex-shrink-0 overflow-hidden relative"
                 >
                   <div className="h-full overflow-hidden">
                     <ChatPanel />
@@ -104,14 +104,16 @@ export function MainLayout() {
                 </motion.div>
               )}
             </AnimatePresence>
-            
+
             {!chatPanelCollapsed && activeView === 'browser' && (
               <div
                 onMouseDown={handleMouseDown}
-                className="w-px h-full bg-border hover:bg-muted-foreground/50 cursor-col-resize transition-colors flex-shrink-0"
-              />
+                className="group relative w-1.5 h-full cursor-col-resize flex-shrink-0 z-10"
+              >
+                <div className="absolute inset-y-0 left-[2px] w-px bg-border group-hover:bg-white/20 transition-colors" />
+              </div>
             )}
-            
+
             <main className="flex-1 overflow-hidden">
               <AnimatePresence mode="wait">
                 {activeView === 'browser' && (
@@ -140,7 +142,7 @@ export function MainLayout() {
                 )}
               </AnimatePresence>
             </main>
-            
+
             <DebugPanel />
           </motion.div>
         )}

@@ -1,10 +1,12 @@
-import { IpcMain, BrowserWindow } from 'electron';
+import { IpcMain, BrowserWindow, app } from 'electron';
+import * as fs from 'fs';
+import * as path from 'path';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { ModelProvider, ModelConfig, Message } from '../../shared/types';
-import { createBrowserTools } from './browser-tools';
+import { createBrowserTools, getWebviewContents } from './browser-tools';
 
 interface ChatRequest {
   messages: Message[];
@@ -206,6 +208,17 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
     if (window) {
       stopSignals.set(window.id, true);
     }
+
+    // Also signal the renderer execution to stop immediately
+    const contents = getWebviewContents('main-tab');
+    if (contents && !contents.isDestroyed()) {
+      try {
+        await contents.executeJavaScript('window.__NAVREACH_STOP__ = true;');
+      } catch (e) {
+        // Ignore error if webview is not ready
+      }
+    }
+
     return { success: true };
   });
 
@@ -228,13 +241,44 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
         stopSignals.set(window.id, false);
       }
 
+      // Reset renderer stop signal
+      const contents = getWebviewContents('main-tab');
+      if (contents && !contents.isDestroyed()) {
+        try {
+          await contents.executeJavaScript('window.__NAVREACH_STOP__ = false;');
+        } catch (e) {
+          // Ignore
+        }
+      }
+
+      let effectiveBaseGoal = initialUserPrompt || '';
+
+      // Handle Slash Command / Alias Expansion
+      if (effectiveBaseGoal.startsWith('/')) {
+        const parts = effectiveBaseGoal.split(' ');
+        const command = parts[0].slice(1);
+        const args = parts.slice(1).join(' ');
+
+        // Search in .agent/workflows/
+        const rootPath = process.cwd(); // Root of the project
+        const workflowPath = path.join(rootPath, '.agent', 'workflows', `${command}.md`);
+
+        if (fs.existsSync(workflowPath)) {
+          console.log(`Expanding alias: ${command}`);
+          const content = fs.readFileSync(workflowPath, 'utf-8');
+          // Strip YAML frontmatter if present
+          const promptBody = content.replace(/^---[\s\S]*?---\n?/, '').trim();
+          effectiveBaseGoal = args ? `${promptBody}\n\nContext: ${args}` : promptBody;
+        }
+      }
+
       const sanitizedMaxIterations = Math.max(1, Math.min(Math.round(requestedMaxIterations) || 1, 50));
       const hardStopIterations = infiniteMode ? 500 : sanitizedMaxIterations;
       const lastUserMessage =
         [...messages]
           .reverse()
           .find((msg) => msg.role === 'user')?.content || '';
-      const baseUserGoal = initialUserPrompt || lastUserMessage || '';
+      const baseUserGoal = effectiveBaseGoal || lastUserMessage || '';
 
       const infiniteDirective =
         infiniteMode && baseUserGoal
@@ -536,14 +580,24 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
                 };
 
                 // Send comprehensive result information without text content pollution
-                window.webContents.send('ai:stream-chunk', {
-                  content: '',
-                  done: false,
-                  toolResult: {
-                    toolCallId: toolCall.id,
-                    result: uiResult
-                  }
-                });
+                // Check for stop error in the result to prevent trailing error messages after stop
+                const isStopError = parsed?.error && (
+                  typeof parsed.error === 'string' && (
+                    parsed.error.includes('Stopped by user') ||
+                    parsed.error.includes('stop signal')
+                  )
+                );
+
+                if (!isStopError && (!window || !stopSignals.get(window.id))) {
+                  window.webContents.send('ai:stream-chunk', {
+                    content: '',
+                    done: false,
+                    toolResult: {
+                      toolCallId: toolCall.id,
+                      result: uiResult
+                    }
+                  });
+                }
               }
             } catch (toolError) {
               const errorMessage = new ToolMessage({
@@ -660,6 +714,24 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error'
       };
+    }
+  });
+  ipcMain.handle('ai:list-workflows', async () => {
+    try {
+      const rootPath = process.cwd();
+      const workflowDir = path.join(rootPath, '.agent', 'workflows');
+      if (!fs.existsSync(workflowDir)) return [];
+
+      const files = fs.readdirSync(workflowDir);
+      return files
+        .filter(f => f.endsWith('.md'))
+        .map(f => ({
+          name: f.replace('.md', ''),
+          path: path.join(workflowDir, f)
+        }));
+    } catch (e) {
+      console.error('Error listing workflows:', e);
+      return [];
     }
   });
 }

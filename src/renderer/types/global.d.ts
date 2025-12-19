@@ -68,9 +68,13 @@ declare global {
         }) => Promise<{ success: boolean; response?: string; error?: string }>;
         stop: () => Promise<void>;
         onStreamChunk: (callback: (data: { content: string; done: boolean; toolCall?: any; toolResult?: any }) => void) => () => void;
+        listWorkflows: () => Promise<{ name: string; path: string }[]>;
       };
       debug: {
         onLog: (callback: (data: { type: string; message: string; data?: any }) => void) => () => void;
+      };
+      auth: {
+        onAuthCallback: (callback: (hash: string) => void) => () => void;
       };
     };
   }
