@@ -7,6 +7,17 @@ import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from '@langchain/
 import type { BaseMessage } from '@langchain/core/messages';
 import type { ModelProvider, ModelConfig, Message } from '../../shared/types';
 import { createBrowserTools, getWebviewContents } from './browser-tools';
+import { createTargetTools } from './target-tools';
+import { createPlaybookTools } from './playbook-tools';
+import { createIntegrationTools } from './integration-tools';
+import { createUtilityTools } from './utility-tools';
+import { supabase } from '../lib/supabase';
+import Store from 'electron-store';
+import type { AppSettings } from '../../shared/types';
+
+const store = new Store<AppSettings>({
+  name: 'settings',
+});
 
 interface ChatRequest {
   messages: Message[];
@@ -17,6 +28,10 @@ interface ChatRequest {
   maxIterations?: number;
   infiniteMode?: boolean;
   initialUserPrompt?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  playbooks?: any[];
+  targetLists?: any[];
 }
 
 function createChatModel(provider: ModelProvider, model: ModelConfig, streaming = true) {
@@ -69,7 +84,21 @@ function convertMessages(messages: Message[], systemPrompt?: string): BaseMessag
     if (msg.role === 'user') {
       langchainMessages.push(new HumanMessage(msg.content));
     } else if (msg.role === 'assistant') {
-      langchainMessages.push(new AIMessage(msg.content));
+      // Handle tool calls if they exist in the content or metadata
+      const tool_calls = (msg as any).tool_calls;
+      if (tool_calls && tool_calls.length > 0) {
+        langchainMessages.push(new AIMessage({
+          content: msg.content,
+          tool_calls: tool_calls
+        }));
+      } else {
+        langchainMessages.push(new AIMessage(msg.content));
+      }
+    } else if (msg.role === 'tool') {
+      langchainMessages.push(new ToolMessage({
+        content: msg.content,
+        tool_call_id: (msg as any).tool_call_id || (msg as any).id,
+      }));
     } else if (msg.role === 'system') {
       langchainMessages.push(new SystemMessage(msg.content));
     }
@@ -78,35 +107,29 @@ function convertMessages(messages: Message[], systemPrompt?: string): BaseMessag
   return langchainMessages;
 }
 
-const BROWSER_AGENT_PROMPT = `You are a helpful AI assistant integrated into a browser automation application called NavReach.
-You have access to browser control tools that allow you to navigate the web, click elements, type text, and extract information.
+const BROWSER_AGENT_PROMPT = `**YOUR ROLE:**
+You are the Navreach Agent, a high-performance autonomous automation engine. You orchestrate web browsing, target management, and playbook execution.
 
-**COMMUNICATION STYLE:**
-- Speak DIRECTLY to the user.
-- Be concise and professional.
-- **DO NOT** use prefixes like "Narration:", "Assistant:", or "Reasoning:".
-- **DO NOT** output internal thought processes, "Yes", "OK", or "Final Answer" blocks.
-- **DO NOT** use LaTeX formatting like \\boxed{}.
+**EXECUTION COMMANDS:**
+- **PLAYBOOKS**: When asked to "run" or "execute" a playbook (e.g. {{playbooks.ID}}), you MUST:
+  1. Call \`db_get_playbook_details\` with the ID.
+  2. Parse the graph (\`nodes\` and \`edges\`).
+  3. Traverse from 'start' to 'end'. For each node, map its \`type\` to your available tools (e.g., node type 'navigate' -> tool 'browser_navigate', 'engage' -> 'x_engage').
+  4. **SPECIAL NODE HANDLING - 'HUMANIZE'**: If you encounter a 'humanize' node, it is a modifier. It means: "For the NEXT engagement or posting action (x_reply, x_engage, x_post), you MUST first draft your text, then run it through the \`humanize_text\` tool, and use the RESULT of that tool as your final text." Do not call \`humanize_text\` in isolation unless you have distinct text input from a previous step.
+  5. **CRITICAL - PERSONALIZATION**: When the agent encounters an \`engage\` or \`reply\` node in a playbook, you MUST prioritize **Growth & Personalization**. You MUST read the post content you are interacting with (using browser_snapshot or page content) and generate a contextually relevant, human-like response. Do NOT simply use a static template from the playbook if it sounds generic. Use the configuration as a guideline for tone/topic, but always personalize.
+  5. Narrate each step as you process the nodes (e.g. "Now I'm running the search node with the configured hashtags...").
+- **HITL (Human In The Loop)**: If a playbook node has type \`approval\`, you MUST call \`human_approval\`. If type is \`pause\`, you MUST call \`agent_pause\`. These tools will signal the UI to wait for user confirmation.
+- **BROWSER**: For web tasks, use \`browser_snapshot\` first to see elements, then interact. Use site-specific tools (x_like, x_reply) for X.com/Twitter.
+  - **TIP**: X.com search is brittle. Avoid redundant filters (like \`has:hashtags\` when you already have \`#tag\`). DO NOT use \`min_likes:0\`, \`min_replies:0\`, or \`min_retweets:0\` as they often fail. Use \`minLikes:2\` or more for quality results.
+- **FALLBACKS**: If a selector fails, use \`browser_click_coordinates\` based on the rect in the snapshot.
 
-**MANDATORY NARRATION:**
-Before executing tools, briefly explain to the user what you are doing and why.
-Format: Just the text explanation, then use the appropriate tool.
+**TAG RESOLUTION**:
+The UI uses tags like {{playbooks.xyz}} or {{lists.abc}}. These map to database IDs. You MUST use the ID part (e.g. "xyz") when calling tools. You HAVE access to every resource listed in the context below.
 
-Example:
-"I'll navigate to X.com to check the home feed." Then use browser_navigate.
-
-"I see the profile button. I'll click it to view account details." Then use browser_click.
-
-"Found a relevant post about SaaS. I'll like it and reply." Then use x_like and x_reply.
-
-IMPORTANT: You MUST use the actual tool functions provided to you. Do NOT write "[Tool Call: ...]" as text - actually invoke the tools.
-
-When the user asks you to do something with the browser:
-1. First use browser_get_page_content to understand the current page state.
-2. Use browser_find_elements to discover interactive elements if needed.
-3. Execute the appropriate actions (navigate, click, type, etc.).
-4. Specialized tools exist for popular sites. When you detect you are on a known domain, **you must use its site-specific tools before any generic clicks**. Example: on X.com/twitter.com you must use x_search/x_like/x_reply/x_post/x_follow and only fall back to browser_click or browser_click_coordinates after a site-specific tool fails and you explain why you are falling back.
-5. Narrate your process continuously.
+**TOOL USAGE RULES**:
+- **NEVER** say you lack access. If a resource is tagged, use the tools.
+- **NEVER** write "[Tool Call]" as text. Use the actual function.
+- **NARRATE** briefly before every action (e.g. "Running the 'Login' node of the playbook...").
 
 **X.COM (TWITTER) TOOL SELECTION - CRITICAL:**
 - **Reply** means responding to an existing post (a tweet you can see in the timeline/search results). For replies you MUST use **x_reply**.
@@ -120,6 +143,13 @@ When the user asks you to do something with the browser:
 - After EACH successful X action, you MUST call browser_snapshot or browser_get_page_content BEFORE doing any next step.
 - Only proceed when the snapshot confirms the expected state (e.g., reply dialog opened, reply submitted, like toggled).
 - Do NOT "reset to Home" unless recovery is required and you have explained why.
+
+**SMART AUTONOMY ({{agent.decide}} / agent_decide):**
+- Some playbook nodes may have fields set to \`{{agent.decide}}\`, the string \`agent_decide\`, or left blank/null.
+- This is your signal to take full responsibility for that parameter.
+- You MUST observe the current state (via \`browser_snapshot\` or by listing resources), choose the best target or value based on your intelligence, and then use that ACTUAL value.
+- If a \`targetIndex\` is autonomous, find the best element on screen and use its index.
+- If a \`list_id\` is autonomous, fetch the available lists and pick the one that best matches the current task context (e.g., "SaaS Founders" for a SaaS outreach task).
 
 **CRITICAL NAVIGATION RULES:**
 - **NEVER navigate to a new page immediately after performing an action (like replying, posting, liking, etc.)**
@@ -156,6 +186,10 @@ BEFORE clicking any reply button, you MUST:
   - Make sense as a conversation response
   - Not be generic, random, or off-topic
   - Not duplicate the post content
+  - **TONE**: Casual, professional, "founder-to-founder". Lowercase is fine. No hashtags unless critical.
+  - **FORBIDDEN**: "Hi @username!", "Great post!", "Thanks for sharing!", "100% agree!", "Valuable insights!".
+  - **STRATEGY**: Add a specific data point, ask a 2nd-order question, or share a brief contrarian take.
+  - **LENGTH**: Keep it under 280 chars, ideally <150. Short and punchy.
 
 **STEP 4: CLICK REPLY BUTTON**
 - Only NOW use x_reply tool with your crafted reply text
@@ -181,14 +215,33 @@ ABSOLUTE REQUIREMENTS:
 - NEVER submit generic or random replies
 - ALWAYS read → understand → craft reply → then use x_reply tool
 - The reply text you provide to x_reply must be based on the post content you already read
+- **CRITICAL STYLE CHECK**: Before using x_reply, ask yourself: "Does this sound like a bot?" If yes, rewrite it to sound like a tired but smart engineer.
+
+**ENGAGEMENT TONE & STYLE GUIDELINES:**
+- **Objective**: Sound like a busy, smart indie builder.
+- **Do**: Be concise, specific, casual.
+- **Don't**: Be sycophantic, use exclamation marks excessively, use "marketing-speak", or sound like a customer support agent.
+- **Example Good**: "Interesting point. found that manual onboarding cut churn by 20% vs automated flows."
+- **Example Bad**: "Hi @User! This is a fascinating insight into SaaS churn. I totally agree that onboarding is key! Thanks for sharing this valuable content."
+
+**DATABASE / INTEGRATION TOOLS:**
+- \`db_get_target_lists\`, \`db_create_target_list\`, \`db_get_targets\`, \`db_create_target\`, \`db_update_target\`.
+- \`db_get_playbooks\`, \`db_get_playbook_details\`, \`db_save_playbook\`, \`db_delete_playbook\`.
+- \`db_get_mcp_servers\`, \`mcp_list_tools\`, \`mcp_call_tool\`, \`db_get_api_tools\`, \`api_call_tool\`.
 
 Always be helpful and transparent. If something fails, explain what happened and try an alternative approach.
 When navigating, always include the full URL with https://.
-When clicking or typing, use specific CSS selectors.`;
+When clicking or typing, use specific CSS selectors.
+`;
 
 export function setupAIHandlers(ipcMain: IpcMain): void {
   const browserTools = createBrowserTools();
-  const toolsByName = new Map(browserTools.map(tool => [tool.name, tool]));
+  const targetTools = createTargetTools();
+  const playbookTools = createPlaybookTools();
+  const integrationTools = createIntegrationTools();
+  const utilityTools = createUtilityTools();
+  const allTools = [...browserTools, ...targetTools, ...playbookTools, ...integrationTools, ...utilityTools];
+  const toolsByName = new Map(allTools.map(tool => [tool.name, tool]));
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
   const getToolDelayMs = (toolName: string) => {
@@ -233,13 +286,56 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
         maxIterations: requestedMaxIterations = 10,
         infiniteMode = false,
         initialUserPrompt,
+        accessToken,
+        refreshToken,
+        playbooks = [],
+        targetLists = []
       } = request;
       const window = BrowserWindow.fromWebContents(event.sender);
+
+      // Create a scoped Supabase client for this request using the access token
+      // This avoids the "AuthSessionMissingError" by setting the Authorization header directly
+      let scopedSupabase = supabase;
+      if (accessToken) {
+        // We use the createClient from the library, but we need to import it.
+        // Since we can't easily import it here without changing imports, we'll try to use the global one but
+        // it's safer to create a new one. The best way is to rely on the fact that if we just want to query,
+        // we can create a client with the token.
+        const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+        const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+        const { createClient } = require('@supabase/supabase-js');
+
+        scopedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+          global: {
+            headers: {
+              Authorization: `Bearer ${accessToken}`
+            }
+          }
+        });
+        console.log('[AI Service] Created scoped Supabase client with access token');
+      } else {
+        console.warn('[AI Service] No access token provided, using anonymous client');
+      }
+
+      console.log('[AI Service] Context received:', {
+        playbooksCount: playbooks?.length,
+        targetListsCount: targetLists?.length
+      });
 
       // Clear stop signal at start
       if (window) {
         stopSignals.set(window.id, false);
       }
+
+      // Re-create tools with context AND the scoped supabase client
+      const requestBrowserTools = createBrowserTools();
+      const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase });
+      const requestPlaybookTools = createPlaybookTools({ playbooks, supabaseClient: scopedSupabase });
+      const requestIntegrationTools = createIntegrationTools();
+      const requestUtilityTools = createUtilityTools();
+
+      const requestTools = [...requestBrowserTools, ...requestTargetTools, ...requestPlaybookTools, ...requestIntegrationTools, ...requestUtilityTools];
+      const requestToolsByName = new Map(requestTools.map(tool => [tool.name, tool]));
 
       // Reset renderer stop signal
       const contents = getWebviewContents('main-tab');
@@ -285,13 +381,53 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
           ? `\nThe user enabled **Infinite Loop Mode**. Treat the goal as an endless campaign:\n- Goal: "${baseUserGoal}"\n- Never ask the user for extra details. Invent reasonable copy, targets, or parameters yourself.\n- After you finish a pass (navigate/snapshot/post/reply/like/follow), immediately start planning the next pass and execute without waiting.\n- Rotate between different engagement tactics so the logged-in account keeps growing organically.\n- Summaries should be brief and should not stop you from continuing. Only halt when explicitly told to stop or when safety limits trigger.`
           : '';
 
+      // --- CONTEXT INJECTION START ---
+      // Fetch available resources to help the agent understand {{service.id}} tags
+      let contextInjection = "\n\n**AVAILABLE RESOURCES (CONTEXT):**\nWhen the user or tool output refers to IDs (e.g. {{service.id}}), they map to the following:\n";
+
+      // 1. Playbooks
+      try {
+        const { data: playbooks } = await supabase.from('playbooks').select('id, name, description').limit(20);
+        if (playbooks && playbooks.length > 0) {
+          contextInjection += "\n**Playbooks ({{playbooks.ID}}):**\n";
+          playbooks.forEach(p => contextInjection += `- ${p.name}: {{playbooks.${p.id}}} (${p.description || 'No description'})\n`);
+        }
+      } catch (e) { console.error('Error fetching playbooks context:', e); }
+
+      // 2. Target Lists
+      try {
+        const { data: lists } = await supabase.from('target_lists').select('id, name').limit(20);
+        if (lists && lists.length > 0) {
+          contextInjection += "\n**Target Lists ({{lists.ID}}):**\n";
+          lists.forEach(l => contextInjection += `- ${l.name}: {{lists.${l.id}}}\n`);
+        }
+      } catch (e) { console.error('Error fetching lists context:', e); }
+
+      // 3. MCP Servers & API Tools
+      try {
+        const mcpServers = store.get('mcpServers') || [];
+        if (mcpServers.length > 0) {
+          contextInjection += "\n**MCP Servers ({{mcp.ID}}):**\n";
+          mcpServers.forEach(s => contextInjection += `- ${s.name}: {{mcp.${s.id}}}\n`);
+        }
+        const apiTools = store.get('apiTools') || [];
+        if (apiTools.length > 0) {
+          contextInjection += "\n**API Tools ({{apis.ID}}):**\n";
+          apiTools.forEach(t => contextInjection += `- ${t.name}: {{apis.${t.id}}}\n`);
+        }
+      } catch (e) { console.error('Error fetching settings context:', e); }
+
+      contextInjection += "\nUse these IDs when calling tools that require a list_id, playbook_id, etc. The user may write them as tags like 'Run {{playbooks.xyz}}', which translates to the ID 'xyz'.";
+      // --- CONTEXT INJECTION END ---
+
       const effectiveSystemPrompt = enableTools
-        ? `${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
+        ? `${contextInjection}\n\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
         : systemPrompt;
 
       if (enableTools) {
         const chatModel = createChatModel(provider, model, false);
-        const modelWithTools = chatModel.bindTools(browserTools);
+        console.log('Registering AI Tools:', requestTools.map(t => t.name).join(', '));
+        const modelWithTools = chatModel.bindTools(requestTools, { strict: false } as any);
 
         let langchainMessages = convertMessages(messages, effectiveSystemPrompt);
         let fullResponse = '';
@@ -332,7 +468,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
                 } else if (typeof e === 'string') {
                   errorMsg = e;
                 } else if (e && typeof e === 'object') {
-                  errorMsg = e.message || e.error || JSON.stringify(e);
+                  errorMsg = e.message || e.error || (e.response?.data?.error?.message) || JSON.stringify(e);
                 }
                 throw new Error(errorMsg);
               }
@@ -494,7 +630,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
           let lastToolErrorDescription = '';
 
           for (const toolCall of toolCalls) {
-            const tool = toolsByName.get(toolCall.name);
+            const tool = requestToolsByName.get(toolCall.name);
             if (!tool) {
               const errorMsg = new ToolMessage({
                 tool_call_id: toolCall.id || '',
@@ -716,6 +852,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
       };
     }
   });
+
   ipcMain.handle('ai:list-workflows', async () => {
     try {
       const rootPath = process.cwd();

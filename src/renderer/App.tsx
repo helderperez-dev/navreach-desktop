@@ -16,18 +16,27 @@ export function App() {
     loadSettings();
     setTheme(theme);
 
+    if (!supabase) {
+      console.error('[App] Supabase client not initialized');
+      setSession(null);
+      return;
+    }
+
     // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }: any) => {
       setSession(session);
+    }).catch((err: any) => {
+      console.error('[App] Session check failed:', err);
+      setSession(null);
     });
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
       setSession(session);
     });
 
     // Listen for deep link auth callbacks (Google login)
-    const unsubscribeAuth = (window as any).api.auth.onAuthCallback((hash: string) => {
+    const unsubscribeAuth = (window as any).api?.auth?.onAuthCallback((hash: string) => {
       const params = new URLSearchParams(hash);
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
@@ -42,7 +51,7 @@ export function App() {
 
     return () => {
       subscription.unsubscribe();
-      unsubscribeAuth();
+      unsubscribeAuth?.();
     };
   }, []);
 

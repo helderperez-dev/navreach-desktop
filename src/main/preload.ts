@@ -1,5 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
+console.log('Preload script starting...');
+
 export type BrowserAPI = typeof browserAPI;
 export type SettingsAPI = typeof settingsAPI;
 export type MCPAPI = typeof mcpAPI;

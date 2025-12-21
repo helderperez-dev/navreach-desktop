@@ -5,6 +5,10 @@ import { setupBrowserHandlers } from './ipc/browser';
 import { setupSettingsHandlers } from './ipc/settings';
 import { setupMCPHandlers } from './ipc/mcp';
 import { setupAIHandlers } from './services/ai';
+import { config } from 'dotenv';
+
+// Load environment variables for Main process
+config();
 
 let mainWindow: BrowserWindow | null = null;
 

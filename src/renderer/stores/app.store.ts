@@ -6,13 +6,13 @@ interface AppState {
   chatPanelCollapsed: boolean;
   chatPanelWidth: number;
   theme: 'light' | 'dark' | 'system';
-  activeView: 'browser' | 'settings';
+  activeView: 'browser' | 'settings' | 'targets' | 'playbooks';
   hasStarted: boolean;
   toggleSidebar: () => void;
   toggleChatPanel: () => void;
   setChatPanelWidth: (width: number) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
-  setActiveView: (view: 'browser' | 'settings') => void;
+  setActiveView: (view: 'browser' | 'settings' | 'targets' | 'playbooks') => void;
   setHasStarted: (started: boolean) => void;
 }
 

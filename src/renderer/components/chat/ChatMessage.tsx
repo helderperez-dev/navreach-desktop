@@ -1,14 +1,48 @@
-import { Copy, Check, ChevronDown, ChevronRight, Square, RotateCcw, Terminal, Activity, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
-import { useState } from 'react';
+import { Copy, Check, ChevronDown, ChevronRight, Square, RotateCcw, Activity, Loader2, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
 import type { Message } from '@shared/types';
 import { ErrorMessage } from '@/components/ui/ErrorMessage';
+import { ProcessedText } from '@/lib/mention-utils';
 
 interface ChatMessageProps {
   message: Message;
+  variables?: any[];
   onRetry?: (content: string) => void;
+  onApprove?: () => void;
+  isLast?: boolean;
 }
+
+// Tool name aliases for user-friendly display
+const toolAliases: Record<string, string> = {
+  'browser_navigate': 'Navigating',
+  'browser_click': 'Clicking Element',
+  'browser_click_at': 'Clicking Position',
+  'browser_type': 'Typing Text',
+  'browser_scroll': 'Scrolling',
+  'browser_snapshot': 'Taking Snapshot',
+  'browser_get_page_content': 'Reading Page',
+  'browser_extract': 'Extracting Data',
+  'browser_go_back': 'Going Back',
+  'browser_go_forward': 'Going Forward',
+  'browser_reload': 'Reloading',
+  'browser_wait': 'Waiting',
+  'browser_find_elements': 'Locating Elements',
+  'browser_get_accessibility_tree': 'Analyzing Page Structure',
+  'browser_hover': 'Hovering',
+  'x_search': 'Searching X',
+  'x_like': 'Liking Post',
+  'x_reply': 'Replying',
+  'x_post': 'Posting',
+  'x_follow': 'Following User',
+  'x_engage': 'Engaging',
+  'browser_get_visible_text': 'Reading Visible Text',
+  'db_get_targets': 'Fetching Targets',
+  'db_get_target_lists': 'Fetching Target Lists',
+  'db_update_target': 'Updating Target',
+  'unknown_tool': 'Running Action'
+};
 
 // Helper to structure the message content into logical blocks
 // We want to group: Thinking Process -> Tool Executions -> Final Answer
@@ -122,33 +156,6 @@ function parseMessageContent(content: string) {
   return blocks;
 }
 
-// Tool name aliases for user-friendly display
-const toolAliases: Record<string, string> = {
-  'browser_navigate': 'Navigating',
-  'browser_click': 'Clicking Element',
-  'browser_click_at': 'Clicking Position',
-  'browser_type': 'Typing Text',
-  'browser_scroll': 'Scrolling',
-  'browser_snapshot': 'Taking Snapshot',
-  'browser_get_page_content': 'Reading Page',
-  'browser_extract': 'Extracting Data',
-  'browser_go_back': 'Going Back',
-  'browser_go_forward': 'Going Forward',
-  'browser_reload': 'Reloading',
-  'browser_wait': 'Waiting',
-  'browser_find_elements': 'Locating Elements',
-  'browser_get_accessibility_tree': 'Analyzing Page Structure',
-  'browser_hover': 'Hovering',
-  'x_search': 'Searching X',
-  'x_like': 'Liking Post',
-  'x_reply': 'Replying',
-  'x_post': 'Posting',
-  'x_follow': 'Following User',
-  'x_engage': 'Engaging',
-  'browser_get_visible_text': 'Reading Visible Text',
-  'unknown_tool': 'Running Action'
-};
-
 function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResult?: any }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const status = toolResult ? (toolResult.error ? 'failed' : 'success') : 'running';
@@ -249,12 +256,83 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
   );
 }
 
-export function ChatMessage({ message, onRetry }: ChatMessageProps) {
+function AgentControlUI({ onApprove, variant = 'approval' }: { onApprove: () => void, variant?: 'approval' | 'pause' }) {
+  const [isApproved, setIsApproved] = useState(false);
+
+  const handleApprove = () => {
+    setIsApproved(true);
+    onApprove();
+  };
+
+  const isPause = variant === 'pause';
+
+  return (
+    <div className={cn(
+      "mt-3 mb-2 flex flex-col gap-2 p-3 rounded-lg animate-in fade-in slide-in-from-top-2",
+      isPause ? "bg-amber-500/10 border border-amber-500/20" : "bg-blue-500/10 border border-blue-500/20"
+    )}>
+      <div className="flex items-start gap-3">
+        {isPause ? <Square className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" /> : <AlertCircle className="h-5 w-5 text-blue-400 mt-0.5 shrink-0" />}
+        <div className="space-y-1">
+          <p className={cn("text-sm font-medium", isPause ? "text-amber-100" : "text-blue-100")}>
+            {isPause ? 'Agent Paused' : 'Approval Required'}
+          </p>
+          <p className={cn("text-xs opacity-80", isPause ? "text-amber-200/80" : "text-blue-200/80")}>
+            {isPause ? 'The playbook is waiting to continue to the next step.' : 'The agent is waiting for your confirmation to proceed.'}
+          </p>
+        </div>
+      </div>
+
+      {!isApproved ? (
+        <button
+          onClick={handleApprove}
+          className={cn(
+            "self-end mt-1 px-4 py-2 text-white text-xs font-medium rounded transition-colors flex items-center gap-2 shadow-lg",
+            isPause ? "bg-amber-600 hover:bg-amber-500" : "bg-blue-600 hover:bg-blue-500"
+          )}
+        >
+          {isPause ? <ChevronRight className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
+          {isPause ? 'Continue Playbook' : 'Approve & Proceed'}
+        </button>
+      ) : (
+        <div className="self-end mt-1 px-4 py-2 text-emerald-400 text-xs font-medium flex items-center gap-2">
+          <Check className="h-3.5 w-3.5" />
+          {isPause ? 'Continuing...' : 'Approved'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const [copied, setCopied] = useState(false);
   // Default expanded for critical info, collapsed for dense logs
   const [expandedThoughts, setExpandedThoughts] = useState(false);
+
+  // Robust check for approval requests or pauses
+  const approvalKeywords = [
+    /approval required/i,
+    /need your confirmation/i,
+    /waiting for your approval/i,
+    /ready for your approval/i,
+    /please approve/i,
+    /pause(?:d)? for approval/i,
+    /do you approve/i,
+    /approval/i,
+    /approve/i,
+    /paused/i
+  ];
+
+  const needsApproval = !isUser && isLast && !!onApprove && (
+    approvalKeywords.some(regex => regex.test(message.content))
+  );
+
+  // Determine if this is an "Approval" or a simple "Continue"
+  const isPauseOnly = message.content.toLowerCase().includes('paused') &&
+    !message.content.toLowerCase().includes('approval') &&
+    !message.content.toLowerCase().includes('approve');
 
   // System messages
   if (isSystem) {
@@ -278,6 +356,16 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
   // If use legacy parsing:
   const blocks = (!isUser && !hasStructuredTools) ? parseMessageContent(message.content) : [];
 
+  // Helper to wrap markdown component children with tag processor
+  const withTags = (children: any) => {
+    return React.Children.map(children, (child) => {
+      if (typeof child === 'string') {
+        return <ProcessedText text={child} variables={variables} />;
+      }
+      return child;
+    });
+  };
+
   return (
     <div className={cn(
       'group relative px-4 py-2 transition-colors duration-200',
@@ -290,7 +378,9 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
 
           {isUser ? (
             <div className="inline-block bg-secondary/80 hover:bg-secondary text-secondary-foreground px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm leading-relaxed shadow-sm border border-white/5 mx-0 text-left">
-              <div className="whitespace-pre-wrap">{message.content}</div>
+              <div className="whitespace-pre-wrap">
+                <ProcessedText text={message.content} variables={variables} />
+              </div>
             </div>
           ) : (
             <>
@@ -309,15 +399,15 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
                 <div className="prose prose-invert prose-sm max-w-none text-gray-300 leading-relaxed text-left">
                   <ReactMarkdown
                     components={{
-                      p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{children}</p>,
-                      ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-gray-400">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-gray-400">{children}</ol>,
-                      li: ({ children }) => <li className="pl-1">{children}</li>,
-                      strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-                      code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[13px] font-mono text-indigo-300 border border-white/5">{children}</code>,
+                      p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
+                      ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-gray-400">{withTags(children)}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-gray-400">{withTags(children)}</ol>,
+                      li: ({ children }) => <li className="pl-1">{withTags(children)}</li>,
+                      strong: ({ children }) => <strong className="font-semibold text-white">{withTags(children)}</strong>,
+                      code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[13px] font-mono text-indigo-300 border border-white/5">{withTags(children)}</code>,
                       pre: ({ children }) => <pre className="bg-[#1e1e20] p-3 rounded-lg border border-white/5 overflow-x-auto my-3 text-xs font-mono shadow-inner">{children}</pre>,
-                      a: ({ href, children }) => <a href={href} className="text-indigo-400 hover:text-indigo-300 hover:underline decoration-indigo-400/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{children}</a>,
-                      blockquote: ({ children }) => <blockquote className="border-l-2 border-indigo-500/50 pl-4 py-1 my-3 italic text-gray-500">{children}</blockquote>,
+                      a: ({ href, children }) => <a href={href} className="text-indigo-400 hover:text-indigo-300 hover:underline decoration-indigo-400/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
+                      blockquote: ({ children }) => <blockquote className="border-l-2 border-indigo-500/50 pl-4 py-1 my-3 italic text-gray-500">{withTags(children)}</blockquote>,
                     }}
                   >
                     {message.content.trim()}
@@ -349,11 +439,8 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
 
                 if (block.type === 'tool-group') {
                   // We can't use useState inside map!
-                  // The previous code had useState inside map! 
-                  // "const [isExpanded, setIsExpanded] = useState(false);" was inside map callback!
-                  // That is a violation of Rules of Hooks. It probably "worked" if order didn't change, but it's bad.
-                  // I should refactor this to a component.
-                  return <LegacyToolGroup key={idx} block={block} />;
+                  // Refactored to LegacyToolGroup component
+                  return <LegacyToolGroup key={idx} block={block} variables={variables} />;
                 }
 
                 if (block.type === 'error') {
@@ -376,15 +463,15 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
                     <div key={idx} className="prose prose-invert prose-sm max-w-none text-gray-300 leading-relaxed text-left">
                       <ReactMarkdown
                         components={{
-                          p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{children}</p>,
-                          ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-gray-400">{children}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-gray-400">{children}</ol>,
-                          li: ({ children }) => <li className="pl-1">{children}</li>,
-                          strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-                          code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[13px] font-mono text-indigo-300 border border-white/5">{children}</code>,
+                          p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
+                          ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-gray-400">{withTags(children)}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-gray-400">{withTags(children)}</ol>,
+                          li: ({ children }) => <li className="pl-1">{withTags(children)}</li>,
+                          strong: ({ children }) => <strong className="font-semibold text-white">{withTags(children)}</strong>,
+                          code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[13px] font-mono text-indigo-300 border border-white/5">{withTags(children)}</code>,
                           pre: ({ children }) => <pre className="bg-[#1e1e20] p-3 rounded-lg border border-white/5 overflow-x-auto my-3 text-xs font-mono shadow-inner">{children}</pre>,
-                          a: ({ href, children }) => <a href={href} className="text-indigo-400 hover:text-indigo-300 hover:underline decoration-indigo-400/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{children}</a>,
-                          blockquote: ({ children }) => <blockquote className="border-l-2 border-indigo-500/50 pl-4 py-1 my-3 italic text-gray-500">{children}</blockquote>,
+                          a: ({ href, children }) => <a href={href} className="text-indigo-400 hover:text-indigo-300 hover:underline decoration-indigo-400/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
+                          blockquote: ({ children }) => <blockquote className="border-l-2 border-indigo-500/50 pl-4 py-1 my-3 italic text-gray-500">{withTags(children)}</blockquote>,
                         }}
                       >
                         {cleanContent}
@@ -394,6 +481,14 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
                 }
                 return null;
               })}
+
+              {/* Approval Request / Agent Control - Only if needs approval and is last */}
+              {needsApproval && (
+                <AgentControlUI
+                  onApprove={onApprove}
+                  variant={isPauseOnly ? 'pause' : 'approval'}
+                />
+              )}
 
               {/* Copy / Retry Actions - Minimalist, show on hover */}
               <div className="flex items-center gap-3 pt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
@@ -423,7 +518,7 @@ export function ChatMessage({ message, onRetry }: ChatMessageProps) {
 }
 
 // Helper component to avoid Hook loop issue in legacy rendering
-function LegacyToolGroup({ block }: { block: any }) {
+function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const isSuccess = block.status === 'success';
   const isFailed = block.status === 'failed';
@@ -478,7 +573,7 @@ function LegacyToolGroup({ block }: { block: any }) {
               "whitespace-pre-wrap pl-2 border-l",
               isFailed ? "text-red-300/80 border-red-500/20" : "text-gray-400 border-white/10"
             )}>
-              {block.result.trim()}
+              <ProcessedText text={block.result.trim()} variables={variables} />
             </div>
           </div>
         </div>

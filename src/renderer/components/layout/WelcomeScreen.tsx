@@ -1,13 +1,18 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowUp, MessageSquare, History, X, Trash2 } from 'lucide-react';
 import { useAppStore } from '@/stores/app.store';
 import { useChatStore } from '@/stores/chat.store';
 import { useSettingsStore } from '@/stores/settings.store';
+import { useAuthStore } from '@/stores/auth.store';
+import { supabase } from '@/lib/supabase';
 import { ModelSelector } from '@/components/chat/ModelSelector';
 import { MaxStepsSelector } from '@/components/chat/MaxStepsSelector';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { MentionInput } from '@/components/ui/mention-input';
+import { useTargetsStore } from '@/stores/targets.store';
+import { playbookService } from '@/services/playbookService';
 import navreachLogo from '@assets/navreach-white-welcome.png';
 
 const DEFAULT_SUGGESTIONS = [
@@ -48,52 +53,12 @@ const CONTEXTUAL_SUGGESTIONS: Record<string, { label: string; prompt: string }[]
   ],
 };
 
-const SYSTEM_PROMPT = `You are an autonomous browser automation agent. You analyze the page and decide actions based on what you see.
-
-WORKFLOW:
-1. browser_navigate to the URL
-2. browser_wait 2000ms for page load
-3. browser_snapshot to see all interactive elements
-4. Analyze the snapshot and decide what to click/type based on the task
-5. After each action, browser_snapshot again to see the result
-6. Continue until task is complete
-
-HOW TO USE SNAPSHOT:
-- The snapshot lists ALL interactive elements with their selectors and bounding boxes (rect)
-- Find elements by their label/name (e.g., "Reply", "Like", "Post", "Search")
-- Use the selector shown (e.g., [data-testid="reply"]) with browser_click
-- Use index parameter when multiple elements match (0 for first, 1 for second, etc.)
-- Check "Modal Open: true/false" to know if a dialog is open
-
-HOW TO DECIDE ACTIONS:
-- To click something: find it in snapshot, use its selector with browser_click
-- To type text: find the input field in snapshot, use browser_type with its selector
-- If element not visible: browser_scroll down, then browser_snapshot again
-- If modal opens: look for input fields and submit buttons in the new snapshot
-
-FALLBACK STRATEGIES (When normal click fails or elements are missing):
-1. **Coordinate Click (Fast)**:
-   - Check the snapshot for the element's 'rect' (x, y, w, h)
-   - Calculate center: x = rect.x + rect.w/2, y = rect.y + rect.h/2
-   - Call browser_click_coordinates(x, y)
-
-2. **Vision Analysis (Robust)**:
-   - Call browser_take_screenshot -> returns a file path
-   - Use read_file to view the screenshot image
-   - Analyze the image to find the element's visual position (x, y coordinates)
-   - Call browser_click_coordinates(x, y) based on your visual analysis
-
-TOOLS:
-- browser_navigate: Go to URL
-- browser_snapshot: See all page elements (ALWAYS use this to understand the page)
-- browser_click: Click element by selector, use index for nth match
-- browser_type: Type text into input field
-- browser_scroll: Scroll page if elements not visible
-- browser_wait: Wait for content to load
-- browser_click_coordinates: Click specific x,y position (fallback)
-- browser_take_screenshot: Save page image for analysis
-
-Be autonomous. Analyze snapshots. Find elements. Complete the task.`;
+const SYSTEM_PROMPT = `You are an autonomous browser automation agent.
+Your goal is to help the user with browser tasks, target management, and playbook execution.
+Be autonomous, analyze page states, and use the tools provided to achieve the user's request.
+IMPORTANT: When reporting results to the user, ALWAYS refer to items (like target lists, playbooks) by their NAME. Never expose UUIDs or internal IDs in your final response.
+APPROVALS: If a task requires user approval (like a playbook "Approval" node or a sensitive action), you MUST explicitly say "# PAUSED FOR APPROVAL" in your message to trigger the approval UI. Do not proceed until the user approves.
+TOOL EXECUTION: You MUST NEVER narrate that you are performing an action (like navigating, clicking, or Engaging) without actually calling the corresponding tool. If you say you are starting a cycle or navigating, you MUST call the tool in the SAME message. Never hallucinate tool results.`;
 
 interface WelcomeScreenProps {
   onSubmit: () => void;
@@ -116,11 +81,71 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     maxIterations,
     infiniteMode,
   } = useChatStore();
-  const { modelProviders } = useSettingsStore();
+  const { modelProviders, mcpServers, apiTools } = useSettingsStore();
+  const { lists, fetchLists } = useTargetsStore();
+  const { session } = useAuthStore();
+  const [playbooks, setPlaybooks] = useState<any[]>([]);
+
+  useEffect(() => {
+    playbookService.getPlaybooks().then(setPlaybooks);
+    if (lists.length === 0) {
+      fetchLists();
+    }
+  }, []);
+
+  const getGlobalVariables = useCallback(() => {
+    const groups: { nodeName: string; variables: { label: string; value: string; example?: string }[] }[] = [];
+
+    if (playbooks.length > 0) {
+      groups.push({
+        nodeName: 'Playbooks',
+        variables: playbooks.map(p => ({
+          label: p.name,
+          value: `{{playbooks.${p.id}}}`,
+          example: p.description
+        }))
+      });
+    }
+
+    if (lists.length > 0) {
+      groups.push({
+        nodeName: 'Target Lists',
+        variables: lists.map(l => ({
+          label: l.name,
+          value: `{{lists.${l.id}}}`,
+          example: `${l.target_count || 0} targets`
+        }))
+      });
+    }
+
+    if (mcpServers.length > 0) {
+      groups.push({
+        nodeName: 'MCP Servers',
+        variables: mcpServers.map(s => ({
+          label: s.name,
+          value: `{{mcp.${s.id}}}`,
+          example: (s.config as any).command || (s.config as any).url || 'No config'
+        }))
+      });
+    }
+
+    if (apiTools.length > 0) {
+      groups.push({
+        nodeName: 'API Tools',
+        variables: apiTools.map(t => ({
+          label: t.name,
+          value: `{{apis.${t.id}}}`,
+          example: t.endpoint
+        }))
+      });
+    }
+
+    return groups;
+  }, [playbooks, lists, mcpServers, apiTools]);
 
   const suggestions = useMemo(() => {
     if (!input.trim()) return DEFAULT_SUGGESTIONS.slice(0, 4);
-    
+
     const lowerInput = input.toLowerCase();
     for (const [keyword, contextSuggestions] of Object.entries(CONTEXTUAL_SUGGESTIONS)) {
       if (lowerInput.includes(keyword)) {
@@ -130,15 +155,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     return [];
   }, [input]);
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = '44px';
-      if (input) {
-        const scrollHeight = textareaRef.current.scrollHeight;
-        textareaRef.current.style.height = `${Math.min(scrollHeight, 200)}px`;
-      }
-    }
-  }, [input]);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,6 +197,18 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     setHasStarted(true);
     onSubmit();
 
+    // Use session from hook (guaranteed to be synced with App state)
+    let token = session?.access_token;
+    let refreshToken = session?.refresh_token;
+
+    // Final fallback
+    if (!token) {
+      console.warn('[WelcomeScreen] Token missing in store, trying direct fetch...');
+      const { data } = await supabase.auth.getSession();
+      token = data.session?.access_token;
+      refreshToken = data.session?.refresh_token;
+    }
+
     try {
       const result = await window.api.ai.chat({
         messages: [{ role: 'user', content: userMessage, id: crypto.randomUUID(), timestamp: Date.now() }],
@@ -189,6 +218,8 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
         maxIterations,
         infiniteMode,
         initialUserPrompt: userMessage,
+        accessToken: token,
+        refreshToken: refreshToken,
       });
 
       if (!result.success && result.error) {
@@ -325,16 +356,15 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
           transition={{ delay: 0.2, duration: 0.4 }}
         >
           <form onSubmit={handleSubmit}>
-            <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border focus-within:bg-secondary/40 transition-all overflow-hidden">
-              <textarea
-                ref={textareaRef}
+            <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border transition-all overflow-hidden">
+              <MentionInput
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="What would you like me to do?"
-                rows={1}
+                placeholder="What would you like me to do? (Use @ for variables)"
+                variableGroups={getGlobalVariables()}
                 autoFocus
-                className="w-full min-h-[80px] max-h-[150px] px-4 pt-4 pb-3 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60"
+                className="w-full min-h-[50px] max-h-[150px] px-4 pt-4 pb-3 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0"
               />
               <div className="px-3 py-2 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">

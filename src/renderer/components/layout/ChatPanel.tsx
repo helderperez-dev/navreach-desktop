@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChatStore } from '@/stores/chat.store';
 import { useSettingsStore } from '@/stores/settings.store';
+import { useAuthStore } from '@/stores/auth.store';
 import { useAppStore } from '@/stores/app.store';
 import { useDebugStore } from '@/stores/debug.store';
 import { ChatMessage } from '@/components/chat/ChatMessage';
@@ -12,53 +13,18 @@ import { ModelSelector } from '@/components/chat/ModelSelector';
 import { MaxStepsSelector } from '@/components/chat/MaxStepsSelector';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { cn } from '@/lib/utils';
+import { MentionInput } from '@/components/ui/mention-input';
+import { useTargetsStore } from '@/stores/targets.store';
+import { playbookService } from '@/services/playbookService';
+import { ProcessedText } from '@/lib/mention-utils';
+import { supabase } from '@/lib/supabase';
 
-const SYSTEM_PROMPT = `You are an autonomous browser automation agent. You analyze the page and decide actions based on what you see.
 
-WORKFLOW:
-1. browser_navigate to the URL
-2. browser_wait 2000ms for page load
-3. browser_snapshot to see all interactive elements
-4. Analyze the snapshot and decide what to click/type based on the task
-5. After each action, browser_snapshot again to see the result
-6. Continue until task is complete
 
-HOW TO USE SNAPSHOT:
-- The snapshot lists ALL interactive elements with their selectors and bounding boxes (rect)
-- Find elements by their label/name (e.g., "Reply", "Like", "Post", "Search")
-- Use the selector shown (e.g., [data-testid="reply"]) with browser_click
-- Use index parameter when multiple elements match (0 for first, 1 for second, etc.)
-- Check "Modal Open: true/false" to know if a dialog is open
-
-HOW TO DECIDE ACTIONS:
-- To click something: find it in snapshot, use its selector with browser_click
-- To type text: find the input field in snapshot, use browser_type with its selector
-- If element not visible: browser_scroll down, then browser_snapshot again
-- If modal opens: look for input fields and submit buttons in the new snapshot
-
-FALLBACK STRATEGIES (When normal click fails or elements are missing):
-1. **Coordinate Click (Fast)**:
-   - Check the snapshot for the element's 'rect' (x, y, w, h)
-   - Calculate center: x = rect.x + rect.w/2, y = rect.y + rect.h/2
-   - Call browser_click_coordinates(x, y)
-
-2. **Vision Analysis (Robust)**:
-   - Call browser_take_screenshot -> returns a file path
-   - Use read_file to view the screenshot image
-   - Analyze the image to find the element's visual position (x, y coordinates)
-   - Call browser_click_coordinates(x, y) based on your visual analysis
-
-TOOLS:
-- browser_navigate: Go to URL
-- browser_snapshot: See all page elements (ALWAYS use this to understand the page)
-- browser_click: Click element by selector, use index for nth match
-- browser_type: Type text into input field
-- browser_scroll: Scroll page if elements not visible
-- browser_wait: Wait for content to load
-- browser_click_coordinates: Click specific x,y position (fallback)
-- browser_take_screenshot: Save page image for analysis
-
-Be autonomous. Analyze snapshots. Find elements. Complete the task.`;
+const SYSTEM_PROMPT = `You are an autonomous browser automation agent.
+Your goal is to help the user with browser tasks, target management, and playbook execution.
+Be autonomous, analyze page states, and use the tools provided to achieve the user's request.
+IMPORTANT: When reporting results to the user, ALWAYS refer to items (like target lists, playbooks) by their NAME. Never expose UUIDs or internal IDs in your final response.`;
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   browser_navigate: 'Navigate',
@@ -173,9 +139,83 @@ export function ChatPanel() {
   const { addLog } = useDebugStore();
   const activeConversation = getActiveConversation();
 
+  const { lists, fetchLists } = useTargetsStore();
+  const { mcpServers, apiTools } = useSettingsStore(); // Using existing hook
+  const [playbooks, setPlaybooks] = useState<any[]>([]);
+
+  const { session } = useAuthStore();
+
+  // Debug logging
+  console.log('[ChatPanel] Render State:', {
+    hasSession: !!session,
+    hasToken: !!session?.access_token,
+    playbooksLen: playbooks.length,
+    listsLen: lists.length
+  });
+
   useEffect(() => {
-    window.api.ai.listWorkflows().then(setWorkflows);
-  }, []);
+    // Only fetch data if we have a session (or retry when session becomes available)
+    if (session) {
+      console.log('[ChatPanel] Session detected, fetching playbooks and lists...');
+      window.api.ai.listWorkflows().then(setWorkflows);
+      playbookService.getPlaybooks().then(data => {
+        console.log(`[ChatPanel] Fetched ${data.length} playbooks`);
+        setPlaybooks(data);
+      }).catch(err => console.error('[ChatPanel] Failed to fetch playbooks:', err));
+
+      fetchLists(); // targetsStore handles its own fetching logic but good to trigger it
+    }
+  }, [session, fetchLists]); // Re-run when session changes
+
+  const getGlobalVariables = useCallback(() => {
+    const groups: { nodeName: string; variables: { label: string; value: string; example?: string }[] }[] = [];
+
+    if (playbooks.length > 0) {
+      groups.push({
+        nodeName: 'Playbooks',
+        variables: playbooks.map(p => ({
+          label: p.name,
+          value: `{{playbooks.${p.id}}}`,
+          example: p.description
+        }))
+      });
+    }
+
+    if (lists.length > 0) {
+      groups.push({
+        nodeName: 'Target Lists',
+        variables: lists.map(l => ({
+          label: l.name,
+          value: `{{lists.${l.id}}}`,
+          example: `${l.target_count || 0} targets`
+        }))
+      });
+    }
+
+    if (mcpServers.length > 0) {
+      groups.push({
+        nodeName: 'MCP Servers',
+        variables: mcpServers.map(s => ({
+          label: s.name,
+          value: `{{mcp.${s.id}}}`,
+          example: (s.config as any).command || (s.config as any).url || 'No config'
+        }))
+      });
+    }
+
+    if (apiTools.length > 0) {
+      groups.push({
+        nodeName: 'API Tools',
+        variables: apiTools.map(t => ({
+          label: t.name,
+          value: `{{apis.${t.id}}}`,
+          example: t.endpoint
+        }))
+      });
+    }
+
+    return groups;
+  }, [playbooks, lists, mcpServers, apiTools]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -378,10 +418,8 @@ export function ChatPanel() {
     }
   }, [streamingContent, isStreaming]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isStreaming) return;
 
+  const sendMessage = useCallback(async (content: string) => {
     const enabledProviders = modelProviders.filter((p) => p.enabled);
 
     if (!selectedModel && enabledProviders.length === 0) {
@@ -405,35 +443,82 @@ export function ChatPanel() {
       return;
     }
 
-    let conversationId = activeConversationId;
-    if (!conversationId) {
-      conversationId = createConversation();
+    const conversationId = activeConversationId || createConversation();
+    if (!activeConversationId) {
+      setActiveConversation(conversationId);
     }
 
-    const userMessage = input.trim();
+    // Add user message immediately
     addMessage(conversationId, {
       role: 'user',
-      content: userMessage,
+      content: content,
     });
 
-    setInput('');
-    setIsStreaming(true);
-    setStreamingContent('');
+    // Clear input if it matches content (handle manual send vs programmatic)
+    if (input === content) {
+      setInput('');
+    }
 
-    const conversation = useChatStore.getState().conversations.find((c) => c.id === conversationId);
-    const messages = conversation?.messages || [];
-    const initialUserPrompt =
-      conversation?.messages.find((message) => message.role === 'user')?.content || userMessage;
+    setIsStreaming(true);
+    setHasStarted(true);
+
+    // Retrieve tokens
+    const { session } = useAuthStore.getState();
+    let token = session?.access_token;
+    let refreshToken = session?.refresh_token;
+
+    if (!token) {
+      // Fallback
+      const { data } = await supabase.auth.getSession();
+      token = data.session?.access_token;
+      refreshToken = data.session?.refresh_token;
+    }
+
+    // Prepare history
+    const history = conversations.find(c => c.id === conversationId)?.messages || [];
+    // We just added the user message, so history includes it if we fetch fresh, 
+    // but the store might not update immediately in this closure. 
+    // Actually addMessage updates the store synchronously usually, but let's be safe.
+    // The main process expects "messages" array.
+
+    // Construct the full message list for the API
+    const authMessage = { role: 'user', content: content, id: crypto.randomUUID(), timestamp: Date.now() };
+    // Get previous messages excluding the one we just added (to avoid dupes if we rely on store)
+    // Actually, simpler to just pass the history + text? 
+    // The window.api.ai.chat expects `messages` array.
+    // Let's grab the latest state from store helper or refetch. 
+    // Better: just construct it here.
+    const validHistory = history.map(m => ({
+      role: m.role,
+      content: m.content || '',
+      toolCalls: m.toolCalls,
+      toolResults: m.toolResults
+    }));
 
     try {
+      // The backend expects the whole history including the new message
+      const messagesPayload = [
+        ...validHistory,
+        // If the store hasn't updated yet, we might need to append the new message. 
+        // But addMessage is sync in Zustand actions usually. 
+        // However, to be safe, validHistory comes from `conversations` variable which IS from the hook. 
+        // The hook value `conversations` won't update until next render.
+        // So validHistory is OLD. We must append.
+        authMessage
+      ] as any[];
+
       const result = await window.api.ai.chat({
-        messages: messages,
+        messages: messagesPayload,
         model: model,
         provider: provider,
         systemPrompt: SYSTEM_PROMPT,
         maxIterations,
         infiniteMode,
-        initialUserPrompt,
+        initialUserPrompt: content, // This is used for some tailored prompts potentially
+        accessToken: token,
+        refreshToken: refreshToken,
+        playbooks: playbooks,
+        targetLists: lists
       });
 
       if (!result.success && result.error) {
@@ -450,12 +535,17 @@ export function ChatPanel() {
         content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`,
       });
     }
-  }, [input, isStreaming, selectedModel, modelProviders, activeConversationId, createConversation, addMessage, setIsStreaming]);
+  }, [modelProviders, selectedModel, activeConversationId, createConversation, setActiveConversation, addMessage, input, setInput, setIsStreaming, setHasStarted, conversations, maxIterations, infiniteMode, playbooks, lists]);
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim()) return;
+    await sendMessage(input.trim());
+  }, [input, sendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showSuggestions) {
       if (e.key === 'ArrowDown') {
-        e.preventDefault();
         setSelectedSuggestionIndex((prev) => (prev + 1) % matchedWorkflows.length);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
@@ -497,7 +587,7 @@ export function ChatPanel() {
   return (
     <div className="relative flex flex-col h-full bg-card">
       <div className="flex items-center justify-between h-12 px-4 border-b border-border">
-        <h2 className="text-sm font-semibold">{showHistory ? 'Chat History' : 'AI Assistant'}</h2>
+        <h2 className="text-sm font-semibold">{showHistory ? 'Chat History' : 'Navreach Agent'}</h2>
         <div className="flex items-center gap-1">
           {showHistory ? (
             <Button
@@ -604,13 +694,16 @@ export function ChatPanel() {
           </div>
         ) : (
           <div className="space-y-1">
-            {activeConversation.messages.map((message) => (
+            {activeConversation.messages.map((message, i) => (
               <ChatMessage
-                key={message.id}
+                key={message.id || i}
                 message={message}
+                variables={getGlobalVariables()} // Assuming getGlobalVariables() is the correct source for variables
                 onRetry={message.role === 'user' ? (content) => {
                   setInput(content);
-                } : undefined}
+                } : undefined} // Reverted onRetry to original logic as handleRetry is not defined
+                onApprove={() => sendMessage('Approved, proceed.')}
+                isLast={i === activeConversation.messages.length - 1}
               />
             ))}
             {isStreaming && (
@@ -618,7 +711,9 @@ export function ChatPanel() {
                 {/* 1. Narration Text (Streaming) */}
                 {streamingContent && (
                   <div className="bg-transparent px-4 py-2 text-sm text-gray-300 leading-relaxed animate-in fade-in slide-in-from-bottom-2 duration-300">
-                    <span className="typing-cursor">{streamingContent}</span>
+                    <span className="typing-cursor">
+                      <ProcessedText text={streamingContent} variables={getGlobalVariables()} />
+                    </span>
                   </div>
                 )}
 
@@ -706,7 +801,7 @@ export function ChatPanel() {
 
       <div className="p-3 space-y-2">
         <form onSubmit={handleSubmit}>
-          <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border focus-within:bg-secondary/40 transition-all overflow-hidden">
+          <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border transition-all overflow-hidden">
             {showSuggestions && (
               <div className="absolute bottom-full left-0 right-0 mb-2 mx-3 bg-[#1e1e20] border border-border/50 rounded-xl shadow-2xl overflow-hidden z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
                 <div className="px-3 py-2 border-b border-border/30 bg-secondary/20">
@@ -743,6 +838,28 @@ export function ChatPanel() {
                 </div>
               </div>
             )}
+            <MentionInput
+              value={input}
+              onChange={(e) => {
+                const value = e.target.value;
+                setInput(value);
+
+                if (value.startsWith('/')) {
+                  const query = value.slice(1).toLowerCase();
+                  const matches = workflows.filter((w) => w.name.toLowerCase().includes(query));
+                  setMatchedWorkflows(matches);
+                  setShowSuggestions(matches.length > 0);
+                  setSelectedSuggestionIndex(0);
+                } else {
+                  setShowSuggestions(false);
+                }
+              }}
+              onKeyDown={handleKeyDown}
+              variableGroups={getGlobalVariables()}
+              placeholder="Message NavReach... (Use @ for variables)"
+              className="w-full min-h-[44px] max-h-[150px] px-4 pt-3 pb-3 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0"
+            />
+            {/* 
             <textarea
               ref={textareaRef}
               value={input}
@@ -751,7 +868,8 @@ export function ChatPanel() {
               placeholder="Message NavReach..."
               rows={1}
               className="w-full min-h-[80px] max-h-[150px] px-4 pt-3 pb-3 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60"
-            />
+            /> 
+            */}
             <div className="px-3 py-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">
                 <ModelSelector />

@@ -56,6 +56,10 @@ declare global {
           maxIterations?: number;
           infiniteMode?: boolean;
           initialUserPrompt?: string;
+          accessToken?: string;
+          refreshToken?: string;
+          playbooks?: any[];
+          targetLists?: any[];
         }) => Promise<{ success: boolean; response?: string; error?: string }>;
         chatSync: (request: {
           messages: import('@shared/types').Message[];
@@ -65,6 +69,9 @@ declare global {
           maxIterations?: number;
           infiniteMode?: boolean;
           initialUserPrompt?: string;
+          accessToken?: string;
+          playbooks?: any[];
+          targetLists?: any[];
         }) => Promise<{ success: boolean; response?: string; error?: string }>;
         stop: () => Promise<void>;
         onStreamChunk: (callback: (data: { content: string; done: boolean; toolCall?: any; toolResult?: any }) => void) => () => void;

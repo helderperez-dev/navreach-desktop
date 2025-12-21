@@ -71,7 +71,7 @@ async function fetchOpenRouterModels(): Promise<ModelConfig[]> {
   try {
     const response = await fetch('https://openrouter.ai/api/v1/models');
     const data = await response.json();
-    
+
     if (data.data && Array.isArray(data.data)) {
       return data.data
         .filter((m: OpenRouterModel) => m.id && m.name)
@@ -136,14 +136,14 @@ export function ModelProvidersSettings() {
 
   const handleFetchModels = async () => {
     if (formData.type !== 'openrouter') return;
-    
+
     setIsFetchingModels(true);
     try {
       const fetchedModels = await fetchOpenRouterModels();
       if (fetchedModels.length > 0) {
         const newAvailableModels = { ...availableModels, openrouter: fetchedModels };
         setAvailableModels(newAvailableModels);
-        
+
         const newModelStates: Record<string, boolean> = {};
         fetchedModels.forEach(m => {
           newModelStates[m.id] = modelStates[m.id] ?? false;
@@ -247,13 +247,13 @@ export function ModelProvidersSettings() {
   };
 
   const enabledCount = Object.values(modelStates).filter(Boolean).length;
-  
+
   const currentModels = availableModels[formData.type || 'openai'] || [];
-  const filteredModels = searchQuery 
-    ? currentModels.filter(m => 
-        m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        m.id.toLowerCase().includes(searchQuery.toLowerCase())
-      )
+  const filteredModels = searchQuery
+    ? currentModels.filter(m =>
+      m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      m.id.toLowerCase().includes(searchQuery.toLowerCase())
+    )
     : currentModels;
 
   return (
@@ -262,7 +262,7 @@ export function ModelProvidersSettings() {
         <div>
           <h2 className="text-xl font-semibold">Model Providers</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure AI model providers for the chat assistant.
+            Configure AI model providers for the Navreach Agent.
           </p>
         </div>
         {!isAdding && !editingId && (
@@ -334,7 +334,7 @@ export function ModelProvidersSettings() {
 
           {formData.type !== 'custom' && (
             <div className="space-y-3 pt-2">
-              <div 
+              <div
                 className="flex items-center justify-between cursor-pointer"
                 onClick={() => setShowModels(!showModels)}
               >
@@ -383,7 +383,7 @@ export function ModelProvidersSettings() {
                   </button>
                 </div>
               </div>
-              
+
               {showModels && (
                 <>
                   <Input
@@ -515,7 +515,7 @@ export function ModelProvidersSettings() {
         {modelProviders.length === 0 && !isAdding && (
           <div className="text-center py-8 text-muted-foreground">
             <p>No model providers configured.</p>
-            <p className="text-sm">Add a provider to start using the AI assistant.</p>
+            <p className="text-sm">Add a provider to start using the Navreach Agent.</p>
           </div>
         )}
       </div>

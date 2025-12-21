@@ -6,10 +6,8 @@ import { Toaster } from 'sonner';
 import './styles/globals.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <App />
-      <Toaster position="bottom-right" theme="dark" />
-    </BrowserRouter>
-  </React.StrictMode>
+  <BrowserRouter>
+    <App />
+    <Toaster position="bottom-right" theme="dark" />
+  </BrowserRouter>
 );

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Globe, Settings, PanelLeft, MessageSquare } from 'lucide-react';
+import { Globe, Settings, PanelLeft, MessageSquare, Target as TargetIcon, Workflow } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import { Button } from '@/components/ui/button';
@@ -9,11 +9,13 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
-  view: 'browser' | 'settings';
+  view: 'browser' | 'settings' | 'targets' | 'playbooks';
 }
 
 const navItems: NavItem[] = [
   { id: 'browser', label: 'Browser', icon: <Globe className="h-5 w-5" />, view: 'browser' },
+  { id: 'targets', label: 'Targets', icon: <TargetIcon className="h-5 w-5" />, view: 'targets' },
+  { id: 'playbooks', label: 'Playbooks', icon: <Workflow className="h-5 w-5" />, view: 'playbooks' },
   { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, view: 'settings' },
 ];
 
@@ -61,7 +63,7 @@ export function Sidebar() {
               )}
             </Tooltip>
           ))}
-          
+
           {chatPanelCollapsed && activeView === 'browser' && (
             <Tooltip>
               <TooltipTrigger asChild>

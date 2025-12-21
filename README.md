@@ -5,7 +5,7 @@ NavReach is an AI-powered browser automation desktop application built with Elec
 ## Features
 
 - **Embedded Browser**: Full-featured browser with tab management, navigation controls, and webview support
-- **AI Agent Chat**: Conversational AI assistant with model selection and conversation memory
+- **AI Agent Chat**: Conversational Navreach Agent with model selection and conversation memory
 - **Browser Control Tools**: AI can navigate, click, type, screenshot, and extract content from web pages
 - **MCP Integration**: Model Context Protocol client for stdio and SSE servers
 - **API Tools**: Configure external APIs as tools for the AI agent

@@ -8,12 +8,7 @@ const POINTER_HELPERS = `
     if (document.getElementById('navreach-pointer-styles')) return;
     const style = document.createElement('style');
     style.id = 'navreach-pointer-styles';
-    style.textContent = \`
-      @keyframes navreachFloat {
-        0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-3px); }
-      }
-    \`;
+    style.textContent = ' @keyframes navreachFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } } ';
     document.head.appendChild(style);
   }
 
@@ -24,18 +19,7 @@ const POINTER_HELPERS = `
       indicator = document.createElement('div');
       indicator.id = 'navreach-pointer';
       const uniqueId = 'glass-gradient-' + Date.now();
-      indicator.innerHTML = \`
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#\${uniqueId})" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/>
-          <defs>
-            <linearGradient id="\${uniqueId}" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stop-color="rgba(80, 80, 80, 0.95)"/>
-              <stop offset="50%" stop-color="rgba(40, 40, 40, 0.95)"/>
-              <stop offset="100%" stop-color="rgba(10, 10, 10, 0.95)"/>
-            </linearGradient>
-          </defs>
-        </svg>
-      \`;
+      indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#' + uniqueId + ')" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/><defs><linearGradient id="' + uniqueId + '" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="rgba(80, 80, 80, 0.95)"/><stop offset="50%" stop-color="rgba(40, 40, 40, 0.95)"/><stop offset="100%" stop-color="rgba(10, 10, 10, 0.95)"/></linearGradient></defs></svg>';
       indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:navreachFloat 3s ease-in-out infinite;transition:left 0.3s ease, top 0.3s ease;';
       document.body.appendChild(indicator);
     }
@@ -44,46 +28,129 @@ const POINTER_HELPERS = `
   }
 `;
 
+const BASE_SCRIPT_HELPERS = `
+  const logs = [];
+  function log(msg, data) {
+    logs.push({ time: new Date().toISOString(), msg, data });
+  }
+
+  function isVisible(el) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    const style = window.getComputedStyle(el);
+    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+  }
+
+  function wait(ms) {
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      const checking = () => {
+        if (window.__NAVREACH_STOP__) {
+          reject(new Error('Stopped by user'));
+          return;
+        }
+        if (Date.now() - start >= ms) {
+          resolve();
+        } else {
+          setTimeout(checking, 100);
+        }
+      };
+      checking();
+    });
+  }
+
+  async function safeClick(el, label) {
+    const clickable = el.closest('button,[role="button"]') || el;
+    log('Clicking ' + label, { tagName: clickable.tagName });
+    clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+    await wait(400);
+    const rect = clickable.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    if (typeof movePointer === 'function') movePointer(x, y);
+    try { clickable.focus(); } catch (e) {}
+    await wait(150);
+    try {
+      clickable.click();
+    } catch (e) {
+      log('Native click failed on ' + label, { error: e.toString() });
+      throw e;
+    }
+    await wait(800);
+  }
+
+  async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
+    log('Attempting followAuthorOfTweet', { desiredAction });
+    const caret = tweet.querySelector('[data-testid="caret"]');
+    if (!caret) {
+      log('Caret not found in tweet');
+      return { success: false, error: 'Caret menu not found' };
+    }
+    
+    await safeClick(caret, 'Caret Menu');
+    await wait(800);
+    
+    const menu = document.querySelector('[data-testid="Dropdown"]');
+    if (!menu) {
+      log('Dropdown menu not found');
+      return { success: false, error: 'Dropdown menu not found' };
+    }
+    
+    const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+    const followStrings = ['Follow @', 'Sigue a @', 'Siga @', 'Seguir @'];
+    const unfollowStrings = ['Unfollow @', 'Dejar de seguir @', 'Deixar de seguir @'];
+    
+    const followItem = items.find(el => {
+      const txt = el.innerText || '';
+      return followStrings.some(s => txt.includes(s));
+    });
+    
+    const unfollowItem = items.find(el => {
+      const txt = el.innerText || '';
+      return unfollowStrings.some(s => txt.includes(s));
+    });
+    
+    if ((desiredAction === 'unfollow' || desiredAction === 'toggle') && unfollowItem) {
+      await safeClick(unfollowItem, 'Unfollow Menu Item');
+      await wait(400);
+      const confirm = document.querySelector('[data-testid="confirmationSheetConfirm"]');
+      if (confirm && isVisible(confirm)) await safeClick(confirm, 'Confirm Unfollow');
+      return { success: true, message: 'Unfollowed' };
+    }
+    
+    if ((desiredAction === 'follow' || desiredAction === 'toggle') && followItem) {
+      await safeClick(followItem, 'Follow Menu Item');
+      return { success: true, message: 'Followed' };
+    }
+    
+    if (desiredAction === 'follow' && unfollowItem) return { success: true, already: true, message: 'Already followed' };
+    if (desiredAction === 'unfollow' && followItem) return { success: true, already: true, message: 'Already unfollowed' };
+    
+    // Close menu if nothing found
+    await safeClick(caret, 'Close Caret Menu');
+    return { success: false, error: 'Follow/Unfollow item not found in menu' };
+  }
+`;
+
 export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
   const searchTool = new DynamicStructuredTool({
     name: 'x_search',
-    description:
-      'On X.com (Twitter), open the search results page for a given query. Supports filters like Top, Latest, People, Photos, or Videos. WARNING: This tool performs navigation - ensure you have taken a snapshot of the current page state before using this if you just completed an action (reply, post, like, etc.).',
+    description: 'On X.com (Twitter), open the search results page for a given query.',
     schema: z.object({
-      query: z
-        .string()
-        .min(1, 'Search query is required.')
-        .describe('Keywords or hashtags to search for. URL encoding handled automatically.'),
-      filter: z
-        .enum(['top', 'latest', 'people', 'photos', 'videos'])
-        .nullable()
-        .optional()
-        .describe('Result filter tab to open. Defaults to latest.'),
-      src: z
-        .string()
-        .nullable()
-        .optional()
-        .describe('Custom `src` query parameter if needed. Defaults to recent_search_click.'),
+      query: z.string().min(1).describe('Keywords or hashtags to search for.'),
+      filter: z.enum(['top', 'latest', 'people', 'photos', 'videos']).nullable().describe('Result filter tab.').default(null),
     }),
-    func: async ({ query, filter, src }) => {
+    func: async ({ query, filter }: { query: string; filter?: string | null }) => {
       try {
         const contents = ctx.getContents();
-        const filterMap: Record<string, string> = {
-          top: 'top',
-          latest: 'live',
-          people: 'user',
-          photos: 'image',
-          videos: 'video',
-        };
+        const filterMap: Record<string, string> = { top: 'top', latest: 'live', people: 'user', photos: 'image', videos: 'video' };
         const params = new URLSearchParams();
         params.set('q', query);
-        params.set('src', src ?? 'recent_search_click');
-        const resolvedFilter = filter ?? 'latest';
-        params.set('f', filterMap[resolvedFilter]);
+        params.set('src', 'typed_query');
+        if (filter) params.set('f', filterMap[filter] || 'live');
         const url = `https://x.com/search?${params.toString()}`;
-
         await contents.loadURL(url);
-
         return JSON.stringify({ success: true, url });
       } catch (error) {
         return JSON.stringify({ success: false, error: String(error) });
@@ -91,1040 +158,428 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     },
   });
 
-  const likeTool = new DynamicStructuredTool({
-    name: 'x_like',
-    description: 'On X.com (Twitter), like/unlike a post using robust click simulation. Use index when multiple buttons match (0-based).',
+  const advancedSearchTool = new DynamicStructuredTool({
+    name: 'x_advanced_search',
+    description: 'On X.com (Twitter), perform a highly filtered search.',
     schema: z.object({
-      index: z.number().nullable().optional().describe('0-based index of the like/unlike button to click among visible posts. Default 0.'),
-      action: z.enum(['like', 'unlike', 'toggle']).nullable().optional().describe('Action to perform. Default is like.'),
+      allWords: z.string().nullable().default(null),
+      exactPhrase: z.string().nullable().default(null),
+      anyWords: z.string().nullable().default(null),
+      noneWords: z.string().nullable().default(null),
+      hashtags: z.string().nullable().default(null),
+      fromAccount: z.string().nullable().default(null),
+      toAccount: z.string().nullable().default(null),
+      minLikes: z.number().nullable().default(null),
+      since: z.string().nullable().default(null),
+      until: z.string().nullable().default(null),
+      filter: z.enum(['top', 'latest', 'people', 'photos', 'videos']).nullable().default(null),
     }),
-    func: async ({ index, action }) => {
-      const resolvedIndex = index ?? 0;
-      const resolvedAction = action ?? 'like';
+    func: async (args: {
+      allWords?: string | null;
+      exactPhrase?: string | null;
+      anyWords?: string | null;
+      noneWords?: string | null;
+      hashtags?: string | null;
+      fromAccount?: string | null;
+      toAccount?: string | null;
+      minLikes?: number | null;
+      since?: string | null;
+      until?: string | null;
+      filter?: string | null;
+    }) => {
       try {
         const contents = ctx.getContents();
+        const queryParts: string[] = [];
+        if (args.allWords) queryParts.push(args.allWords.trim());
+        if (args.exactPhrase) queryParts.push(`"${args.exactPhrase.trim()}"`);
+        if (args.anyWords) {
+          const p = args.anyWords.split(/[\\s,]+/).filter(Boolean);
+          if (p.length) queryParts.push(`(${p.join(' OR ')})`);
+        }
+        if (args.noneWords) {
+          args.noneWords.split(/[\\s,]+/).filter(Boolean).forEach(w => queryParts.push(`-${w}`));
+        }
+        if (args.hashtags) {
+          args.hashtags.split(/[\\s,]+/).filter(Boolean).forEach(h => {
+            const t = h.startsWith('#') ? h.slice(1) : h;
+            queryParts.push(`#${t}`);
+          });
+        }
+        if (args.fromAccount) queryParts.push(`from:${args.fromAccount.replace('@', '').trim()}`);
+        if (args.toAccount) queryParts.push(`to:${args.toAccount.replace('@', '').trim()}`);
+        if (args.minLikes && args.minLikes > 0) queryParts.push(`min_faves:${args.minLikes}`);
+        if (args.since) queryParts.push(`since:${args.since}`);
+        if (args.until) queryParts.push(`until:${args.until}`);
 
+        const q = queryParts.join(' ');
+        if (!q.trim()) return JSON.stringify({ success: false, error: 'No criteria' });
+
+        const filterMap: any = { top: 'top', latest: 'live', people: 'user', photos: 'image', videos: 'video' };
+        const params = new URLSearchParams();
+        params.set('q', q);
+        params.set('src', 'typed_query');
+        if (args.filter) params.set('f', filterMap[args.filter] || 'live');
+        const finalUrl = `https://x.com/search?${params.toString()}`;
+
+        await contents.loadURL(finalUrl);
+        return JSON.stringify({ success: true, url: finalUrl, query: q });
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    },
+  });
+
+  const likeTool = new DynamicStructuredTool({
+    name: 'x_like',
+    description: 'On X.com (Twitter), like/unlike a post.',
+    schema: z.object({
+      index: z.union([z.number(), z.string()]).nullable().describe('0-based index of the post.').default(0),
+      action: z.enum(['like', 'unlike', 'toggle']).nullable().default('like'),
+    }),
+    func: async ({ index, action }: { index: number | string | null; action: 'like' | 'unlike' | 'toggle' | null }) => {
+      const contents = ctx.getContents();
+      const rIndex = parseInt(String(index ?? 0), 10);
+      const rAction = action ?? 'like';
+      try {
         const result = await contents.executeJavaScript(`
           (async function() {
             ${POINTER_HELPERS}
+            ${BASE_SCRIPT_HELPERS}
             const host = window.location.hostname || '';
-            if (!host.includes('x.com') && !host.includes('twitter.com')) {
-              return { success: false, error: 'Not on x.com/twitter.com', url: window.location.href };
+            if (!host.includes('x.com') && !host.includes('twitter.com')) return { success: false, error: 'Not on x.com' };
+
+            const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
+            let target = null;
+            if (tweets.length > 0) {
+              target = tweets[${rIndex}] || tweets[tweets.length - 1];
+            } else {
+              target = document.body;
             }
 
-            // Guard: never attempt a reply while in the new-post composer.
-            // If the agent ends up on /compose/post, it must navigate back to timeline/search and retry.
-            if ((window.location.href || '').includes('/compose/post')) {
-              try {
-                const fallbackUrl = document.referrer && document.referrer.includes('x.com') ? document.referrer : 'https://x.com/home';
-                window.location.href = fallbackUrl;
-                await new Promise(r => setTimeout(r, 800));
-              } catch (_) {}
-              return {
-                success: false,
-                error: 'Currently on /compose/post (new post composer). Cannot reply from here. Returned to timeline. Retry x_reply from a visible tweet.'
-              };
-            }
+            const likeBtns = Array.from(target.querySelectorAll('button[data-testid="like"], [data-testid="like"]')).filter(isVisible);
+            const unlikeBtns = Array.from(target.querySelectorAll('button[data-testid="unlike"], [data-testid="unlike"]')).filter(isVisible);
 
-            function isVisible(el) {
-              if (!el) return false;
-              const rect = el.getBoundingClientRect();
-              if (rect.width === 0 || rect.height === 0) return false;
-              const style = window.getComputedStyle(el);
-              return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-            }
-
-            function pick(list, idx) {
-              if (list.length === 0) return null;
-              if (idx >= 0 && idx < list.length) return list[idx];
-              return list[list.length - 1];
-            }
-
-            const likeCandidates = Array.from(document.querySelectorAll('button[data-testid="like"], [data-testid="like"]')).filter(isVisible);
-            const unlikeCandidates = Array.from(document.querySelectorAll('button[data-testid="unlike"], [data-testid="unlike"]')).filter(isVisible);
-
-            const desired = ${JSON.stringify(resolvedAction)};
-            const idx = ${resolvedIndex};
-
-            let element = null;
-            let effectiveAction = desired;
+            const desired = ${JSON.stringify(rAction)};
+            
+            let el = null;
+            let act = desired;
 
             if (desired === 'like') {
-              element = pick(likeCandidates, idx);
-              if (!element && unlikeCandidates.length > 0) {
-                return { success: true, message: 'Already liked', already: true };
-              }
+              el = likeBtns[0];
+              if (!el && unlikeBtns.length > 0) return { success: true, already: true, message: 'Already liked' };
             } else if (desired === 'unlike') {
-              element = pick(unlikeCandidates, idx);
-              if (!element && likeCandidates.length > 0) {
-                return { success: true, message: 'Already unliked', already: true };
-              }
+              el = unlikeBtns[0];
+              if (!el && likeBtns.length > 0) return { success: true, already: true, message: 'Already unliked' };
             } else {
-              element = pick(likeCandidates, idx);
-              if (!element) {
-                element = pick(unlikeCandidates, idx);
-                if (element) effectiveAction = 'unlike';
-              } else {
-                effectiveAction = 'like';
-              }
+              el = likeBtns[0] || unlikeBtns[0];
+              act = likeBtns[0] ? 'like' : 'unlike';
             }
 
-            if (!element) {
-              return { success: false, error: 'No like/unlike buttons found' };
-            }
-
-            const clickable = element.closest('button,[role="button"]') || element;
-
-            clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-            await new Promise(r => setTimeout(r, 100));
-
-            const rect = clickable.getBoundingClientRect();
-            const x = rect.left + rect.width / 2;
-            const y = rect.top + rect.height / 2;
-            movePointer(x, y);
-
-            const eventOptions = {
-              bubbles: true,
-              cancelable: true,
-              view: window,
-              clientX: x,
-              clientY: y,
-              screenX: x,
-              screenY: y,
-              buttons: 1,
-              pointerId: 1,
-              isPrimary: true
-            };
-
-            try { clickable.dispatchEvent(new MouseEvent('mousemove', eventOptions)); } catch (_) {}
-            try { clickable.dispatchEvent(new MouseEvent('mouseover', eventOptions)); } catch (_) {}
-            try { clickable.dispatchEvent(new PointerEvent('pointerdown', eventOptions)); } catch (_) {}
-            try { clickable.dispatchEvent(new MouseEvent('mousedown', eventOptions)); } catch (_) {}
-
-            try { clickable.focus(); } catch (_) {}
-
-            try { clickable.dispatchEvent(new PointerEvent('pointerup', eventOptions)); } catch (_) {}
-            try { clickable.dispatchEvent(new MouseEvent('mouseup', eventOptions)); } catch (_) {}
-            try { clickable.dispatchEvent(new MouseEvent('click', eventOptions)); } catch (_) {}
-            try { clickable.click(); } catch (_) {}
-
-            await new Promise(r => setTimeout(r, 300));
-
-            return {
-              success: true,
-              message: effectiveAction === 'unlike' ? 'Unliked post' : 'Liked post',
-              index: idx
-            };
+            if (!el) return { success: false, error: 'No buttons found' };
+            await safeClick(el, act === 'unlike' ? 'Unlike' : 'Like');
+            return { success: true, message: act + ' done' };
           })()
         `);
-
         return JSON.stringify(result);
-      } catch (error) {
-        return JSON.stringify({ success: false, error: String(error) });
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
       }
-    },
+    }
   });
 
   const replyTool = new DynamicStructuredTool({
     name: 'x_reply',
-    description: 'On X.com (Twitter), reply to a visible post. Find a tweet you want to reply to, then use this tool with the reply text and the index of the reply button (0-based from top).',
+    description: 'On X.com (Twitter), reply to a post.',
     schema: z.object({
-      text: z
-        .string()
-        .min(1, 'Reply text is required.')
-        .describe('The text to post in the reply. Plain text only, newlines allowed.'),
-      index: z
-        .number()
-        .nullable()
-        .optional()
-        .describe('0-based index of the reply button to target among visible tweets. Default 0 (first reply button).'),
+      text: z.string().min(1),
+      index: z.union([z.number(), z.string()]).nullable().describe('0-based index of the post.').default(0),
     }),
-    func: async ({ text, index }) => {
-      const resolvedIndex = index ?? 0;
+    func: async ({ text, index }: { text: string; index: number | string | null }) => {
+      const contents = ctx.getContents();
+      const rIndex = parseInt(String(index ?? 0), 10);
       try {
-        const contents = ctx.getContents();
-
-        // First check if we're on the correct page
-        const pageCheck = await contents.executeJavaScript(`
-          (function() {
-            const host = window.location.hostname || '';
-            if (!host.includes('x.com') && !host.includes('twitter.com')) {
-              return { valid: false, error: 'Not on x.com/twitter.com', url: window.location.href };
-            }
-            return { valid: true };
-          })()
-        `);
-
-        if (!pageCheck.valid) {
-          return JSON.stringify(pageCheck);
-        }
-
-        // Execute JavaScript using executeJavaScript
         const result = await contents.executeJavaScript(`
           (async function() {
-            const logs = [];
-            function log(msg, data) {
-              logs.push({ time: new Date().toISOString(), msg, data });
-            }
+            ${POINTER_HELPERS}
+            ${BASE_SCRIPT_HELPERS}
+            const host = window.location.hostname || '';
+            if (!host.includes('x.com') && !host.includes('twitter.com')) return { success: false, error: 'Not on x.com' };
 
-            try {
-              ${POINTER_HELPERS}
-              const replyText = ${JSON.stringify(text)};
-              const targetIndex = ${resolvedIndex};
+            const btns = Array.from(document.querySelectorAll('[data-testid="reply"]')).filter(isVisible);
+            if (!btns.length) return { success: false, error: 'No reply buttons' };
+            const btn = btns[${rIndex}] || btns[btns.length - 1];
 
-              log('Starting x_reply', { index: targetIndex });
+            await safeClick(btn, 'Reply Button');
+            await wait(1800);
 
-              // Helpers
-              function isVisible(el) {
-                if (!el) return false;
-                const rect = el.getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0) return false;
-                const style = window.getComputedStyle(el);
-                return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-              }
+            const modals = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible);
+            const modal = modals.length ? modals[modals.length - 1] : null;
+            const searchRoot = modal || document;
 
-              function wait(ms) { 
-                return new Promise((resolve, reject) => {
-                  const checking = () => {
-                    if (window.__NAVREACH_STOP__) {
-                       reject(new Error('Stopped by user'));
-                       return;
-                    }
-                    if (Date.now() - start >= ms) {
-                      resolve();
-                    } else {
-                      setTimeout(checking, 100);
-                    }
-                  };
-                  const start = Date.now();
-                  checking();
-                });
-              }
+            let composer = searchRoot.querySelector('[data-testid="tweetTextarea_0"]') || 
+                           searchRoot.querySelector('div[role="textbox"][contenteditable="true"]');
+            
+            if (!composer) return { success: false, error: 'No composer found after clicking reply' };
+            
+            await safeClick(composer, 'Composer');
+            composer.focus();
+            document.execCommand('selectAll', false, null); // Clear existing if any
+            document.execCommand('insertText', false, ${JSON.stringify(text)});
+            // Removed manual input event dispatch which caused duplication on some React inputs
+            await wait(500);
 
-              async function simulateClick(el, label) {
-                const clickable = el.closest('button,[role="button"]') || el;
-                
-                log('Interacting with element (Direct DOM)', { label, tagName: clickable.tagName, testId: clickable.getAttribute('data-testid') });
-
-                // Scroll to center to be safe, but we won't rely on coordinates
-                clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-                await wait(500);
-
-                // Highlight for user visibility (optional debug visual)
-                const rect = clickable.getBoundingClientRect();
-                const x = rect.left + rect.width / 2;
-                const y = rect.top + rect.height / 2;
-                log('Element visual position', { x, y });
-                if (typeof movePointer === 'function') movePointer(x, y);
-
-                // DIRECT DOM INTERACTION
-                // We avoid dispatching MouseEvents by coordinates because they are physically hitting the Sidebar.
-                // React/Web apps generally respond well to native .click() on button elements.
-                
-                try {
-                  clickable.focus();
-                  log('Focused element');
-                } catch (e) {
-                  log('Focus failed', { error: e.toString() });
-                }
-
-                await wait(200);
-
-                try {
-                  log('Executing native .click()');
-                  clickable.click();
-                } catch (e) {
-                  log('Click failed', { error: e.toString() });
-                  throw e;
-                }
-                
-                await wait(1000);
-                return clickable;
-              }
-
-              function insertDraftText(target, text) {
-                // Clear first
-                if (target.textContent.length > 0) {
-                   try { document.execCommand('selectAll', false, null); document.execCommand('delete', false, null); } catch(e) {}
-                   target.textContent = '';
-                }
-
-                let inserted = false;
-                try {
-                  target.focus();
-                  inserted = document.execCommand('insertText', false, text);
-                } catch (e) {}
-
-                if (!inserted) {
-                  target.textContent = text;
-                }
-
-                try {
-                  target.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: text }));
-                  target.dispatchEvent(new Event('change', { bubbles: true }));
-                } catch (e) {}
-              }
-
-              // Get reply buttons
-              const replyButtons = Array.from(document.querySelectorAll('[data-testid="reply"]')).filter(isVisible);
-
-              if (replyButtons.length === 0) {
-                return { success: false, error: 'No reply buttons found (data-testid="reply")', logs };
-              }
-
-              if (targetIndex >= replyButtons.length) {
-                return { success: false, error: 'Reply index ' + targetIndex + ' out of range. Only ' + replyButtons.length + ' visible.', logs };
-              }
-
-              const targetButton = replyButtons[targetIndex];
-              log('Target button found', { index: targetIndex, buttonHTML: targetButton.outerHTML.substring(0, 50) });
-
-              // 1. Context check
-              const tweetContainer = targetButton.closest('[data-testid="tweet"]');
-              let repliedToContext = { author: 'unknown', text: 'unknown' };
-              if (tweetContainer) {
-                const authorEl = tweetContainer.querySelector('[data-testid="User-Name"]');
-                const textEl = tweetContainer.querySelector('[data-testid="tweetText"]');
-                if (authorEl) repliedToContext.author = authorEl.innerText.split('\\n')[0] || 'unknown';
-                if (textEl) repliedToContext.text = textEl.innerText.substring(0, 50) + '...';
-              }
-
-              // 2. Click Reply
-              log('Attempting to click reply button');
-              await simulateClick(targetButton, 'Reply Button');
-              await wait(2000);
-
-              // 3. Find Composer
-              function findComposer() {
-                const selectors = [
-                  '[data-testid="tweetTextarea_0"]',
-                  '[data-testid="tweetTextarea_1"]',
-                  'div[role="textbox"][contenteditable="true"]'
-                ];
-
-                // Dialog priority
-                const dialog = document.querySelector('[role="dialog"]');
-                if (dialog && isVisible(dialog)) {
-                   for (const sel of selectors) {
-                     const els = dialog.querySelectorAll(sel);
-                     for (const el of els) if (isVisible(el)) return el;
-                   }
-                }
-
-                // Global fallback
-                for (const sel of selectors) {
-                  const els = document.querySelectorAll(sel);
-                  for (const el of els) if (isVisible(el)) return el;
-                }
-                return null;
-              }
-
-              let composer = null;
-              for (let i = 0; i < 15; i++) {
-                await wait(400);
-                composer = findComposer();
-                if (composer) break;
-              }
-
-              if (!composer) {
-                log('Composer Not Found', { url: window.location.href });
-                return { success: false, error: 'Reply composer did not appear.', logs };
-              }
-              
-              log('Composer Found', { composerClass: composer.className });
-
-              // 4. Typing
-              await simulateClick(composer, 'Composer Text Area');
-              composer.focus();
-              await wait(500);
-
-              insertDraftText(composer, replyText);
-              await wait(800);
-
-              // Validate/Trigger
-              try {
-                composer.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
-                await wait(50);
-                composer.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
-              } catch(e) {}
-              
-              const currentContent = (composer.innerText || composer.textContent || '').trim();
-              if (currentContent.length < 1 && replyText.length > 0) {
-                  // Retry once
-                  insertDraftText(composer, replyText);
-                  await wait(800);
-              }
-
-              // 5. Send
-              let sendButton = null;
-              // Look in dialog first
-              const dialog = document.querySelector('[role="dialog"]');
-              if (dialog) {
-                 sendButton = dialog.querySelector('[data-testid="tweetButton"]');
-              }
-              if (!sendButton) {
-                 const btns = Array.from(document.querySelectorAll('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]')).filter(isVisible);
-                 sendButton = btns[btns.length - 1];
-              }
-
-              if (!sendButton) {
-                return { success: false, error: 'Reply/Send button not found', logs };
-              }
-
-              if (sendButton.disabled || sendButton.getAttribute('aria-disabled') === 'true') {
-                 return { success: false, error: 'Send button is disabled', debug: { content: composer.innerText }, logs };
-              }
-              
-              log('Clicking Send Button');
-              await simulateClick(sendButton, 'Send Button');
-              await wait(3000);
-
-              // Check if modal still open
-              const stillOpen = document.querySelector('[role="dialog"] [data-testid="tweetTextarea_0"]');
-              if (stillOpen && isVisible(stillOpen)) {
-                return { success: false, error: 'Modal still open after clicking send', logs };
-              }
-
-              return { success: true, message: 'Replied successfully', context: repliedToContext, logs };
-
-            } catch (err) {
-              return { success: false, error: err.toString(), stack: err.stack, logs };
-            }
+            const send = searchRoot.querySelector('[data-testid="tweetButton"]');
+            if (!send) return { success: false, error: 'No send button found' };
+            await safeClick(send, 'Send Button');
+            await wait(2000);
+            return { success: true, message: 'Replied' };
           })()
         `);
-
         return JSON.stringify(result);
-      } catch (error) {
-        return JSON.stringify({ success: false, error: `Tool execution failed: ${error}` });
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
       }
-    },
+    }
   });
 
   const postTool = new DynamicStructuredTool({
     name: 'x_post',
-    description: 'On X.com (Twitter), create a BRAND NEW standalone post using the new-post composer (typically /compose/post) and click **Post**. Do NOT use this for replying to someone\'s tweet. If the user intent is to reply/comment/respond to an existing post, you MUST use x_reply instead.',
-    schema: z.object({
-      text: z
-        .string()
-        .min(1, 'Post text is required.')
-        .describe('Full text of the post to publish. Include hashtags/mentions as needed.'),
-    }),
-    func: async ({ text }) => {
+    description: 'On X.com (Twitter), create a new post.',
+    schema: z.object({ text: z.string().min(1) }),
+    func: async ({ text }: { text: string }) => {
+      const contents = ctx.getContents();
       try {
-        const contents = ctx.getContents();
         const result = await contents.executeJavaScript(`
           (async function() {
+            ${POINTER_HELPERS}
+            ${BASE_SCRIPT_HELPERS}
             const host = window.location.hostname || '';
-            if (!host.includes('x.com') && !host.includes('twitter.com')) {
-              return { success: false, error: 'Not on x.com/twitter.com', url: window.location.href };
-            }
+            if (!host.includes('x.com') && !host.includes('twitter.com')) return { success: false, error: 'Not on x.com' };
 
-            const postText = ${JSON.stringify(text)};
-
-            function isVisible(el) {
-              if (!el) return false;
-              const rect = el.getBoundingClientRect();
-              if (rect.width === 0 || rect.height === 0) return false;
-              const style = window.getComputedStyle(el);
-              return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-            }
-
-            async function simulateClick(el) {
-              const clickable = el.closest('button,[role="button"]') || el;
-              clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-              await new Promise(r => setTimeout(r, 120));
-              const rect = clickable.getBoundingClientRect();
-              const x = rect.left + rect.width / 2;
-              const y = rect.top + rect.height / 2;
-              const options = {
-                bubbles: true,
-                cancelable: true,
-                view: window,
-                clientX: x,
-                clientY: y,
-                screenX: x,
-                screenY: y,
-                buttons: 1,
-                pointerId: 1,
-                isPrimary: true
-              };
-              try { clickable.dispatchEvent(new MouseEvent('mousemove', options)); } catch (_) {}
-              try { clickable.dispatchEvent(new MouseEvent('mouseover', options)); } catch (_) {}
-              try { clickable.dispatchEvent(new PointerEvent('pointerdown', options)); } catch (_) {}
-              try { clickable.dispatchEvent(new MouseEvent('mousedown', options)); } catch (_) {}
-              try { clickable.focus(); } catch (_) {}
-              try { clickable.dispatchEvent(new PointerEvent('pointerup', options)); } catch (_) {}
-              try { clickable.dispatchEvent(new MouseEvent('mouseup', options)); } catch (_) {}
-              try { clickable.dispatchEvent(new MouseEvent('click', options)); } catch (_) {}
-              try { clickable.click(); } catch (_) {}
-              await new Promise(r => setTimeout(r, 150));
-              return clickable;
-            }
-
-            function insertDraftText(target, text) {
-              let inserted = false;
-              try {
-                const selection = window.getSelection();
-                if (selection) {
-                  selection.removeAllRanges();
-                  const range = document.createRange();
-                  range.selectNodeContents(target);
-                  selection.addRange(range);
-                  inserted = document.execCommand && document.execCommand('insertText', false, text);
-                  if (!inserted) {
-                    inserted = document.execCommand && document.execCommand('selectAll', false, undefined);
-                    inserted = document.execCommand && document.execCommand('insertText', false, text);
-                  }
-                }
-              } catch (_) {
-                inserted = false;
-              }
-
-              if (!inserted) {
-                target.textContent = '';
-                target.appendChild(document.createTextNode(text));
-              }
-
-              try {
-                target.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true, data: text }));
-              } catch (_) {
-                const evt = document.createEvent('Event');
-                evt.initEvent('input', true, true);
-                target.dispatchEvent(evt);
-              }
-            }
-
-            function findComposer() {
-              const selectors = [
-                '[data-testid="tweetTextarea_0"] div[contenteditable="true"]',
-                '[data-testid="tweetTextarea_1"] div[contenteditable="true"]',
-                '[data-testid="tweetTextarea_0"][contenteditable="true"]',
-                '[data-testid="tweetTextarea_1"][contenteditable="true"]',
-                'div[role="textbox"][contenteditable="true"]'
-              ];
-              for (const sel of selectors) {
-                const el = document.querySelector(sel);
-                if (el && isVisible(el)) return el;
-              }
-              return null;
-            }
-
-            let composer = findComposer();
-
+            let composer = document.querySelector('[data-testid="tweetTextarea_0"]') || 
+                           document.querySelector('div[role="textbox"][contenteditable="true"]');
+            
             if (!composer) {
-              const openButtons = Array.from(document.querySelectorAll('[data-testid="SideNav_NewTweet_Button"], [data-testid="AppTabBar_NewTweet_Button"], [data-testid="AppTabBar_Compose_Button"]')).filter(isVisible);
-              if (openButtons.length > 0) {
-                await simulateClick(openButtons[0]);
-                await new Promise(r => setTimeout(r, 200));
-                composer = findComposer();
+              const open = document.querySelector('[data-testid="SideNav_NewTweet_Button"]') || 
+                           document.querySelector('[data-testid="AppTabBar_NewTweet_Button"]');
+              if (open) {
+                await safeClick(open, 'Open Composer');
+                await wait(1500);
+                composer = document.querySelector('[data-testid="tweetTextarea_0"]') || 
+                           document.querySelector('div[role="textbox"][contenteditable="true"]');
               }
             }
 
-            if (!composer) {
-              return { success: false, error: 'Composer not found. Open the composer manually and try again.' };
-            }
+            if (!composer) return { success: false, error: 'Could not find or open composer' };
 
-            await simulateClick(composer);
+            await safeClick(composer, 'Composer');
             composer.focus();
+            document.execCommand('insertText', false, ${JSON.stringify(text)});
+            composer.dispatchEvent(new Event('input', { bubbles: true }));
+            await wait(500);
 
-            insertDraftText(composer, postText);
-
-            try {
-              composer.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
-              composer.dispatchEvent(new KeyboardEvent('keyup', { key: ' ', bubbles: true }));
-            } catch (_) {}
-
-            await new Promise(r => setTimeout(r, 200));
-
-            const sendButton =
-              document.querySelector('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]') ||
-              Array.from(document.querySelectorAll('[role="button"] span'))
-                .find(el => el.textContent && el.textContent.trim().toLowerCase() === 'post')
-                ?.closest('button,[role="button"]');
-
-            if (!sendButton) {
-              return { success: false, error: 'Post button not found' };
-            }
-
-            await simulateClick(sendButton);
-
-            await new Promise(r => setTimeout(r, 1200));
-
-            return { 
-              success: true, 
-              message: 'Post submitted successfully. IMPORTANT: Take a browser snapshot before navigating to verify the post was published.',
-              warning: 'DO NOT navigate yet - take a snapshot first to confirm the post is visible'
-            };
+            const send = document.querySelector('[data-testid="tweetButton"]');
+            if (!send) return { success: false, error: 'Post button missing' };
+            await safeClick(send, 'Post Button');
+            await wait(2000);
+            return { success: true, message: 'Posted' };
           })()
         `);
-
         return JSON.stringify(result);
-      } catch (error) {
-        return JSON.stringify({ success: false, error: String(error) });
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
       }
-    },
+    }
   });
 
   const followTool = new DynamicStructuredTool({
     name: 'x_follow',
-    description: 'On X.com (Twitter), follow or unfollow visible users via their follow buttons.',
+    description: 'On X.com (Twitter), follow/unfollow a user. Targets search results or timeline tweets.',
     schema: z.object({
-      index: z
-        .number()
-        .nullable()
-        .optional()
-        .describe('0-based index of the follow/unfollow button to target among visible users. Default 0.'),
-      action: z
-        .enum(['follow', 'unfollow', 'toggle'])
-        .nullable()
-        .optional()
-        .describe('Desired action. Defaults to follow.'),
+      index: z.union([z.number(), z.string()]).nullable().default(0),
+      action: z.enum(['follow', 'unfollow', 'toggle']).nullable().default('follow'),
     }),
-    func: async ({ index, action }) => {
-      const resolvedIndex = index ?? 0;
-      const resolvedAction = action ?? 'follow';
+    func: async ({ index, action }: { index: number | string | null; action: 'follow' | 'unfollow' | 'toggle' | null }) => {
+      const contents = ctx.getContents();
+      const rIndex = parseInt(String(index ?? 0), 10);
+      const rAction = action ?? 'follow';
       try {
-        const contents = ctx.getContents();
         const result = await contents.executeJavaScript(`
           (async function() {
-            const host = window.location.hostname || '';
-            if (!host.includes('x.com') && !host.includes('twitter.com')) {
-              return { success: false, error: 'Not on x.com/twitter.com', url: window.location.href };
-            }
-
-            function isVisible(el) {
-              if (!el) return false;
-              const rect = el.getBoundingClientRect();
-              if (rect.width === 0 || rect.height === 0) return false;
-              const style = window.getComputedStyle(el);
-              return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-            }
-
-            function pick(list, idx) {
-              if (list.length === 0) return null;
-              if (idx >= 0 && idx < list.length) return list[idx];
-              return list[list.length - 1];
-            }
-
-            async function simulateClick(el) {
-              const clickable = el.closest('button,[role="button"]') || el;
-              
-              // Scroll to center to be safe
-              clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-              await new Promise(r => setTimeout(r, 500));
-
-              // Visual pointer for user feedback
-              const rect = clickable.getBoundingClientRect();
-              const x = rect.left + rect.width / 2;
-              const y = rect.top + rect.height / 2;
-              if (typeof movePointer === 'function') movePointer(x, y);
-
-              // DIRECT DOM INTERACTION
-              // Use native click to avoid valid coordinate issues (like sidebar obstruction)
-              try {
-                clickable.focus();
-              } catch (e) {}
-
-              await new Promise(r => setTimeout(r, 200));
-
-              try {
-                clickable.click();
-              } catch (e) {
-                // If native click fails for some reason (rare), we could fallback, 
-                // but usually this is the most reliable method.
-                throw e;
-              }
-              
-              await new Promise(r => setTimeout(r, 1000));
-              return clickable;
-            }
-
-            const idx = ${resolvedIndex};
-            const desired = ${JSON.stringify(resolvedAction)};
-
-            const followButtons = Array.from(
-              document.querySelectorAll('[data-testid$="-follow"], [data-testid$="-Follow"], [data-testid="follow"]')
-            ).filter(isVisible);
-            const unfollowButtons = Array.from(
-              document.querySelectorAll('[data-testid$="-unfollow"], [data-testid$="-Unfollow"], [data-testid="unfollow"]')
-            ).filter(isVisible);
-
-            let button = null;
-            let effectiveAction = desired;
-
-            if (desired === 'follow') {
-              button = pick(followButtons, idx);
-              if (!button && unfollowButtons.length > 0) {
-                return { success: true, message: 'Already following', already: true };
-              }
-            } else if (desired === 'unfollow') {
-              button = pick(unfollowButtons, idx);
-              if (!button && followButtons.length > 0) {
-                return { success: true, message: 'Already not following', already: true };
-              }
-            } else {
-              button = pick(followButtons, idx);
-              if (!button) {
-                button = pick(unfollowButtons, idx);
-                if (button) effectiveAction = 'unfollow';
-              } else {
-                effectiveAction = 'follow';
-              }
-            }
-
-            if (!button) {
-              return { success: false, error: 'No follow/unfollow buttons found' };
-            }
-
-            await simulateClick(button);
-
-            if (effectiveAction === 'unfollow') {
-              await new Promise(r => setTimeout(r, 150));
-              const confirm = document.querySelector('[data-testid="confirmationSheetConfirm"]');
-              if (confirm && isVisible(confirm)) {
-                await simulateClick(confirm);
-              }
-            }
-
-            return {
-              success: true,
-              message: effectiveAction === 'unfollow' ? 'Unfollowed user' : 'Followed user',
-              index: idx
-            };
-          })()
-        `);
-
-        return JSON.stringify(result);
-      } catch (error) {
-        return JSON.stringify({ success: false, error: String(error) });
-      }
-    },
-  });
-
-  /* 
-   * ADVANCED TOOL: x_engage
-   * Handles complex sequences: Like -> Hover Author -> Follow -> Reply
-   */
-  const engageTool = new DynamicStructuredTool({
-    name: 'x_engage',
-    description: 'On X.com (Twitter), perform multiple engagement actions on a specific tweet in one go. Useful for "Growth" workflows where you want to Like, Follow the author, and Reply simultaneously. Handles the complex UI interactions (like hovering to find the follow button) automatically.',
-    schema: z.object({
-      index: z.number().default(0).describe('0-based index of the tweet to engage with. Default 0.'),
-      actions: z.array(z.enum(['like', 'retweet', 'follow', 'reply'])).describe('List of actions to perform. e.g. ["like", "follow", "reply"]'),
-      replyText: z.string().nullable().optional().describe('Text content for the reply. Required if "reply" is in actions.')
-    }),
-    func: async ({ index, actions, replyText }) => {
-      try {
-        const contents = ctx.getContents();
-        const result = await contents.executeJavaScript(`
-          (async function() {
-            const logs = [];
-            function log(msg, data) {
-              logs.push({ time: new Date().toISOString(), msg, data });
-            }
-
             try {
               ${POINTER_HELPERS}
+              ${BASE_SCRIPT_HELPERS}
               
-              const targetIndex = ${index};
-              const toDo = ${JSON.stringify(actions)};
-              const textRaw = ${JSON.stringify(replyText || '')};
+              const desired = ${JSON.stringify(rAction)};
+              const idx = ${rIndex};
 
-              // --- HELPERS (Robust DOM Interaction) ---
-              function isVisible(el) {
-                if (!el) return false;
-                const rect = el.getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0) return false;
-                const style = window.getComputedStyle(el);
-                return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-              }
-
-              function wait(ms) { 
-                return new Promise((resolve, reject) => {
-                  const checking = () => {
-                    if (window.__NAVREACH_STOP__) {
-                       reject(new Error('Stopped by user'));
-                       return;
-                    }
-                    if (Date.now() - start >= ms) {
-                      resolve();
-                    } else {
-                      setTimeout(checking, 100);
-                    }
-                  };
-                  const start = Date.now();
-                  checking();
-                });
-              }
-
-              if (window.__NAVREACH_STOP__) return { success: false, error: 'Stopped by user' };
-
-              async function safeClick(el, label) {
-                const clickable = el.closest('button,[role="button"]') || el;
-                log('Clicking ' + label, { tagName: clickable.tagName });
-                
-                clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-                await wait(400);
-
-                const rect = clickable.getBoundingClientRect();
-                const x = rect.left + rect.width / 2;
-                const y = rect.top + rect.height / 2;
-                if (typeof movePointer === 'function') movePointer(x, y);
-
-                try { clickable.focus(); } catch (e) {}
-                await wait(150);
-                
-                try {
-                  clickable.click();
-                } catch (e) {
-                  log('Native click failed on ' + label, { error: e.toString() });
-                  throw e;
+              // 1. Target UserCell (Search Results / People Tab / Sidebar)
+              const cells = Array.from(document.querySelectorAll('[data-testid="UserCell"]')).filter(isVisible);
+              if (cells.length > 0 && idx < cells.length) {
+                const cell = cells[idx];
+                const f = cell.querySelector('[data-testid$="-follow"], [data-testid$="-Follow"]');
+                const u = cell.querySelector('[data-testid$="-unfollow"], [data-testid$="-Unfollow"]');
+                if ((desired === 'unfollow' || desired === 'toggle') && u) {
+                  await safeClick(u, 'Unfollow');
+                  await wait(500);
+                  const c = document.querySelector('[data-testid="confirmationSheetConfirm"]');
+                  if (c) await safeClick(c, 'Confirm');
+                  return { success: true, message: 'Unfollowed user cell' };
                 }
-                await wait(800);
+                if ((desired === 'follow' || desired === 'toggle') && f) {
+                  await safeClick(f, 'Follow');
+                  return { success: true, message: 'Followed user cell' };
+                }
+                if (desired === 'unfollow' && !u) return { success: true, already: true, message: 'Already unfollowed' };
+                if (desired === 'follow' && !f) return { success: true, already: true, message: 'Already followed' };
               }
 
-              // --- MAIN LOGIC ---
-
-              // 1. Find Tweet
-              const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
-              if (targetIndex >= tweets.length) {
-                return { success: false, error: 'Tweet index ' + targetIndex + ' out of range. Found ' + tweets.length, logs };
-              }
-              const tweet = tweets[targetIndex];
-              tweet.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              await wait(1000); // Allow smooth scroll to finish
-
-              // --- CHECK IF OWN TWEET ---
-              try {
-                // Get logged in user handle from sidebar profile link
-                const profileLink = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
-                let currentUserHandle = '';
-                if (profileLink) {
-                  const href = profileLink.getAttribute('href'); // e.g., "/username"
-                  if (href) currentUserHandle = href.replace('/', '').toLowerCase();
-                }
-
-                if (currentUserHandle) {
-                  // Get tweet author handle
-                  // The User-Name element contains the display name, handle, and time.
-                  // We look for the handle part which usually starts with @
-                  const userContext = tweet.querySelector('[data-testid="User-Name"]');
-                  if (userContext) {
-                    const text = userContext.innerText.toLowerCase();
-                    if (text.includes('@' + currentUserHandle)) {
-                      log('Skipping engagement: Tweet belongs to current user (@' + currentUserHandle + ')');
-                      return { success: true, actions_performed: ['Skipped (Own Tweet)'], logs };
-                    }
-                  }
-                }
-              } catch (e) {
-                log('Warning: Failed to check if own tweet', { error: e.toString() });
-              }
-              // ---------------------------
-
-              const results = [];
-
-              // 2. Perform LIKE
-              if (toDo.includes('like')) {
-                const likeBtn = tweet.querySelector('[data-testid="like"]');
-                const unlikeBtn = tweet.querySelector('[data-testid="unlike"]');
-                
-                if (unlikeBtn) {
-                  results.push('Already liked');
-                } else if (likeBtn) {
-                  await safeClick(likeBtn, 'Like Button');
-                  results.push('Liked');
-                } else {
-                  results.push('Like button not found');
-                }
-              }
-
-              // 3. Perform FOLLOW AUTHOR (Updated: Use 'More' menu -> Follow)
-              if (toDo.includes('follow')) {
-                // Strategy A: The "More" (Caret) Menu - Most reliable
-                const caret = tweet.querySelector('[data-testid="caret"]');
-                let followedViaMenu = false;
-
-                if (caret) {
-                  log('Attempting Follow via Caret Menu');
-                  await safeClick(caret, 'More/Caret Button');
-                  await wait(800);
-
-                  // Find the menu
-                  // Wait a bit for the menu to render
-                  await wait(1000);
-                  
-                  // Find the *visible* menu (there might be hidden ones)
-                  const allMenus = Array.from(document.querySelectorAll('[role="menu"]'));
-                  const menu = allMenus.find(m => isVisible(m));
-                  
-                  if (menu) {
-                    // Deep search for text "Follow @" or "Unfollow @"
-                    // This handles nested spans/divs structure
-                    const allTextNodes = Array.from(menu.querySelectorAll('*'))
-                      .filter(el => el.children.length === 0 && el.textContent && el.textContent.trim().length > 0);
-                    
-                    const followTextNode = allTextNodes.find(el => el.textContent.includes('Follow @'));
-                    const unfollowTextNode = allTextNodes.find(el => el.textContent.includes('Unfollow @'));
-
-                    if (followTextNode) {
-                       const clickableItem = followTextNode.closest('[role="menuitem"]');
-                       if (clickableItem) {
-                         await safeClick(clickableItem, 'Follow Item from Menu');
-                         results.push('Followed author (via menu)');
-                         followedViaMenu = true;
-                       } else {
-                         results.push('Found Follow text but no menuitem container');
-                       }
-                    } else if (unfollowTextNode) {
-                         results.push('Already following author');
-                         followedViaMenu = true; // technically success
-                         
-                         // Close menu robustly
-                         log('Closing menu (already following)');
-                         // 1. Try Escape
-                         document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-                         await wait(200);
-                         // 2. Try clicking backdrop/body
-                         document.body.click();
-                    } else {
-                         results.push('Follow/Unfollow option not found in menu');
-                         // trigger escape to close menu
-                         document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-                         document.body.click(); 
-                    }
-                  } else {
-                    results.push('Dropdown menu did not appear (Found ' + allMenus.length + ' menus, none visible)');
-                  }
-                }
-
-                // Strategy B: Hover Card (Fallback)
-                if (!followedViaMenu) {
-                  log('Falling back to Hover Strategy for Follow');
-                  const userComponents = tweet.querySelectorAll('[data-testid="User-Name"], [data-testid="Tweet-User-Avatar"]');
-                  let hoverTarget = userComponents[0]; 
-                  
-                  if (hoverTarget) {
-                    hoverTarget.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-                    await wait(300);
-                    
-                    const rect = hoverTarget.getBoundingClientRect();
-                    const x = rect.left + rect.width / 2;
-                    const y = rect.top + rect.height / 2;
-                    if (typeof movePointer === 'function') movePointer(x, y);
-
-                    const hoverOpts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
-                    hoverTarget.dispatchEvent(new MouseEvent('mousemove', hoverOpts));
-                    hoverTarget.dispatchEvent(new MouseEvent('mouseenter', hoverOpts));
-                    hoverTarget.dispatchEvent(new MouseEvent('mouseover', hoverOpts));
-                    
-                    let hoverCard = null;
-                    for (let i = 0; i < 20; i++) { 
-                      await wait(100);
-                      hoverCard = document.querySelector('[data-testid="HoverCard"]');
-                      if (hoverCard && isVisible(hoverCard)) break;
-                    }
-
-                    if (hoverCard) {
-                      const followBtn = hoverCard.querySelector('[data-testid$="-follow"]');
-                      const unfollowBtn = hoverCard.querySelector('[data-testid$="-unfollow"]');
-                      
-                      if (unfollowBtn) {
-                         results.push('Already following author (hover check)');
-                      } else if (followBtn) {
-                         await safeClick(followBtn, 'Follow Button (HoverCard)');
-                         results.push('Followed author (via hover)');
-                      } else {
-                         results.push('No follow button in HoverCard');
-                      }
-                      
-                      if (typeof movePointer === 'function') movePointer(0, 0);
-                      document.body.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 0, clientY: 0 }));
-                    } else {
-                      results.push('Could not trigger author hover card');
-                    }
-                  } else {
-                    results.push('Could not find author avatar/name for fallback');
-                  }
-                }
-              }
-
-              // 4. Perform RETWEET
-              if (toDo.includes('retweet')) {
-                 const rtBtn = tweet.querySelector('[data-testid="retweet"]');
-                 const unrtBtn = tweet.querySelector('[data-testid="unretweet"]');
-                 if (unrtBtn) {
-                   results.push('Already retweeted');
-                 } else if (rtBtn) {
-                   await safeClick(rtBtn, 'Retweet Button');
-                   await wait(500);
-                   // Confirm in dropdown
-                   const confirmRt = document.querySelector('[data-testid="retweetConfirm"]');
-                   if (confirmRt) {
-                     await safeClick(confirmRt, 'Confirm Retweet');
-                     results.push('Retweeted');
-                   } else {
-                     results.push('Retweet dropdown failed');
-                   }
+              // 2. Target Profile Follow Button
+              const profF = document.querySelector('[data-testid$="-follow"], [data-testid$="-Follow"]');
+              const profU = document.querySelector('[data-testid$="-unfollow"], [data-testid$="-Unfollow"]');
+              if (idx === 0 && (profF || profU)) {
+                 if ((desired === 'unfollow' || desired === 'toggle') && profU) {
+                    await safeClick(profU, 'Profile Unfollow');
+                    await wait(500);
+                    const c = document.querySelector('[data-testid="confirmationSheetConfirm"]');
+                    if (c) await safeClick(c, 'Confirm');
+                    return { success: true, message: 'Unfollowed profile' };
+                 }
+                 if ((desired === 'follow' || desired === 'toggle') && profF) {
+                    await safeClick(profF, 'Profile Follow');
+                    return { success: true, message: 'Followed profile' };
                  }
               }
 
-              // 5. Perform REPLY
-              if (toDo.includes('reply')) {
-                if (!textRaw) {
-                  results.push('Reply skipped (no text provided)');
-                } else {
-                  // Re-find tweet elements in case DOM shifted
-                  const replyBtn = tweet.querySelector('[data-testid="reply"]');
-                  if (replyBtn) {
-                    await safeClick(replyBtn, 'Reply Button');
-                    await wait(1500); // Wait for modal
+              // 3. Fallback: Target via Caret Menu on Tweets (Timeline)
+              const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
+              if (tweets.length > 0 && idx < tweets.length) {
+                return await followAuthorOfTweet(tweets[idx], desired);
+              }
 
-                    // Find composer (same logic as x_reply)
-                    let composer = document.querySelector('[data-testid="tweetTextarea_0"]') || 
-                                   document.querySelector('div[role="textbox"][contenteditable="true"]');
-                    
-                    if (composer && isVisible(composer)) {
-                       // Type text
-                       composer.focus();
-                       await wait(200);
-                       document.execCommand('insertText', false, textRaw);
-                       composer.dispatchEvent(new InputEvent('input', { bubbles: true, data: textRaw }));
-                       await wait(500);
+              return { success: false, error: 'No follow target found at index ' + idx, logs };
+            } catch(e) {
+              return { success: false, error: e.toString(), logs };
+            }
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
 
-                       // Validate
-                       composer.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
-                       
-                       // Send
-                       const sendBtn = document.querySelector('[data-testid="tweetButton"]');
-                       if (sendBtn && !sendBtn.disabled) {
-                         await safeClick(sendBtn, 'Reply Send Button');
-                         results.push('Replied');
-                       } else {
-                         results.push('Reply send button disabled/missing');
-                       }
+  const engageTool = new DynamicStructuredTool({
+    name: 'x_engage',
+    description: 'Perform multiple actions (like, follow, retweet, reply) on a tweet.',
+    schema: z.object({
+      targetIndex: z.union([z.number(), z.string()]).nullable().default(0),
+      actions: z.string().describe('Comma separated: like,follow,retweet,reply'),
+      replyText: z.string().nullable().default(null),
+    }),
+    func: async ({ targetIndex, actions, replyText }: { targetIndex: number | string | null; actions: string; replyText: string | null }) => {
+      const contents = ctx.getContents();
+      const rIndex = parseInt(String(targetIndex ?? 0), 10);
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            try {
+              ${POINTER_HELPERS}
+              ${BASE_SCRIPT_HELPERS}
+
+              const actionsList = ${JSON.stringify(actions || '')}.split(',').map(a => a.trim().toLowerCase());
+              const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
+              if (!tweets.length) return { success: false, error: 'No tweets visible to engage with.' };
+              const tweet = tweets[${rIndex}] || tweets[0];
+              
+              const results = [];
+
+              if (actionsList.includes('like')) {
+                const b = tweet.querySelector('[data-testid="like"]');
+                const u = tweet.querySelector('[data-testid="unlike"]');
+                if (b && isVisible(b)) {
+                   await safeClick(b, 'Like');
+                   results.push('Liked');
+                } else if (u && isVisible(u)) {
+                   results.push('Already Liked');
+                }
+              }
+
+              if (actionsList.includes('follow')) {
+                const res = await followAuthorOfTweet(tweet, 'follow');
+                results.push(res.success ? (res.already ? 'Already Followed' : 'Followed') : 'Follow Failed: ' + res.error);
+              }
+
+              if (actionsList.includes('retweet')) {
+                const b = tweet.querySelector('[data-testid="retweet"]');
+                if (b && isVisible(b)) {
+                  await safeClick(b, 'Retweet Menu');
+                  await wait(800);
+                  const confirm = document.querySelector('[data-testid="retweetConfirm"]');
+                  if (confirm && isVisible(confirm)) {
+                    await safeClick(confirm, 'Retweet Action');
+                    results.push('Retweeted');
+                  } else {
+                    // Try closing the menu if it opened but no confirm button
+                    await safeClick(b, 'Close Retweet Menu');
+                    results.push('Retweet Confirm Button Not Found');
+                  }
+                }
+              }
+
+              if (actionsList.includes('reply') && ${JSON.stringify(replyText || '')}) {
+                const b = tweet.querySelector('[data-testid="reply"]');
+                if (b && isVisible(b)) {
+                  await safeClick(b, 'Reply');
+                  await wait(2000);
+                  const modals = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible);
+                  const modal = modals.length ? modals[modals.length - 1] : null;
+                  const searchRoot = modal || document;
+
+                  const engagedTweetHandle = tweet.innerText.split('\\n')[1] || 'Unknown';
+
+                  const comp = searchRoot.querySelector('[data-testid="tweetTextarea_0"]') || 
+                               searchRoot.querySelector('div[role="textbox"][contenteditable="true"]');
+                  if (comp) {
+                    await safeClick(comp, 'Composer');
+                    comp.focus();
+                    document.execCommand('selectAll', false, null); // Clear existing if any
+                    document.execCommand('insertText', false, ${JSON.stringify(replyText || '')});
+                    // Removed manual input event dispatch
+                    await wait(800);
+                    const s = searchRoot.querySelector('[data-testid="tweetButton"]');
+                    if (s) {
+                      await safeClick(s, 'Send Reply');
+                      results.push('Replied to ' + engagedTweetHandle);
                     } else {
-                       results.push('Reply composer not found');
+                      results.push('Reply Send Button Not Found');
                     }
                   } else {
-                    results.push('Reply button not found');
+                    results.push('Reply Composer Not Found');
                   }
                 }
               }
 
               return { success: true, actions_performed: results, logs };
-
-            } catch (err) {
-              return { success: false, error: err.toString(), stack: err.stack, logs };
+            } catch(e) {
+              return { success: false, error: e.toString(), logs };
             }
           })()
         `);
         return JSON.stringify(result);
-      } catch (error) {
-        return JSON.stringify({ success: false, error: String(error) });
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
       }
     }
   });
 
-  return [searchTool, likeTool, replyTool, postTool, followTool, engageTool];
+  const engagingTool = new DynamicStructuredTool({
+    name: 'Engaging',
+    description: 'Perform multiple actions (like, follow, retweet, reply) on a tweet. Alias: x_engage.',
+    schema: engageTool.schema,
+    func: engageTool.func,
+  });
+
+  return [searchTool, advancedSearchTool, likeTool, replyTool, postTool, followTool, engageTool, engagingTool];
 }
