@@ -57,6 +57,7 @@ const aiAPI = {
     return () => ipcRenderer.removeListener('ai:stream-chunk', handler);
   },
   listWorkflows: () => ipcRenderer.invoke('ai:list-workflows'),
+  suggest: (request: unknown) => ipcRenderer.invoke('ai:suggest', request),
 };
 
 const debugAPI = {

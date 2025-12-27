@@ -7,7 +7,8 @@ import { useBrowserStore } from '@/stores/browser.store';
 import { useDebugStore } from '@/stores/debug.store';
 import { useAppStore } from '@/stores/app.store';
 import { useChatStore } from '@/stores/chat.store';
-import navreachLogo from '@assets/navreach-white-welcome.png';
+import reavionLogoWhite from '@assets/reavion-white-welcome.png';
+import reavionLogoBlack from '@assets/reavion-black-welcome.png';
 
 const INITIAL_URL = 'about:blank';
 
@@ -132,7 +133,7 @@ export function BrowserView() {
         newUrl = `https://www.google.com/search?q=${encodeURIComponent(newUrl)}`;
       }
     }
-    
+
     setUrlInput(newUrl);
     setUrl(newUrl);
     setIsLoading(true);
@@ -160,9 +161,9 @@ export function BrowserView() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {!showLoader && (
-        <div className="flex items-center h-12 px-3 gap-2 border-b border-border">
+        <div className="flex items-center h-12 px-3 gap-2 border-b border-border bg-background z-20">
           <div className="flex items-center gap-1">
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoBack}>
               <ArrowLeft className="h-4 w-4" />
@@ -212,11 +213,18 @@ export function BrowserView() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
             >
-              <img
-                src={navreachLogo}
-                alt="NavReach"
-                className="h-8 opacity-70"
-              />
+              <div className="flex flex-col items-center">
+                <img
+                  src={reavionLogoWhite}
+                  alt="Reavion"
+                  className="h-8 opacity-70 hidden dark:block"
+                />
+                <img
+                  src={reavionLogoBlack}
+                  alt="Reavion"
+                  className="h-8 opacity-70 block dark:hidden"
+                />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

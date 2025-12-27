@@ -51,7 +51,7 @@ export function PlaybookToolbar({
                     <Input
                         value={playbookName}
                         onChange={(e) => onNameChange(e.target.value)}
-                        className="h-9 w-64 border-transparent hover:border-white/10 focus:border-white/20 bg-transparent font-semibold px-2 -ml-2 rounded-lg"
+                        className="h-9 w-64 border-transparent hover:border-primary/20 focus:border-primary/30 bg-transparent font-semibold px-2 -ml-2 rounded-lg text-foreground placeholder:text-muted-foreground/30"
                         placeholder="Playbook Name"
                     />
                 </div>
@@ -87,7 +87,7 @@ export function PlaybookToolbar({
                                     </Select>
                                 </Field>
                                 <div className="flex items-center justify-between">
-                                    <label className="text-[10px] font-semibold text-white/40 uppercase tracking-wider ml-1">Require Approval</label>
+                                    <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">Require Approval</label>
                                     <Switch
                                         checked={localDefaults.require_approval}
                                         onCheckedChange={(c) => setLocalDefaults(p => ({ ...p, require_approval: c }))}
@@ -101,7 +101,7 @@ export function PlaybookToolbar({
                             <div className="space-y-4">
                                 <h3 className="text-sm font-medium text-destructive">Required Capabilities</h3>
                                 <div className="flex items-center justify-between">
-                                    <label className="text-[10px] font-semibold text-white/40 uppercase tracking-wider ml-1">Browser Access</label>
+                                    <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">Browser Access</label>
                                     <Switch
                                         checked={localCapabilities.browser}
                                         onCheckedChange={(c) => setLocalCapabilities(p => ({ ...p, browser: c }))}

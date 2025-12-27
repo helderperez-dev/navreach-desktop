@@ -10,7 +10,7 @@ export function IntegrationsSettings() {
     const [copied, setCopied] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [showKey, setShowKey] = useState(false);
-    const apiUrl = import.meta.env.VITE_API_URL || 'https://navreach-web-app.vercel.app/api';
+    const apiUrl = import.meta.env.VITE_API_URL || 'https://reavion-web-app.vercel.app/api';
 
     useEffect(() => {
         const fetchApiKey = async () => {
@@ -90,27 +90,27 @@ export function IntegrationsSettings() {
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-500">
             <div>
-                <h3 className="text-lg font-medium text-white mb-1">API Integrations</h3>
+                <h3 className="text-lg font-medium text-foreground mb-1">API Integrations</h3>
                 <p className="text-sm text-muted-foreground">Manage your credentials for external tools and agents.</p>
             </div>
 
             <div className="grid gap-6">
                 {/* External Collection Toggle */}
-                <div className="flex items-center justify-between p-6 rounded-2xl bg-white/5 border border-white/5">
+                <div className="flex items-center justify-between p-6 rounded-2xl bg-muted/30 border border-border shadow-sm">
                     <div className="flex gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-                            <Shield className="h-6 w-6 text-blue-400" />
+                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                            <Shield className="h-6 w-6 text-primary" />
                         </div>
                         <div>
-                            <h4 className="text-sm font-medium text-white mb-1">External Target Collection</h4>
+                            <h4 className="text-sm font-medium text-foreground mb-1">External Target Collection</h4>
                             <p className="text-xs text-muted-foreground max-w-sm">
-                                Allow external scripts and the Navreach AI Agent to drop targets into your lists via the API.
+                                Allow external scripts and the Reavion AI Agent to drop targets into your lists via the API.
                             </p>
                         </div>
                     </div>
                     <Button
                         variant={isCollectionEnabled ? "default" : "outline"}
-                        className={isCollectionEnabled ? "bg-blue-600 hover:bg-blue-500" : ""}
+                        className={isCollectionEnabled ? "bg-primary hover:bg-primary/90 text-primary-foreground" : ""}
                         onClick={handleToggleCollection}
                     >
                         {isCollectionEnabled ? "Enabled" : "Disabled"}
@@ -118,37 +118,37 @@ export function IntegrationsSettings() {
                 </div>
 
                 {/* API Endpoint */}
-                <div className="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-4">
+                <div className="p-6 rounded-2xl bg-muted/30 border border-border shadow-sm space-y-4">
                     <div className="flex gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center flex-shrink-0">
-                            <ExternalLink className="h-6 w-6 text-blue-400" />
+                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                            <ExternalLink className="h-6 w-6 text-primary" />
                         </div>
                         <div>
-                            <h4 className="text-sm font-medium text-white mb-1">API Endpoint</h4>
+                            <h4 className="text-sm font-medium text-foreground mb-1">API Endpoint</h4>
                             <p className="text-xs text-muted-foreground">The base URL for all API requests.</p>
                         </div>
                     </div>
-                    <div className="flex-1 bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-mono text-sm text-blue-400">
+                    <div className="flex-1 bg-muted/50 border border-border rounded-xl px-4 py-3 font-mono text-sm text-primary font-medium tracking-tight">
                         {apiUrl}
                     </div>
                 </div>
 
                 {/* API Key Management */}
-                <div className="p-6 rounded-2xl bg-white/5 border border-white/5 space-y-4">
+                <div className="p-6 rounded-2xl bg-muted/30 border border-border shadow-sm space-y-4">
                     <div className="flex items-center justify-between mb-2">
                         <div className="flex gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center flex-shrink-0">
-                                <Key className="h-6 w-6 text-purple-400" />
+                            <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
+                                <Key className="h-6 w-6 text-purple-600 dark:text-purple-400" />
                             </div>
                             <div>
-                                <h4 className="text-sm font-medium text-white mb-1">Secret API Key</h4>
+                                <h4 className="text-sm font-medium text-foreground mb-1">Secret API Key</h4>
                                 <p className="text-xs text-muted-foreground">Used to authenticate requests to the external event endpoint.</p>
                             </div>
                         </div>
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="text-xs gap-2 hover:bg-white/5"
+                            className="text-xs gap-2 hover:bg-muted"
                             onClick={handleGenerateKey}
                         >
                             <RefreshCw className="h-3 w-3" />
@@ -157,9 +157,9 @@ export function IntegrationsSettings() {
                     </div>
 
                     <div className="flex gap-2">
-                        <div className="flex-1 bg-black/40 border border-white/5 rounded-xl px-4 py-3 font-mono text-sm text-gray-400 flex items-center justify-between">
+                        <div className="flex-1 bg-muted/50 border border-border rounded-xl px-4 py-3 font-mono text-sm text-foreground/70 flex items-center justify-between shadow-inner">
                             {isLoading ? (
-                                <div className="h-4 w-48 bg-white/5 rounded animate-pulse" />
+                                <div className="h-4 w-48 bg-muted rounded animate-pulse" />
                             ) : (
                                 <>
                                     <span className="truncate">
@@ -168,17 +168,17 @@ export function IntegrationsSettings() {
                                     <div className="flex items-center gap-3 ml-4 shrink-0">
                                         <button
                                             onClick={() => setShowKey(!showKey)}
-                                            className="text-gray-500 hover:text-white transition-colors"
+                                            className="text-muted-foreground hover:text-foreground transition-colors"
                                             title={showKey ? "Hide API Key" : "Show API Key"}
                                         >
                                             {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                                         </button>
                                         <button
                                             onClick={handleCopy}
-                                            className="text-gray-500 hover:text-blue-400 transition-colors"
+                                            className="text-muted-foreground hover:text-primary transition-colors"
                                             title="Copy API Key"
                                         >
-                                            {copied ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+                                            {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                                         </button>
                                     </div>
                                 </>
@@ -193,12 +193,12 @@ export function IntegrationsSettings() {
                 </div>
 
                 {/* Documentation Link */}
-                <div className="p-6 rounded-2xl border border-dashed border-white/10 flex items-center justify-between">
+                <div className="p-6 rounded-2xl border border-dashed border-border flex items-center justify-between">
                     <div>
-                        <h4 className="text-sm font-medium text-white mb-1">Developer Documentation</h4>
+                        <h4 className="text-sm font-medium text-foreground mb-1">Developer Documentation</h4>
                         <p className="text-xs text-muted-foreground">View full API reference and integration guides.</p>
                     </div>
-                    <Button variant="outline" size="sm" className="gap-2 border-white/5">
+                    <Button variant="outline" size="sm" className="gap-2 border-border shadow-sm">
                         <ExternalLink className="h-3 w-3" />
                         API Docs
                     </Button>

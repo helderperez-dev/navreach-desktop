@@ -1,11 +1,11 @@
-# NavReach
+# Reavion
 
-NavReach is an AI-powered browser automation desktop application built with Electron, React, and TypeScript. It features an embedded browser controlled by an AI agent with a modern, minimalist design inspired by Linear.
+Reavion is an AI-powered browser automation desktop application built with Electron, React, and TypeScript. It features an embedded browser controlled by an AI agent with a modern, minimalist design inspired by Linear.
 
 ## Features
 
 - **Embedded Browser**: Full-featured browser with tab management, navigation controls, and webview support
-- **AI Agent Chat**: Conversational Navreach Agent with model selection and conversation memory
+- **AI Agent Chat**: Conversational Reavion Agent with model selection and conversation memory
 - **Browser Control Tools**: AI can navigate, click, type, screenshot, and extract content from web pages
 - **MCP Integration**: Model Context Protocol client for stdio and SSE servers
 - **API Tools**: Configure external APIs as tools for the AI agent
@@ -38,7 +38,7 @@ NavReach is an AI-powered browser automation desktop application built with Elec
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd navreach
+cd reavion
 
 # Install dependencies
 npm install
@@ -62,7 +62,7 @@ npm run build:linux
 ## Project Structure
 
 ```
-navreach/
+reavion/
 ├── docs/                    # Documentation
 │   ├── ARCHITECTURE.md      # Technical architecture
 │   ├── DESIGN_SYSTEM.md     # Design system guide

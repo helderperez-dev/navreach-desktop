@@ -61,10 +61,47 @@ interface OpenRouterModel {
   id: string;
   name: string;
   context_length: number;
-  pricing: {
-    prompt: string;
-    completion: string;
-  };
+}
+
+interface OpenAIModel {
+  id: string;
+  object: string;
+  created: number;
+  owned_by: string;
+}
+
+async function fetchOpenAIModels(apiKey: string, baseUrl?: string): Promise<ModelConfig[]> {
+  try {
+    const url = baseUrl ? `${baseUrl.replace(/\/$/, '')}/models` : 'https://api.openai.com/v1/models';
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.data && Array.isArray(data.data)) {
+      return data.data
+        .map((m: OpenAIModel) => ({
+          id: m.id,
+          name: m.id.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+          providerId: '',
+          contextWindow: m.id.includes('128k') || m.id.includes('gpt-4o') ? 128000 : 16384,
+          enabled: false,
+        }))
+        .sort((a: ModelConfig, b: ModelConfig) => a.name.localeCompare(b.name));
+    }
+    return [];
+  } catch (error) {
+    console.error('Failed to fetch OpenAI models:', error);
+    throw error;
+  }
 }
 
 async function fetchOpenRouterModels(): Promise<ModelConfig[]> {
@@ -135,13 +172,24 @@ export function ModelProvidersSettings() {
   };
 
   const handleFetchModels = async () => {
-    if (formData.type !== 'openrouter') return;
+    if (formData.type !== 'openrouter' && formData.type !== 'openai') return;
 
     setIsFetchingModels(true);
     try {
-      const fetchedModels = await fetchOpenRouterModels();
+      let fetchedModels: ModelConfig[] = [];
+      if (formData.type === 'openrouter') {
+        fetchedModels = await fetchOpenRouterModels();
+      } else if (formData.type === 'openai') {
+        if (!formData.apiKey) {
+          alert('API Key is required to fetch models');
+          return;
+        }
+        fetchedModels = await fetchOpenAIModels(formData.apiKey, formData.baseUrl);
+      }
+
       if (fetchedModels.length > 0) {
-        const newAvailableModels = { ...availableModels, openrouter: fetchedModels };
+        const type = formData.type;
+        const newAvailableModels = { ...availableModels, [type]: fetchedModels };
         setAvailableModels(newAvailableModels);
 
         const newModelStates: Record<string, boolean> = {};
@@ -150,6 +198,8 @@ export function ModelProvidersSettings() {
         });
         setModelStates(newModelStates);
       }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to fetch models');
     } finally {
       setIsFetchingModels(false);
     }
@@ -262,7 +312,7 @@ export function ModelProvidersSettings() {
         <div>
           <h2 className="text-xl font-semibold">Model Providers</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure AI model providers for the Navreach Agent.
+            Configure AI model providers for the Reavion Agent.
           </p>
         </div>
         {!isAdding && !editingId && (
@@ -310,13 +360,13 @@ export function ModelProvidersSettings() {
             />
           </div>
 
-          {formData.type === 'custom' && (
+          {(formData.type === 'custom' || formData.type === 'openai') && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Base URL</label>
+              <label className="text-sm font-medium">Base URL {formData.type === 'openai' && <span className="text-xs text-muted-foreground font-normal">(Optional)</span>}</label>
               <Input
                 value={formData.baseUrl || ''}
                 onChange={(e) => setFormData((prev) => ({ ...prev, baseUrl: e.target.value }))}
-                placeholder="https://api.example.com/v1"
+                placeholder={formData.type === 'openai' ? "https://api.openai.com/v1" : "https://api.example.com/v1"}
               />
             </div>
           )}
@@ -350,7 +400,7 @@ export function ModelProvidersSettings() {
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  {formData.type === 'openrouter' && (
+                  {(formData.type === 'openrouter' || formData.type === 'openai') && (
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleFetchModels(); }}
@@ -515,7 +565,7 @@ export function ModelProvidersSettings() {
         {modelProviders.length === 0 && !isAdding && (
           <div className="text-center py-8 text-muted-foreground">
             <p>No model providers configured.</p>
-            <p className="text-sm">Add a provider to start using the Navreach Agent.</p>
+            <p className="text-sm">Add a provider to start using the Reavion Agent.</p>
           </div>
         )}
       </div>

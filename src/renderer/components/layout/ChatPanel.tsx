@@ -11,6 +11,7 @@ import { useDebugStore } from '@/stores/debug.store';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { ModelSelector } from '@/components/chat/ModelSelector';
 import { MaxStepsSelector } from '@/components/chat/MaxStepsSelector';
+import { TimerDisplay } from '@/components/chat/TimerDisplay';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { cn } from '@/lib/utils';
 import { MentionInput } from '@/components/ui/mention-input';
@@ -21,10 +22,7 @@ import { supabase } from '@/lib/supabase';
 
 
 
-const SYSTEM_PROMPT = `You are an autonomous browser automation agent.
-Your goal is to help the user with browser tasks, target management, and playbook execution.
-Be autonomous, analyze page states, and use the tools provided to achieve the user's request.
-IMPORTANT: When reporting results to the user, ALWAYS refer to items (like target lists, playbooks) by their NAME. Never expose UUIDs or internal IDs in your final response.`;
+const SYSTEM_PROMPT = `Analyze user request and orchestrate the necessary tools or playbooks. Be concise in your narration and strictly follow the provided playbook graph if applicable.`;
 
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   browser_navigate: 'Navigate',
@@ -35,10 +33,11 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
   browser_scroll: 'Scroll page',
   browser_get_page_content: 'Read page',
   browser_get_visible_text: 'Read text',
+  browser_inspect_element: 'Inspect Element',
+  browser_highlight_elements: 'Highlight Elements',
+  browser_get_console_logs: 'Console Logs',
+  browser_get_accessibility_tree: 'Accessibility Tree',
   browser_snapshot: 'Snapshot',
-  browser_wait: 'Wait',
-  browser_find_elements: 'Find elements',
-  browser_get_accessibility_tree: 'Accessibility tree',
   browser_hover: 'Hover element',
   browser_take_screenshot: 'Screenshot',
   browser_get_interactive_elements: 'Interactive elements',
@@ -58,6 +57,10 @@ const TOOL_DISPLAY_NAMES: Record<string, string> = {
 
 const TOOL_SUMMARY_HINTS: Record<string, string> = {
   browser_snapshot: 'Captured page snapshot.',
+  browser_inspect_element: 'Inspected element properties.',
+  browser_highlight_elements: 'Highlighted elements on page.',
+  browser_get_console_logs: 'Retrieved console logs.',
+  browser_get_accessibility_tree: 'Analyzed accessibility tree.',
   browser_get_page_content: 'Read page content.',
   browser_get_visible_text: 'Collected visible text.',
   browser_wait: 'Waited for UI to settle.',
@@ -95,6 +98,7 @@ function formatToolNarration(toolName: string, message?: string) {
 
 export function ChatPanel() {
   const [input, setInput] = useState('');
+
   const [streamingContent, setStreamingContent] = useState('');
   const [currentToolCalls, setCurrentToolCalls] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
@@ -132,6 +136,7 @@ export function ChatPanel() {
     setMaxIterations,
     infiniteMode,
     setInfiniteMode,
+    setAgentStartTime,
   } = useChatStore();
 
   const { modelProviders } = useSettingsStore();
@@ -258,7 +263,7 @@ export function ChatPanel() {
         }
 
         setIsStreaming(false);
-        streamingContentRef.current = '';
+        setAgentStartTime(null);
         setStreamingContent('');
         setLiveNarration([]);
         setCurrentToolCalls([]);
@@ -460,6 +465,7 @@ export function ChatPanel() {
     }
 
     setIsStreaming(true);
+    setAgentStartTime(Date.now());
     setHasStarted(true);
 
     // Retrieve tokens
@@ -523,6 +529,7 @@ export function ChatPanel() {
 
       if (!result.success && result.error) {
         setIsStreaming(false);
+        setAgentStartTime(null);
         addMessage(conversationId, {
           role: 'assistant',
           content: `Error: ${result.error}`,
@@ -530,6 +537,7 @@ export function ChatPanel() {
       }
     } catch (error) {
       setIsStreaming(false);
+      setAgentStartTime(null);
       addMessage(conversationId, {
         role: 'assistant',
         content: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`,
@@ -539,9 +547,9 @@ export function ChatPanel() {
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isStreaming) return;
     await sendMessage(input.trim());
-  }, [input, sendMessage]);
+  }, [input, sendMessage, isStreaming]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showSuggestions) {
@@ -565,7 +573,9 @@ export function ChatPanel() {
 
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e);
+      if (!isStreaming) {
+        handleSubmit(e);
+      }
     }
   };
 
@@ -586,8 +596,11 @@ export function ChatPanel() {
 
   return (
     <div className="relative flex flex-col h-full bg-card">
-      <div className="flex items-center justify-between h-12 px-4 border-b border-border">
-        <h2 className="text-sm font-semibold">{showHistory ? 'Chat History' : 'Navreach Agent'}</h2>
+      <div className="flex items-center justify-between h-12 px-4 border-b border-border bg-card/80 sticky top-0 z-20">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold">{showHistory ? 'Chat History' : 'Reavion Agent'}</h2>
+          {!showHistory && <TimerDisplay />}
+        </div>
         <div className="flex items-center gap-1">
           {showHistory ? (
             <Button
@@ -710,7 +723,7 @@ export function ChatPanel() {
               <div className="space-y-2 mt-2">
                 {/* 1. Narration Text (Streaming) */}
                 {streamingContent && (
-                  <div className="bg-transparent px-4 py-2 text-sm text-gray-300 leading-relaxed animate-in fade-in slide-in-from-bottom-2 duration-300">
+                  <div className="bg-transparent px-4 py-2 text-sm text-foreground/80 leading-relaxed">
                     <span className="typing-cursor">
                       <ProcessedText text={streamingContent} variables={getGlobalVariables()} />
                     </span>
@@ -744,15 +757,15 @@ export function ChatPanel() {
 
                       return (
                         <div key={idx} className={cn(
-                          "rounded-lg border border-white/5 bg-[#1e1e20] overflow-hidden transition-all duration-300",
+                          "rounded-lg border border-border bg-card/50 overflow-hidden transition-all duration-300",
                           isRunning ? "opacity-100" : "opacity-80"
                         )}>
                           <div className="flex items-center gap-3 px-3 py-2.5">
                             <div className={cn(
                               "flex items-center justify-center w-6 h-6 rounded-md border text-xs",
                               isSuccess ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" :
-                                isFailed ? "bg-red-500/10 border-red-500/20 text-red-500" :
-                                  "bg-blue-500/10 border-blue-500/20 text-blue-400"
+                                isFailed ? "bg-destructive/10 border-destructive/20 text-destructive" :
+                                  "bg-primary/10 border-primary/20 text-primary"
                             )}>
                               {isSuccess ? <Check className="h-3.5 w-3.5" /> :
                                 isFailed ? <X className="h-3.5 w-3.5" /> :
@@ -764,8 +777,8 @@ export function ChatPanel() {
                               <div className="flex items-center justify-between">
                                 <span className={cn(
                                   "text-sm font-medium truncate",
-                                  isSuccess ? "text-gray-300" :
-                                    isFailed ? "text-red-300" : "text-blue-300"
+                                  isSuccess ? "text-foreground/80" :
+                                    isFailed ? "text-destructive" : "text-primary/80"
                                 )}>
                                   {label}
                                 </span>
@@ -803,7 +816,7 @@ export function ChatPanel() {
         <form onSubmit={handleSubmit}>
           <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border transition-all overflow-hidden">
             {showSuggestions && (
-              <div className="absolute bottom-full left-0 right-0 mb-2 mx-3 bg-[#1e1e20] border border-border/50 rounded-xl shadow-2xl overflow-hidden z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
+              <div className="absolute bottom-full left-0 right-0 mb-2 mx-3 bg-popover border border-border/50 rounded-xl shadow-2xl overflow-hidden z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
                 <div className="px-3 py-2 border-b border-border/30 bg-secondary/20">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 flex items-center gap-2">
                     <ScrollText className="h-3 w-3" /> Growth Aliases
@@ -820,18 +833,18 @@ export function ChatPanel() {
                       }}
                       className={cn(
                         "w-full px-3 py-2 text-sm text-left flex items-center gap-3 transition-colors",
-                        idx === selectedSuggestionIndex ? "bg-white/5 text-white" : "text-gray-400 hover:text-gray-200"
+                        idx === selectedSuggestionIndex ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
                       )}
                     >
                       <div className={cn(
                         "w-6 h-6 rounded flex items-center justify-center border",
-                        idx === selectedSuggestionIndex ? "border-white/20 bg-white/5" : "border-transparent"
+                        idx === selectedSuggestionIndex ? "border-primary/20 bg-primary/10" : "border-transparent"
                       )}>
                         <FileText className="h-3.5 w-3.5" />
                       </div>
                       <span className="font-medium">/{workflow.name}</span>
                       {idx === selectedSuggestionIndex && (
-                        <span className="ml-auto text-[10px] text-muted-foreground font-mono bg-white/5 px-1.5 py-0.5 rounded">Enter</span>
+                        <span className="ml-auto text-[10px] text-muted-foreground font-mono bg-muted/50 px-1.5 py-0.5 rounded">Enter</span>
                       )}
                     </button>
                   ))}
@@ -856,33 +869,26 @@ export function ChatPanel() {
               }}
               onKeyDown={handleKeyDown}
               variableGroups={getGlobalVariables()}
-              placeholder="Message NavReach... (Use @ for variables)"
-              className="w-full min-h-[44px] max-h-[150px] px-4 pt-3 pb-3 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0"
+              placeholder="Message Reavion... (Use @ for variables)"
+              className="w-full min-h-[44px] max-h-[200px] px-4 pt-3 pb-2 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0 scrollbar-thin scrollbar-thumb-muted-foreground/20"
             />
-            {/* 
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder="Message NavReach..."
-              rows={1}
-              className="w-full min-h-[80px] max-h-[150px] px-4 pt-3 pb-3 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60"
-            /> 
-            */}
             <div className="px-3 py-2 flex items-center justify-between gap-3">
               <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">
                 <ModelSelector />
                 <MaxStepsSelector />
+                {/* TimerDisplay moved to header */}
               </div>
               <div className="flex items-center">
                 {isStreaming ? (
                   <button
                     type="button"
-                    onClick={async () => {
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       // Tool actions are already saved immediately when they complete
                       // Clear streaming state
                       setIsStreaming(false);
+                      setAgentStartTime(null);
                       setStreamingContent('');
                       streamingContentRef.current = '';
                       setLiveNarration([]);

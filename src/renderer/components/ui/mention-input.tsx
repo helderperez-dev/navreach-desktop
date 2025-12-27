@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverAnchor } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
-import { Sparkles } from 'lucide-react';
+
 
 export interface Variable {
     label: string;
@@ -27,12 +27,15 @@ export interface MentionInputProps extends Omit<React.HTMLAttributes<HTMLDivElem
     placeholder?: string;
 }
 
-export function MentionInput({ variableGroups, value, onChange, className, rows = 1, placeholder, ...props }: MentionInputProps) {
+export interface MentionInputRef {
+    openMenu: () => void;
+}
+
+export const MentionInput = React.forwardRef<MentionInputRef, MentionInputProps>(({ variableGroups, value, onChange, className, rows = 1, placeholder, onKeyDown, ...props }, ref) => {
     const [open, setOpen] = React.useState(false);
     const [query, setQuery] = React.useState('');
     const [activeIndex, setActiveIndex] = React.useState(0);
     const inputRef = React.useRef<HTMLDivElement>(null);
-    // Track if we are currently editing to prevent loop issues with value prop
     const isEditingRef = React.useRef(false);
 
     // Flatten groups
@@ -40,6 +43,33 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
         if (!variableGroups) return [];
         return variableGroups.flatMap(g => g.variables?.map(v => ({ ...v, groupName: g.nodeName })) || []);
     }, [variableGroups]);
+
+    React.useImperativeHandle(ref, () => ({
+        openMenu: () => {
+            if (open) {
+                setOpen(false);
+                inputRef.current?.focus();
+            } else {
+                setQuery('');
+                setActiveIndex(0);
+                setOpen(true);
+                // focus and ensure cursor is valid
+                inputRef.current?.focus();
+                // If no selection, move to end?
+                const sel = window.getSelection();
+                if (!sel || sel.rangeCount === 0) {
+                    // Move to end
+                    if (inputRef.current) {
+                        const range = document.createRange();
+                        range.selectNodeContents(inputRef.current);
+                        range.collapse(false);
+                        sel?.removeAllRanges();
+                        sel?.addRange(range);
+                    }
+                }
+            }
+        }
+    }));
 
     // Convert raw text to HTML with tags
     const valueToHtml = React.useCallback((text: string) => {
@@ -58,54 +88,75 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
                 const groupName = variable ? variable.groupName : service;
 
                 // We utilize data attributes to reconstruct the value later
-                return `<span data-variable="${full}" contenteditable="false" class="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 font-medium text-[0.9em] align-baseline leading-none mx-0.5 select-none"><span class="opacity-50 text-[9px] uppercase font-bold mr-1 pointer-events-none">${groupName}</span><span class="pointer-events-none">${label}</span></span>`;
+                return `<span data-variable="${full}" contenteditable="false" class="inline-flex items-center px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-medium text-[0.9em] align-middle select-none"><span class="opacity-50 text-[9px] uppercase font-bold mr-1 pointer-events-none">${groupName}</span><span class="pointer-events-none">${label}</span></span>`;
             }
             return match;
         });
     }, [allVariables]);
 
-    // Sync external value changes to DOM
-    React.useEffect(() => {
-        if (inputRef.current && !isEditingRef.current) {
-            const newHtml = valueToHtml(value);
-            // Only update if semantically different to avoid losing cursor position on strict equality check
-            if (inputRef.current.innerHTML !== newHtml) {
-                // Check if text content matches - if so, don't clobber DOM unless structure changed
-                // Actually, safer to trust the value prop as source of truth
-                // But handle empty case explicitly
-                if (!value) {
-                    inputRef.current.innerHTML = '';
+    // Recursive helper to get plain text from contentEditable DOM
+    const getValueFromNodes = React.useCallback((nodes: NodeList | ChildNode[]): string => {
+        let text = '';
+        nodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                text += node.textContent || '';
+            } else if (node.nodeType === Node.ELEMENT_NODE) {
+                const el = node as HTMLElement;
+                if (el.hasAttribute('data-variable')) {
+                    text += el.getAttribute('data-variable');
+                } else if (el.tagName === 'BR') {
+                    text += '\n';
                 } else {
-                    // Check if focused - if focused, be careful
-                    if (document.activeElement !== inputRef.current) {
-                        inputRef.current.innerHTML = newHtml;
+                    // For nested containers, recurse
+                    const content = getValueFromNodes(Array.from(el.childNodes));
+                    const isBlock = window.getComputedStyle(el).display === 'block' || el.tagName === 'DIV' || el.tagName === 'P';
+
+                    if (isBlock && text.length > 0 && !text.endsWith('\n')) {
+                        text += '\n';
+                    }
+                    text += content;
+                    if (isBlock && !text.endsWith('\n')) {
+                        text += '\n';
                     }
                 }
             }
+        });
+        return text;
+    }, []);
+
+    // Sync external value changes to DOM
+    React.useEffect(() => {
+        if (!inputRef.current) return;
+
+        const root = inputRef.current;
+        const normalizedExternal = value || '';
+
+        // Always force clear if value is empty
+        if (!normalizedExternal) {
+            if (root.innerHTML !== '') {
+                root.innerHTML = '';
+            }
+            isEditingRef.current = false;
+            return;
         }
-    }, [value, valueToHtml]);
+
+        // Only update if external value differs from what's currently in the DOM
+        const currentDOMValue = getValueFromNodes(Array.from(root.childNodes));
+        if (normalizedExternal !== currentDOMValue) {
+            // We only force update if not currently typing, OR if the focus is elsewhere
+            if (!isEditingRef.current || document.activeElement !== root) {
+                root.innerHTML = valueToHtml(normalizedExternal);
+            }
+        }
+    }, [value, valueToHtml, getValueFromNodes]);
 
     const handleInput = (e: React.FormEvent<HTMLDivElement>) => {
         isEditingRef.current = true;
         const root = inputRef.current;
         if (!root) return;
 
-        // Reconstruct value from DOM
-        let newValue = '';
-        root.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE) {
-                newValue += node.textContent || '';
-            } else if (node.nodeType === Node.ELEMENT_NODE) {
-                const el = node as HTMLElement;
-                if (el.hasAttribute('data-variable')) {
-                    newValue += el.getAttribute('data-variable');
-                } else if (el.tagName === 'BR') {
-                    newValue += '\n';
-                } else {
-                    newValue += el.textContent || ''; // fallback
-                }
-            }
-        });
+        // Reconstruct value from DOM robustly
+        const newValue = getValueFromNodes(Array.from(root.childNodes));
 
         // Detect Trigger
         checkTrigger();
@@ -136,7 +187,12 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
 
             checkTextForTrigger(textBefore);
         } else {
-            setOpen(false); // If not in a text node, close popover
+            // Do not force close if we opened it manually and are just navigating?
+            // Actually for typing logic, if we move out of context we should close.
+            // But if opened manually (query='') we might want to stay open until explicit close?
+            // For now, simple logic:
+            if (!open) return;
+            // setOpen(false); // Let's not aggressively close for now
         }
     };
 
@@ -152,7 +208,16 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
                 return;
             }
         }
-        setOpen(false);
+
+        // If manually opened (empty query) and user keeps typing?
+        // If we are currently open and query is empty, we might want to check if they typed something that SHOULD match
+        // But usually manual open implies "browsing mode".
+
+        // Only close if we were auto-triggered by @ and now it doesn't match
+        if (open && query !== '') {
+            // We only auto-close if we were in "search" mode (query not empty) and lost the match
+            setOpen(false);
+        }
     };
 
     const filtered = React.useMemo<FlattenedVariable[]>(() => {
@@ -167,22 +232,28 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
         const root = inputRef.current;
         if (!root) return;
 
+        root.focus();
+
         const sel = window.getSelection();
         if (!sel || sel.rangeCount === 0) return;
 
         const range = sel.getRangeAt(0);
         const node = range.startContainer;
 
-        // Delete the typed @query
+        // Delete the typed @query IF it exists (trigger pattern)
         if (node.nodeType === Node.TEXT_NODE && node.textContent) {
             const text = node.textContent;
             const pos = range.startOffset;
             const lastAt = text.slice(0, pos).lastIndexOf('@');
 
             if (lastAt !== -1) {
-                range.setStart(node, lastAt);
-                range.setEnd(node, pos);
-                range.deleteContents();
+                const potentialQuery = text.slice(lastAt + 1, pos);
+                // Only replace if it looks like a valid trigger (no spaces)
+                if (!potentialQuery.includes(' ')) {
+                    range.setStart(node, lastAt);
+                    range.setEnd(node, pos);
+                    range.deleteContents();
+                }
             }
         }
 
@@ -190,15 +261,12 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
         const span = document.createElement('span');
         span.contentEditable = 'false';
         span.setAttribute('data-variable', v.value);
-        span.className = "inline-flex items-center px-1.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-400 font-medium text-[0.9em] align-baseline leading-none mx-0.5 select-none";
+        span.className = "inline-flex items-center px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-medium text-[0.9em] align-middle select-none";
         span.innerHTML = `<span class="opacity-50 text-[9px] uppercase font-bold mr-1 pointer-events-none">${v.groupName}</span><span class="pointer-events-none">${v.label}</span>`;
 
         range.insertNode(span);
 
         // Move cursor after the inserted element
-        // We need to insert a zero-width space or similar to ensure cursor can be placed AFTER the non-editable element in some browsers?
-        // Actually best practice is usually to insert a text node with space or just rely on browser behavior. 
-        // Let's add a text node with a zero-width space to reliably allow typing.
         const space = document.createTextNode('\u00A0'); // nbsp
         range.insertNode(space);
 
@@ -208,13 +276,13 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
         sel.addRange(range);
 
         // Normalize and Trigger Input
-        // We manually trigger input logic to update state
-        handleInput({} as React.FormEvent<HTMLDivElement>); // Cast to correct type
+        handleInput({} as React.FormEvent<HTMLDivElement>);
         setOpen(false);
-        root.focus();
+        setQuery(''); // Reset query
     };
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        // Internal Menu Navigation
         if (open) {
             if (e.key === 'ArrowDown') {
                 e.preventDefault();
@@ -223,33 +291,26 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
                 e.preventDefault();
                 setActiveIndex(i => (i - 1 + filtered.length) % filtered.length);
             } else if (e.key === 'Enter' || e.key === 'Tab') {
-                e.preventDefault();
                 if (filtered.length > 0) {
+                    e.preventDefault();
                     insertVariable(filtered[activeIndex]);
                 }
             } else if (e.key === 'Escape') {
+                e.preventDefault();
                 setOpen(false);
             }
         }
+
+        // Call external handler if not prevented
+        if (!e.defaultPrevented && onKeyDown) {
+            onKeyDown(e);
+        }
     };
 
-    const handleIconClick = (e: React.MouseEvent) => {
+    const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
         e.preventDefault();
-        e.stopPropagation();
-        if (open) {
-            setOpen(false);
-        } else {
-            inputRef.current?.focus();
-            const sel = window.getSelection();
-            if (sel && sel.rangeCount > 0) {
-                const range = sel.getRangeAt(0);
-                const textNode = document.createTextNode('@');
-                range.insertNode(textNode);
-                range.setStartAfter(textNode);
-                range.setEndAfter(textNode);
-                checkTextForTrigger('@');
-            }
-        }
+        const text = e.clipboardData.getData('text/plain');
+        document.execCommand('insertText', false, text);
     };
 
     return (
@@ -260,31 +321,20 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
                         ref={inputRef}
                         contentEditable
                         onInput={handleInput}
+                        onPaste={handlePaste}
                         onKeyDown={handleKeyDown}
                         className={cn(
-                            "w-full bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0 px-4 py-3 text-sm pr-10 min-h-[44px] whitespace-pre-wrap break-words empty:before:content-[attr(placeholder)] empty:before:text-muted-foreground/40",
+                            "w-full bg-transparent border-0 resize-none focus:outline-none shadow-none focus-visible:ring-0 px-4 py-3 text-sm pr-10 min-h-[44px] overflow-y-auto whitespace-pre-wrap break-words",
                             className
                         )}
                         spellCheck={false}
                         {...props}
                     />
-
-                    {/* Placeholder handled via CSS empty selector or managed above logic */}
-                    {/* The original placeholder div is now hidden as per instruction, but the placeholder attribute is used */}
                     {!value && (
                         <div className="absolute top-3 left-4 text-muted-foreground/40 pointer-events-none text-sm select-none">
                             {placeholder || 'Type @ to mention...'}
                         </div>
                     )}
-
-                    {/* Interactive Trigger Icon */}
-                    <button
-                        onClick={handleIconClick}
-                        className="absolute right-1 top-2.5 p-1.5 rounded-md text-muted-foreground/40 hover:text-blue-400 hover:bg-blue-500/10 transition-colors z-20"
-                        type="button"
-                    >
-                        <Sparkles className="h-3.5 w-3.5" />
-                    </button>
                 </div>
             </PopoverAnchor>
             <PopoverContent
@@ -293,7 +343,7 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
                 onOpenAutoFocus={(e) => e.preventDefault()} // Keep focus on input
             >
                 <div className="max-h-[300px] overflow-y-auto p-1">
-                    <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest border-b border-white/5 mb-1 bg-background/50 sticky top-0 backdrop-blur-sm z-10">
+                    <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border/40 mb-1 bg-background/80 sticky top-0 backdrop-blur-sm z-10">
                         {query ? `Searching "${query}"...` : 'Select Variable'}
                     </div>
                     {filtered.length === 0 ? (
@@ -304,18 +354,26 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
                                 key={i + v.value}
                                 className={cn(
                                     "w-full text-left px-2 py-2 rounded-md text-xs flex flex-col gap-0.5 transition-colors",
-                                    i === activeIndex ? "bg-blue-600/20 text-blue-100" : "hover:bg-white/5 text-muted-foreground hover:text-white"
+                                    i === activeIndex
+                                        ? "bg-primary/10 text-primary"
+                                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
                                 )}
                                 onClick={() => insertVariable(v)}
                                 onMouseEnter={() => setActiveIndex(i)}
                             >
                                 <div className="flex items-center justify-between w-full">
-                                    <span className="font-medium text-white/90">{v.label}</span>
-                                    <span className="text-[9px] opacity-50 px-1.5 py-0.5 rounded bg-black/20">{v.groupName}</span>
+                                    <span className={cn(
+                                        "font-medium",
+                                        i === activeIndex ? "text-primary" : "text-foreground"
+                                    )}>{v.label}</span>
+                                    <span className={cn(
+                                        "text-[9px] opacity-70 px-1.5 py-0.5 rounded",
+                                        i === activeIndex ? "bg-primary/20" : "bg-muted"
+                                    )}>{v.groupName}</span>
                                 </div>
-                                <div className="flex items-center gap-2 font-mono text-[10px] opacity-60">
+                                <div className="flex items-center gap-2 font-mono text-[10px] opacity-80">
                                     {/* Value hidden as per user request */}
-                                    {v.example && <span className="truncate max-w-[200px] border-l border-white/10 pl-2 opacity-70">{v.example}</span>}
+                                    {v.example && <span className="truncate max-w-[200px] border-l border-border pl-2 opacity-70">{v.example}</span>}
                                 </div>
                             </button>
                         ))
@@ -324,4 +382,5 @@ export function MentionInput({ variableGroups, value, onChange, className, rows 
             </PopoverContent>
         </Popover>
     );
-}
+});
+MentionInput.displayName = "MentionInput";

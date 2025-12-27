@@ -55,7 +55,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:click', async (_event, tabId: string, selector: string) => {
     const contents = getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
-    
+
     const result = await contents.executeJavaScript(`
       (function() {
         const element = document.querySelector('${selector.replace(/'/g, "\\'")}');
@@ -70,12 +70,12 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:type', async (_event, tabId: string, selector: string, text: string) => {
     const contents = getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
-    
+
     const result = await contents.executeJavaScript(`
       (function() {
         const element = document.querySelector('${selector.replace(/'/g, "\\'")}');
         if (!element) return { success: false, reason: 'Element not found' };
-        element.focus();
+        // element.focus();
         element.value = '${text.replace(/'/g, "\\'")}';
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
@@ -88,7 +88,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:screenshot', async (_event, tabId: string) => {
     const contents = getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
-    
+
     const image = await contents.capturePage();
     return { success: true, data: image.toDataURL() };
   });
@@ -96,7 +96,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:extract', async (_event, tabId: string, selector: string) => {
     const contents = getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
-    
+
     const result = await contents.executeJavaScript(`
       (function() {
         const element = document.querySelector('${selector.replace(/'/g, "\\'")}');
@@ -110,7 +110,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:scroll', async (_event, tabId: string, direction: 'up' | 'down', amount: number) => {
     const contents = getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
-    
+
     const scrollAmount = direction === 'down' ? amount : -amount;
     await contents.executeJavaScript(`window.scrollBy(0, ${scrollAmount})`);
     return { success: true };
@@ -119,7 +119,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:evaluate', async (_event, tabId: string, script: string) => {
     const contents = getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
-    
+
     try {
       const result = await contents.executeJavaScript(script);
       return { success: true, result };
@@ -131,7 +131,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:get-page-content', async (_event, tabId: string) => {
     const contents = getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
-    
+
     const result = await contents.executeJavaScript(`
       (function() {
         return {

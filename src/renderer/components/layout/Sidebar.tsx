@@ -28,7 +28,7 @@ export function Sidebar() {
         initial={false}
         animate={{ width: sidebarCollapsed ? 56 : 200 }}
         transition={{ duration: 0.2, ease: 'easeInOut' }}
-        className="flex flex-col h-full bg-sidebar border-r border-border"
+        className="flex flex-col h-full bg-sidebar border-r border-border transition-colors duration-200"
       >
         <nav className={cn("flex-1 py-2 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
           {navItems.map((item) => (
@@ -38,8 +38,9 @@ export function Sidebar() {
                   variant={activeView === item.view ? 'secondary' : 'ghost'}
                   size={sidebarCollapsed ? "icon" : "default"}
                   className={cn(
-                    'w-full justify-start gap-3',
-                    sidebarCollapsed && 'justify-center h-10 w-full'
+                    'w-full justify-start gap-3 transition-colors',
+                    sidebarCollapsed && 'justify-center h-10 w-full',
+                    activeView === item.view && 'bg-primary/10 text-primary hover:bg-primary/15'
                   )}
                   onClick={() => setActiveView(item.view)}
                 >

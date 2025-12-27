@@ -8,7 +8,7 @@ import { PlaybookNodeType } from '@/types/playbook';
 const BaseNode = ({ data, type, selected }: NodeProps) => {
     const def = NODE_DEFINITIONS[type as PlaybookNodeType];
 
-    if (!def) return <div className="p-2 bg-red-500 text-white text-xs">Unknown Node: {type}</div>;
+    if (!def) return <div className="p-2 bg-destructive text-destructive-foreground text-xs rounded-lg">Unknown Node: {type}</div>;
 
     const Icon = def.icon;
     const isStart = type === 'start';
@@ -26,8 +26,13 @@ const BaseNode = ({ data, type, selected }: NodeProps) => {
                 const pos = side === 'top' ? Position.Top : side === 'bottom' ? Position.Bottom : side === 'left' ? Position.Left : Position.Right;
                 const isVertical = side === 'top' || side === 'bottom';
 
-                // Hide right port for branched nodes (they have custom ones below)
-                if (side === 'right' && (type === 'condition' || type === 'loop')) return null;
+                // Only show Top/Bottom handles unless it's a specialized node that needs side ports
+                // Loop and Condition handles are handled separately or by specialized logic
+                if (!isVertical && !isControl) return null;
+
+                // Hide handles for specific sides on Start/End
+                if (isStart && side === 'top') return null;
+                if (isEnd && side === 'bottom') return null;
 
                 return (
                     <div key={side} className="absolute inset-0 pointer-events-none">
@@ -80,8 +85,8 @@ const BaseNode = ({ data, type, selected }: NodeProps) => {
                 <div className="mt-3 pt-2 border-t border-border/40 space-y-1">
                     {Object.entries(data.config).slice(0, 1).map(([k, v]) => (
                         <div key={k} className="flex flex-col">
-                            <span className="text-[9px] uppercase font-bold text-white/30 truncate">{k.replace('_', ' ')}</span>
-                            <span className="text-[10px] font-mono text-white/80 truncate">{String(v)}</span>
+                            <span className="text-[9px] uppercase font-bold text-muted-foreground/60 truncate">{k.replace('_', ' ')}</span>
+                            <span className="text-[10px] font-mono text-foreground/80 truncate">{String(v)}</span>
                         </div>
                     ))}
                 </div>
@@ -116,12 +121,12 @@ const BaseNode = ({ data, type, selected }: NodeProps) => {
                 <div className="absolute right-[-10px] top-0 bottom-0 flex flex-col justify-around py-4">
                     <div className="relative group/handle">
                         <Handle
-                            id="loop"
+                            id="item"
                             type="source"
                             position={Position.Right}
                             className="!static !w-3 !h-3 !bg-blue-500 border-2 border-card shadow-sm hover:!scale-125 transition-transform"
                         />
-                        <div className="absolute right-5 top-[-2px] text-[9px] font-black text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity uppercase">Loop</div>
+                        <div className="absolute right-5 top-[-2px] text-[9px] font-black text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity uppercase">Item</div>
                     </div>
                     <div className="relative group/handle">
                         <Handle

@@ -32,15 +32,33 @@ const toolAliases: Record<string, string> = {
   'browser_get_accessibility_tree': 'Analyzing Page Structure',
   'browser_hover': 'Hovering',
   'x_search': 'Searching X',
+  'x_advanced_search': 'Advanced Search',
   'x_like': 'Liking Post',
   'x_reply': 'Replying',
   'x_post': 'Posting',
   'x_follow': 'Following User',
   'x_engage': 'Engaging',
+  'x_scout_topics': 'Scouting Topics',
+  'x_scout_community': 'Scouting Community',
   'browser_get_visible_text': 'Reading Visible Text',
+  'browser_click_coordinates': 'Clicking Coordinates',
+  'humanize_text': 'Humanizing Text',
   'db_get_targets': 'Fetching Targets',
   'db_get_target_lists': 'Fetching Target Lists',
+  'db_create_target_list': 'Creating Target List',
+  'db_create_target': 'Creating Target',
   'db_update_target': 'Updating Target',
+  'db_get_mcp_servers': 'Fetching MCP Servers',
+  'mcp_list_tools': 'Listing MCP Tools',
+  'mcp_call_tool': 'Calling MCP Tool',
+  'db_get_api_tools': 'Fetching API Tools',
+  'api_call_tool': 'Calling API Tool',
+  'db_get_playbooks': 'Fetching Playbooks',
+  'db_get_playbook_details': 'Fetching Playbook Details',
+  'db_save_playbook': 'Saving Playbook',
+  'db_delete_playbook': 'Deleting Playbook',
+  'human_approval': 'Requesting Approval',
+  'agent_pause': 'Pausing Agent',
   'unknown_tool': 'Running Action'
 };
 
@@ -186,17 +204,17 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
   const isSnapshot = toolCall.name === 'browser_snapshot';
 
   return (
-    <div className="my-0.5 rounded-lg border border-white/5 bg-[#1e1e20] overflow-hidden transition-all duration-200">
+    <div className="my-0.5 rounded-lg border border-border bg-card/50 overflow-hidden transition-all duration-200">
       {/* Header - Always Visible */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left"
+        className="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left hover:bg-muted/50"
       >
         <div className={cn(
           "flex items-center justify-center w-6 h-6 rounded-md border text-xs shadow-sm",
           isSuccess ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" :
-            isFailed ? "bg-red-500/10 border-red-500/20 text-red-500" :
-              "bg-blue-500/10 border-blue-500/20 text-blue-400"
+            isFailed ? "bg-destructive/10 border-destructive/20 text-destructive" :
+              "bg-primary/10 border-primary/20 text-primary"
         )}>
           {isSuccess ? <Check className="h-3.5 w-3.5" /> :
             isFailed ? <AlertCircle className="h-3.5 w-3.5" /> :
@@ -207,9 +225,9 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <span className={cn(
             "font-medium text-[13px] truncate",
-            isSuccess ? "text-gray-300" :
-              isFailed ? "text-red-300" :
-                "text-blue-300"
+            isSuccess ? "text-foreground/80" :
+              isFailed ? "text-destructive" :
+                "text-primary"
           )}>
             {toolAliases[toolCall.name] || toolCall.name}
           </span>
@@ -233,19 +251,19 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
 
       {/* Expanded Details - Only show if there's meaningful text or error */}
       {isExpanded && resultDisplay && (
-        <div className="px-3 py-3 border-t border-white/5 bg-black/20 text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="px-3 py-3 border-t border-border bg-muted/30 text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
           {/* Output Result */}
           <div>
             <div className={cn(
               "flex items-center gap-1.5 text-[10px] uppercase tracking-wider mb-1.5 font-semibold",
-              isFailed ? "text-red-500/50" : "text-emerald-500/50"
+              isFailed ? "text-destructive/50" : "text-emerald-500/50"
             )}>
               {isFailed ? <AlertCircle className="h-3 w-3" /> : <Activity className="h-3 w-3" />}
               {isFailed ? 'Error' : 'Output'}
             </div>
             <div className={cn(
               "rounded border p-2 overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar",
-              isFailed ? "bg-red-950/20 border-red-500/20 text-red-300/90" : "bg-[#151517] border-white/5 text-gray-400"
+              isFailed ? "bg-destructive/10 border-destructive/20 text-destructive" : "bg-background border-border text-muted-foreground"
             )}>
               {resultDisplay}
             </div>
@@ -371,7 +389,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
       'group relative px-4 py-2 transition-colors duration-200',
       isUser ? 'bg-transparent' : 'bg-transparent'
     )}>
-      <div className={cn('max-w-2xl mx-auto flex', isUser ? 'flex-row-reverse' : 'flex-row')}>
+      <div className={cn('w-full flex', isUser ? 'flex-row-reverse' : 'flex-row')}>
 
         {/* Content Body */}
         <div className={cn('flex-1 min-w-0 space-y-2', isUser && 'text-right')}>
@@ -396,18 +414,18 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
 
               {/* 2. Text Content (Narration or Answer) with Markdown */}
               {hasStructuredTools && message.content && message.content.trim() && (
-                <div className="prose prose-invert prose-sm max-w-none text-gray-300 leading-relaxed text-left">
+                <div className="prose prose-sm max-w-none text-foreground leading-relaxed text-left dark:prose-invert">
                   <ReactMarkdown
                     components={{
                       p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
-                      ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-gray-400">{withTags(children)}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-gray-400">{withTags(children)}</ol>,
+                      ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ol>,
                       li: ({ children }) => <li className="pl-1">{withTags(children)}</li>,
-                      strong: ({ children }) => <strong className="font-semibold text-white">{withTags(children)}</strong>,
-                      code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[13px] font-mono text-indigo-300 border border-white/5">{withTags(children)}</code>,
-                      pre: ({ children }) => <pre className="bg-[#1e1e20] p-3 rounded-lg border border-white/5 overflow-x-auto my-3 text-xs font-mono shadow-inner">{children}</pre>,
-                      a: ({ href, children }) => <a href={href} className="text-indigo-400 hover:text-indigo-300 hover:underline decoration-indigo-400/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
-                      blockquote: ({ children }) => <blockquote className="border-l-2 border-indigo-500/50 pl-4 py-1 my-3 italic text-gray-500">{withTags(children)}</blockquote>,
+                      strong: ({ children }) => <strong className="font-semibold text-foreground">{withTags(children)}</strong>,
+                      code: ({ children }) => <code className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono text-primary border border-border">{withTags(children)}</code>,
+                      pre: ({ children }) => <pre className="bg-muted p-3 rounded-lg border border-border overflow-x-auto my-3 text-xs font-mono shadow-inner">{children}</pre>,
+                      a: ({ href, children }) => <a href={href} className="text-primary hover:text-primary/80 hover:underline decoration-primary/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
+                      blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/50 pl-4 py-1 my-3 italic text-muted-foreground">{withTags(children)}</blockquote>,
                     }}
                   >
                     {message.content.trim()}
@@ -419,17 +437,17 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
               {blocks.map((block, idx) => {
                 if (block.type === 'thought') {
                   return (
-                    <div key={idx} className="bg-muted/5 rounded-lg border border-white/5 overflow-hidden my-2">
+                    <div key={idx} className="bg-muted/30 rounded-lg border border-border overflow-hidden my-2">
                       <button
                         onClick={() => setExpandedThoughts(!expandedThoughts)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-white/5 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors text-left"
                       >
                         <Activity className="h-3.5 w-3.5" />
                         <span>Thinking Process</span>
                         {expandedThoughts ? <ChevronDown className="h-3.5 w-3.5 ml-auto" /> : <ChevronRight className="h-3.5 w-3.5 ml-auto" />}
                       </button>
                       {expandedThoughts && (
-                        <div className="px-3 py-2 bg-black/20 text-xs text-muted-foreground border-t border-white/5 font-mono leading-relaxed whitespace-pre-wrap">
+                        <div className="px-3 py-2 bg-muted/20 text-xs text-muted-foreground border-t border-border font-mono leading-relaxed whitespace-pre-wrap">
                           {block.content}
                         </div>
                       )}
@@ -460,18 +478,18 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                   if (!cleanContent) return null;
 
                   return (
-                    <div key={idx} className="prose prose-invert prose-sm max-w-none text-gray-300 leading-relaxed text-left">
+                    <div key={idx} className="prose prose-sm max-w-none text-foreground leading-relaxed text-left dark:prose-invert">
                       <ReactMarkdown
                         components={{
                           p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
-                          ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-gray-400">{withTags(children)}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-gray-400">{withTags(children)}</ol>,
+                          ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ol>,
                           li: ({ children }) => <li className="pl-1">{withTags(children)}</li>,
-                          strong: ({ children }) => <strong className="font-semibold text-white">{withTags(children)}</strong>,
-                          code: ({ children }) => <code className="bg-white/10 px-1.5 py-0.5 rounded text-[13px] font-mono text-indigo-300 border border-white/5">{withTags(children)}</code>,
-                          pre: ({ children }) => <pre className="bg-[#1e1e20] p-3 rounded-lg border border-white/5 overflow-x-auto my-3 text-xs font-mono shadow-inner">{children}</pre>,
-                          a: ({ href, children }) => <a href={href} className="text-indigo-400 hover:text-indigo-300 hover:underline decoration-indigo-400/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
-                          blockquote: ({ children }) => <blockquote className="border-l-2 border-indigo-500/50 pl-4 py-1 my-3 italic text-gray-500">{withTags(children)}</blockquote>,
+                          strong: ({ children }) => <strong className="font-semibold text-foreground">{withTags(children)}</strong>,
+                          code: ({ children }) => <code className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono text-primary border border-border">{withTags(children)}</code>,
+                          pre: ({ children }) => <pre className="bg-muted p-3 rounded-lg border border-border overflow-x-auto my-3 text-xs font-mono shadow-inner">{children}</pre>,
+                          a: ({ href, children }) => <a href={href} className="text-primary hover:text-primary/80 hover:underline decoration-primary/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
+                          blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/50 pl-4 py-1 my-3 italic text-muted-foreground">{withTags(children)}</blockquote>,
                         }}
                       >
                         {cleanContent}
@@ -494,7 +512,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
               <div className="flex items-center gap-3 pt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                 <button
                   onClick={handleCopy}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                   {copied ? 'Copied' : 'Copy'}
@@ -502,7 +520,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                 {onRetry && (
                   <button
                     onClick={() => onRetry(message.content)}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-white transition-colors"
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <RotateCcw className="h-3 w-3" />
                     Retry
@@ -524,11 +542,11 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
   const isFailed = block.status === 'failed';
 
   return (
-    <div className="my-1 rounded border border-white/5 bg-[#1e1e20] overflow-hidden">
+    <div className="my-1 rounded border border-border bg-card/50 overflow-hidden">
       {/* Tool Header - Click to toggle details */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left"
+        className="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left hover:bg-muted/50"
       >
         <div className={cn(
           "flex items-center justify-center w-5 h-5 rounded border text-[10px]",
@@ -545,9 +563,9 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <span className={cn(
             "font-medium text-[13px] truncate",
-            isSuccess ? "text-gray-300" :
-              isFailed ? "text-red-400" :
-                "text-gray-300"
+            isSuccess ? "text-foreground/80" :
+              isFailed ? "text-destructive" :
+                "text-foreground/80"
           )}>
             {block.title || block.content}
           </span>
@@ -561,17 +579,17 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
 
       {/* Tool Details (Result only, no params) */}
       {isExpanded && block.result && block.result.trim() && (
-        <div className="px-3 py-2 border-t border-white/5 bg-black/20 text-xs font-mono space-y-2">
+        <div className="px-3 py-2 border-t border-border bg-muted/30 text-xs font-mono space-y-2">
           <div>
             <div className={cn(
               "text-[10px] uppercase tracking-wider mb-1",
-              isFailed ? "text-red-500/50" : "text-emerald-500/50"
+              isFailed ? "text-destructive/50" : "text-emerald-500/50"
             )}>
               {isFailed ? 'Error' : 'Output'}
             </div>
             <div className={cn(
               "whitespace-pre-wrap pl-2 border-l",
-              isFailed ? "text-red-300/80 border-red-500/20" : "text-gray-400 border-white/10"
+              isFailed ? "text-destructive/80 border-destructive/20" : "text-muted-foreground border-border"
             )}>
               <ProcessedText text={block.result.trim()} variables={variables} />
             </div>

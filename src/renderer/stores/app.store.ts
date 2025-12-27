@@ -41,7 +41,7 @@ export const useAppStore = create<AppState>()(
       setHasStarted: (hasStarted) => set({ hasStarted }),
     }),
     {
-      name: 'navreach-app-store',
+      name: 'reavion-app-store',
       partialize: (state) => ({
         sidebarCollapsed: state.sidebarCollapsed,
         chatPanelCollapsed: state.chatPanelCollapsed,

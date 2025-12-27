@@ -1,6 +1,6 @@
 {
-  "appId": "com.navreach.app",
-  "productName": "Navreach",
+  "appId": "com.reavion.app",
+  "productName": "Reavion",
   "directories": {
     "buildResources": "build"
   },

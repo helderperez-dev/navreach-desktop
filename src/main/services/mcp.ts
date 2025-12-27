@@ -28,7 +28,7 @@ class MCPService {
 
         try {
             const client = new Client({
-                name: 'navreach',
+                name: 'reavion',
                 version: '1.0.0',
             }, {
                 capabilities: {},

@@ -13,52 +13,31 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MentionInput } from '@/components/ui/mention-input';
 import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
-import navreachLogo from '@assets/navreach-white-welcome.png';
+import reavionLogoWhite from '@assets/reavion-white-welcome.png';
+import reavionLogoBlack from '@assets/reavion-black-welcome.png';
 
-const DEFAULT_SUGGESTIONS = [
-  { label: 'Engage on X', prompt: 'Go to X and engage with posts about AI and startups - like and reply thoughtfully to 5 relevant posts' },
-  { label: 'Find leads on LinkedIn', prompt: 'Search LinkedIn for founders in the SaaS space and send connection requests with personalized notes' },
-  { label: 'Reply to comments', prompt: 'Go to my latest post on X and reply to all comments with thoughtful responses' },
-  { label: 'Research competitors', prompt: 'Research my top 3 competitors on social media and summarize their content strategy' },
-  { label: 'Schedule content', prompt: 'Help me draft and schedule 5 engaging posts for X about my product' },
-  { label: 'Grow followers', prompt: 'Find and follow 20 relevant accounts in my niche on X who are likely to follow back' },
-];
+// --- SMART SUGGESTIONS LOGIC ---
 
-const CONTEXTUAL_SUGGESTIONS: Record<string, { label: string; prompt: string }[]> = {
-  'x': [
-    { label: 'Search X', prompt: 'Search X for posts about ' },
-    { label: 'Post on X', prompt: 'Create and post a tweet about ' },
-    { label: 'Like posts', prompt: 'Like the top 10 posts about ' },
-    { label: 'Reply to posts', prompt: 'Reply thoughtfully to posts about ' },
-  ],
-  'twitter': [
-    { label: 'Search X', prompt: 'Search X for posts about ' },
-    { label: 'Post on X', prompt: 'Create and post a tweet about ' },
-  ],
-  'linkedin': [
-    { label: 'Search LinkedIn', prompt: 'Search LinkedIn for ' },
-    { label: 'Connect with people', prompt: 'Send connection requests to ' },
-  ],
-  'engage': [
-    { label: 'Engage on X', prompt: 'Go to X and engage with posts about ' },
-    { label: 'Comment on posts', prompt: 'Leave thoughtful comments on posts about ' },
-  ],
-  'follow': [
-    { label: 'Follow accounts', prompt: 'Follow relevant accounts that post about ' },
-    { label: 'Find influencers', prompt: 'Find and follow top influencers in ' },
-  ],
-  'post': [
-    { label: 'Draft posts', prompt: 'Help me draft engaging posts about ' },
-    { label: 'Schedule content', prompt: 'Create a content schedule for posts about ' },
-  ],
-};
+type Suggestion = { label: string; prompt: string };
 
-const SYSTEM_PROMPT = `You are an autonomous browser automation agent.
-Your goal is to help the user with browser tasks, target management, and playbook execution.
-Be autonomous, analyze page states, and use the tools provided to achieve the user's request.
-IMPORTANT: When reporting results to the user, ALWAYS refer to items (like target lists, playbooks) by their NAME. Never expose UUIDs or internal IDs in your final response.
-APPROVALS: If a task requires user approval (like a playbook "Approval" node or a sensitive action), you MUST explicitly say "# PAUSED FOR APPROVAL" in your message to trigger the approval UI. Do not proceed until the user approves.
-TOOL EXECUTION: You MUST NEVER narrate that you are performing an action (like navigating, clicking, or Engaging) without actually calling the corresponding tool. If you say you are starting a cycle or navigating, you MUST call the tool in the SAME message. Never hallucinate tool results.`;
+// --- UTILITIES ---
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+  return debouncedValue;
+}
+
+// -------------------------------
+
+
+const SYSTEM_PROMPT = `Analyze user request and orchestrate the necessary tools or playbooks. Be concise in your narration and strictly follow the provided playbook graph if applicable.`;
 
 interface WelcomeScreenProps {
   onSubmit: () => void;
@@ -78,7 +57,9 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     createConversation,
     addMessage,
     setIsStreaming,
+    setAgentStartTime,
     maxIterations,
+    agentRunLimit,
     infiniteMode,
   } = useChatStore();
   const { modelProviders, mcpServers, apiTools } = useSettingsStore();
@@ -143,17 +124,52 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     return groups;
   }, [playbooks, lists, mcpServers, apiTools]);
 
-  const suggestions = useMemo(() => {
-    if (!input.trim()) return DEFAULT_SUGGESTIONS.slice(0, 4);
+  const debouncedInput = useDebounce(input, 600);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
 
-    const lowerInput = input.toLowerCase();
-    for (const [keyword, contextSuggestions] of Object.entries(CONTEXTUAL_SUGGESTIONS)) {
-      if (lowerInput.includes(keyword)) {
-        return contextSuggestions;
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      setIsSuggesting(true);
+      try {
+        // Resolve current model
+        const enabledProviders = modelProviders.filter((p) => p.enabled);
+        let provider = selectedModel
+          ? modelProviders.find((p) => p.id === selectedModel.providerId)
+          : enabledProviders[0];
+
+        let model = selectedModel;
+        if (!provider && enabledProviders.length > 0) {
+          provider = enabledProviders[0];
+          model = provider.models[0] ? { ...provider.models[0], providerId: provider.id } : null;
+        }
+
+        if (!provider || !model) {
+          // No model config, keep defaults or clear
+          return;
+        }
+
+        const result = await (window.api.ai as any).suggest({
+          messages: [],
+          model: model,
+          provider: provider,
+          initialUserPrompt: debouncedInput
+        });
+
+        if (result.success && result.suggestions && result.suggestions.length > 0) {
+          setSuggestions(result.suggestions);
+        }
+      } catch (error) {
+        console.error('Failed to fetch suggestions:', error);
+      } finally {
+        setIsSuggesting(false);
       }
-    }
-    return [];
-  }, [input]);
+    };
+
+    fetchSuggestions();
+  }, [debouncedInput, modelProviders, selectedModel]);
+  // ... (lines in between) ...
+
 
 
 
@@ -194,6 +210,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
 
     setInput('');
     setIsStreaming(true);
+    setAgentStartTime(Date.now());
     setHasStarted(true);
     onSubmit();
 
@@ -217,6 +234,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
         systemPrompt: SYSTEM_PROMPT,
         maxIterations,
         infiniteMode,
+        agentRunLimit,
         initialUserPrompt: userMessage,
         accessToken: token,
         refreshToken: refreshToken,
@@ -340,14 +358,23 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
       </AnimatePresence>
 
       <div className="flex flex-col items-center w-full max-w-2xl px-6">
-        <motion.img
-          src={navreachLogo}
-          alt="NavReach"
-          className="h-12 mb-12 opacity-80"
+        <motion.div
+          className="mb-12"
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 0.8, y: 0 }}
           transition={{ delay: 0.1, duration: 0.4 }}
-        />
+        >
+          <img
+            src={reavionLogoWhite}
+            alt="Reavion"
+            className="h-8 opacity-80 hidden dark:block"
+          />
+          <img
+            src={reavionLogoBlack}
+            alt="Reavion"
+            className="h-8 opacity-80 block dark:hidden"
+          />
+        </motion.div>
 
         <motion.div
           className="w-full"
@@ -356,7 +383,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
           transition={{ delay: 0.2, duration: 0.4 }}
         >
           <form onSubmit={handleSubmit}>
-            <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border transition-all overflow-hidden">
+            <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border transition-all">
               <MentionInput
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -390,7 +417,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.4 }}
           >
-            <div className="flex flex-wrap gap-2 justify-center">
+            <div className={`flex flex-wrap gap-2 justify-center transition-opacity duration-500 ${isSuggesting ? 'opacity-50' : 'opacity-100'}`}>
               {suggestions.map((suggestion, idx) => (
                 <button
                   key={idx}

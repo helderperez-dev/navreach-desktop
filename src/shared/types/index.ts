@@ -87,6 +87,9 @@ export interface AppSettings {
   modelProviders: ModelProvider[];
   mcpServers: MCPServer[];
   apiTools: APITool[];
+  preventSleep: boolean;
+  agentRunMode: 'manual' | 'indefinite' | 'timer';
+  agentRunDuration: number; // in minutes
 }
 
 export interface BrowserTab {

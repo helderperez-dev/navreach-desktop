@@ -27,14 +27,34 @@ export function isNavigationBlocked(): boolean {
   return false; // Never blocked
 }
 
+const consoleLogs = new Map<string, string[]>();
+
 export function registerWebviewContents(tabId: string, contents: Electron.WebContents) {
   webviewContents.set(tabId, contents);
+
+  // Initialize logs
+  if (!consoleLogs.has(tabId)) {
+    consoleLogs.set(tabId, []);
+  }
+
+  // Capture console logs
+  contents.on('console-message', (event, level, message, line, sourceId) => {
+    const logs = consoleLogs.get(tabId) || [];
+    const logEntry = `[${level === 0 ? 'LOG' : level === 1 ? 'WARN' : level === 2 ? 'ERROR' : 'INFO'}] ${message}`; // Simplified for token efficiency
+    logs.push(logEntry);
+    if (logs.length > 50) logs.shift(); // Keep last 50 to save tokens
+    consoleLogs.set(tabId, logs);
+  });
 
   // Allow all navigation like a regular browser - no blocking
   // Just log for debugging purposes
   contents.on('will-navigate', (_event, url) => {
     console.log('Navigation to:', url);
   });
+}
+
+export function clearConsoleLogs(tabId: string) {
+  consoleLogs.set(tabId, []);
 }
 
 export function unregisterWebviewContents(tabId: string) {
@@ -114,7 +134,15 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             
             // Helper function to handle :contains() pseudo-selector (jQuery-style)
             function querySelectorWithContains(root, sel) {
-              const containsMatch = sel.match(/^(.+?):contains\\("([^"]+)"\\)$/);
+              if (!sel) return null;
+              const selStr = String(sel).trim();
+              
+              // Handle numeric IDs from browser_mark_page
+              if (/^\\d+$/.test(selStr)) {
+                return root.querySelector('[data-reavion-id="' + selStr + '"]');
+              }
+
+              const containsMatch = selStr.match(/^(.+?):contains\\("([^"]+)"\\)$/);
               if (containsMatch) {
                 const baseSelector = containsMatch[1];
                 const textToFind = containsMatch[2];
@@ -128,15 +156,24 @@ export function createBrowserTools(): DynamicStructuredTool[] {
               }
               // Standard selector
               try {
-                return root.querySelector(sel);
+                return root.querySelector(selStr);
               } catch (e) {
-                console.error('Invalid selector:', sel, e);
+                console.error('Invalid selector:', selStr, e);
                 return null;
               }
             }
             
             function querySelectorAllWithContains(root, sel) {
-              const containsMatch = sel.match(/^(.+?):contains\\("([^"]+)"\\)$/);
+              if (!sel) return [];
+              const selStr = String(sel).trim();
+
+              // Handle numeric IDs from browser_mark_page
+              if (/^\\d+$/.test(selStr)) {
+                const el = root.querySelector('[data-reavion-id="' + selStr + '"]');
+                return el ? [el] : [];
+              }
+
+              const containsMatch = selStr.match(/^(.+?):contains\\("([^"]+)"\\)$/);
               if (containsMatch) {
                 const baseSelector = containsMatch[1];
                 const textToFind = containsMatch[2];
@@ -144,9 +181,9 @@ export function createBrowserTools(): DynamicStructuredTool[] {
                 return Array.from(candidates).filter(el => el.textContent && el.textContent.includes(textToFind));
               }
               try {
-                return Array.from(root.querySelectorAll(sel));
+                return Array.from(root.querySelectorAll(selStr));
               } catch (e) {
-                console.error('Invalid selector:', sel, e);
+                console.error('Invalid selector:', selStr, e);
                 return [];
               }
             }
@@ -227,16 +264,16 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             }
             
             // Add animation styles if not exists
-            if (!document.getElementById('navreach-click-styles')) {
+            if (!document.getElementById('reavion-click-styles')) {
               const style = document.createElement('style');
-              style.id = 'navreach-click-styles';
+              style.id = 'reavion-click-styles';
               style.textContent = \`
-                @keyframes navreachClickPulse { 
+                @keyframes reavionClickPulse { 
                   0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); } 
                   50% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
                   100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2); } 
                 }
-                @keyframes navreachRipple {
+                @keyframes reavionRipple {
                   0% { transform: translate(-50%, -50%) scale(0); opacity: 0.6; }
                   100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
                 }
@@ -246,33 +283,33 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             
             // Create ripple effect
             const ripple = document.createElement('div');
-            ripple.style.cssText = 'position:fixed;z-index:999998;pointer-events:none;width:40px;height:40px;border-radius:50%;background:rgba(139,92,246,0.3);animation:navreachRipple 0.8s ease-out forwards;';
+            ripple.style.cssText = 'position:fixed;z-index:999998;pointer-events:none;width:40px;height:40px;border-radius:50%;background:rgba(139,92,246,0.3);animation:reavionRipple 0.8s ease-out forwards;';
             ripple.style.left = x + 'px';
             ripple.style.top = y + 'px';
             document.body.appendChild(ripple);
             setTimeout(() => ripple.remove(), 800);
             
             // Remove any existing pointer indicator
-            const existingPointer = document.getElementById('navreach-pointer');
+            const existingPointer = document.getElementById('reavion-pointer');
             if (existingPointer) existingPointer.remove();
             
             // Create pointer indicator
             const indicator = document.createElement('div');
-            indicator.id = 'navreach-pointer';
+            indicator.id = 'reavion-pointer';
             indicator.innerHTML = \`
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="rgba(80, 80, 80, 0.95)" stroke="white" stroke-width="1.5"/>
               </svg>
             \`;
             
-            if (!document.getElementById('navreach-float-anim')) {
+            if (!document.getElementById('reavion-float-anim')) {
               const style = document.createElement('style');
-              style.id = 'navreach-float-anim';
-              style.textContent = '@keyframes navreachFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }';
+              style.id = 'reavion-float-anim';
+              style.textContent = '@keyframes reavionFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }';
               document.head.appendChild(style);
             }
 
-            indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;transition:all 0.4s ease-out;animation: navreachFloat 3s ease-in-out infinite;';
+            indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;transition:all 0.4s ease-out;animation: reavionFloat 3s ease-in-out infinite;';
             indicator.style.left = x + 'px';
             indicator.style.top = y + 'px';
             document.body.appendChild(indicator);
@@ -281,7 +318,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
             element.dispatchEvent(new MouseEvent('mousemove', eventOptions));
             element.dispatchEvent(new MouseEvent('mouseover', eventOptions));
             element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-            element.focus();
+            // element.focus(); // Removed to prevent stealing focus in background
             element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
             element.dispatchEvent(new MouseEvent('click', eventOptions));
             
@@ -311,11 +348,20 @@ export function createBrowserTools(): DynamicStructuredTool[] {
         const contents = getContents();
         const result = await contents.executeJavaScript(`
           (async function() {
-            let element = document.querySelector('${selector.replace(/'/g, "\\'")}');
-            if (!element) return { success: false, error: 'Element not found: ${selector}' };
+            const selStr = String('${selector.replace(/'/g, "\\'")}').trim();
+            let element = null;
+
+            if (/^\\d+$/.test(selStr)) {
+               element = document.querySelector('[data-reavion-id="' + selStr + '"]');
+            } else {
+               element = document.querySelector(selStr);
+            }
+
+            if (!element) return { success: false, error: 'Element not found: ' + selStr };
             
             element.scrollIntoView({ behavior: 'instant', block: 'center' });
-            element.focus();
+            element.scrollIntoView({ behavior: 'instant', block: 'center' });
+            // contenteditable requires focus for execCommand to work on the right element
             
             let editableEl = element;
             if (element.getAttribute('contenteditable') !== 'true') {
@@ -325,8 +371,10 @@ export function createBrowserTools(): DynamicStructuredTool[] {
 
             const textToType = '${text.replace(/'/g, "\\'")}';
             if (editableEl.getAttribute('contenteditable') === 'true' || editableEl.tagName === 'DIV') {
+                editableEl.focus(); // Focus required for execCommand
                 document.execCommand('insertText', false, textToType);
             } else {
+                // Do not focus standard inputs to avoid stealing window focus
                 editableEl.value = textToType;
                 editableEl.dispatchEvent(new Event('input', { bubbles: true }));
                 editableEl.dispatchEvent(new Event('change', { bubbles: true }));
@@ -344,7 +392,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
 
   const scrollTool = new DynamicStructuredTool({
     name: 'browser_scroll',
-    description: 'Scroll the page up or down.',
+    description: 'Scroll the page up or down. Automatically detects scrollable areas if the main window is not scrollable (common in SPAs like X.com or Reddit).',
     schema: z.object({
       direction: z.enum(['up', 'down']).describe('Direction to scroll'),
       amount: z.number().describe('Amount to scroll in pixels (e.g., 500)'),
@@ -353,8 +401,65 @@ export function createBrowserTools(): DynamicStructuredTool[] {
       try {
         const contents = getContents();
         const scrollAmount = direction === 'down' ? amount : -amount;
-        await contents.executeJavaScript(`window.scrollBy(0, ${scrollAmount})`);
-        return JSON.stringify({ success: true, message: `Scrolled ${direction} by ${amount}px` });
+
+        const result = await contents.executeJavaScript(`
+          (function() {
+            const amount = ${scrollAmount};
+            
+            // Helper to get scroll definition
+            function isScrollable(el) {
+                const style = window.getComputedStyle(el);
+                const isScrollable = (style.overflowY === 'auto' || style.overflowY === 'scroll');
+                const hasScrollSpace = el.scrollHeight > el.clientHeight;
+                return isScrollable && hasScrollSpace;
+            }
+
+            // 1. Try Window Scroll first
+            const startY = window.scrollY;
+            window.scrollBy(0, amount);
+            const endY = window.scrollY;
+            
+            if (Math.abs(endY - startY) > 0) {
+                return { success: true, message: 'Scrolled window by ' + amount + 'px' };
+            }
+            
+            // 2. Window didn't scroll. Find the best scrollable container.
+            // Heuristic: Largest visible scrollable element is usually the main feed.
+            const allElements = document.querySelectorAll('*');
+            let bestContainer = null;
+            let maxArea = 0;
+            
+            for (const el of allElements) {
+                if (isScrollable(el)) {
+                    const rect = el.getBoundingClientRect();
+                    // Must be visible
+                    if (rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) {
+                        const area = rect.width * rect.height;
+                        if (area > maxArea) {
+                            maxArea = area;
+                            bestContainer = el;
+                        }
+                    }
+                }
+            }
+            
+            if (bestContainer) {
+                bestContainer.scrollBy({ top: amount, behavior: 'smooth' }); // Smooth for visual feedback
+                return { success: true, message: 'Scrolled container ' + (bestContainer.className || bestContainer.tagName) + ' by ' + amount + 'px' };
+            }
+            
+            // 3. Fallback: Try specific known containers for common sites if general heuristic fails
+            // X.com usually uses [data-testid="primaryColumn"] or section
+            // But usually the loop above catches it.
+            
+            return { success: false, error: 'No scrollable element found.' };
+          })()
+        `);
+
+        // Wait a bit if we did smooth scrolling
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        return JSON.stringify(result);
       } catch (error) {
         return JSON.stringify({ success: false, error: String(error) });
       }
@@ -362,29 +467,125 @@ export function createBrowserTools(): DynamicStructuredTool[] {
   });
 
   const snapshotTool = new DynamicStructuredTool({
-    name: 'browser_snapshot',
-    description: 'Capture a YAML snapshot of interactive elements on the page.',
+    name: 'browser_dom_snapshot',
+    description: 'Capture a concise snapshot of interactive elements currently visible in the viewport. Highly optimized for speed and token efficiency.',
     schema: z.object({
-      full_page: z.boolean().describe('Whether to snapshot the full page. Always pass true.')
+      only_visible: z.boolean().nullable().describe('Whether to only include elements currently in the viewport. Default true.').default(true)
     }),
-    func: async () => {
+    func: async ({ only_visible }) => {
+      const isVisibleCheck = only_visible !== false; // Default true if null or undefined -> but zod default? 
+      // Handle the logic inside:
+      // If we pass 'true' to executeJS, it's baked in.
+
       try {
         const contents = getContents();
         const result = await contents.executeJavaScript(`
           (function() {
             const elements = [];
-            document.querySelectorAll('button, a, input, [role="button"], [data-testid]').forEach((node, i) => {
-                const rect = node.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                    elements.push({
-                        id: i,
-                        role: node.getAttribute('role') || node.tagName.toLowerCase(),
-                        name: (node.getAttribute('aria-label') || node.innerText || node.getAttribute('data-testid') || '').trim().slice(0, 50),
-                        selector: node.getAttribute('data-testid') ? '[data-testid="' + node.getAttribute('data-testid') + '"]' : null
-                    });
+            const vWidth = window.innerWidth;
+            const vHeight = window.innerHeight;
+            
+            function isVisible(el) {
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) return false;
+                
+                if (${only_visible !== false}) {
+                    if (rect.bottom < 0 || rect.top > vHeight || rect.right < 0 || rect.left > vWidth) return false;
+                }
+
+                // Check visibility using a faster approach
+                if (el.checkVisibility) {
+                   if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
+                } else {
+                   const style = window.getComputedStyle(el);
+                   if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                }
+                
+                if (el.getAttribute('aria-hidden') === 'true') return false;
+                return true;
+            }
+
+            const candidates = document.querySelectorAll('button, a, input, textarea, select, [role="button"], [role="link"], [role="checkbox"], [role="menuitem"], [data-testid], [tabindex]:not([tabindex="-1"])');
+            
+            candidates.forEach((node, i) => {
+                if (isVisible(node)) {
+                    const tag = node.tagName.toLowerCase();
+                    const testId = node.getAttribute('data-testid');
+                    const ariaLabel = node.getAttribute('aria-label');
+                    const title = node.getAttribute('title');
+                    const placeholder = node.getAttribute('placeholder');
+                    const innerText = node.innerText?.trim();
+                    const value = node.value?.trim();
+                    const href = node.href;
+                    const type = node.type;
+
+                    // Prioritized Labeling (Heuristic inspired by Chrome MCP & accessibility best practices)
+                    let name = ariaLabel || testId || title || placeholder || innerText || '';
+                    
+                    if (!name && (tag === 'input' || tag === 'textarea' || tag === 'select') && node.id) {
+                        const labelEl = document.querySelector('label[for="' + node.id + '"]');
+                        if (labelEl) name = labelEl.innerText;
+                    }
+
+                    if (!name && (tag === 'button' || tag === 'a')) {
+                        const icon = node.querySelector('svg');
+                        if (icon) {
+                            name = icon.getAttribute('aria-label') || icon.querySelector('title')?.innerText || '';
+                        }
+                    }
+
+                    name = name.replace(/\\s+/g, ' ').trim().slice(0, 60); // Truncate to 60 chars
+                    
+                    // Extra description if the text content adds more context than the label
+                    let description = null;
+                    if (innerText && name !== innerText) {
+                        description = innerText.replace(/\\s+/g, ' ').trim().slice(0, 80); // Truncate to 80 chars
+                    }
+                    
+                    if (name || tag === 'input' || testId || href) {
+                        const rect = node.getBoundingClientRect();
+                        const state = [];
+                        if (node.getAttribute('aria-expanded') === 'true') state.push('expanded');
+                        if (node.getAttribute('aria-selected') === 'true' || node.classList.contains('active')) state.push('selected');
+                        if (node.disabled) state.push('disabled');
+                        if (node.required) state.push('required');
+                        if (node.checked) state.push('checked');
+
+                        // X-specific engagement detection
+                        if (window.location.hostname.includes('x.com')) {
+                           if (testId === 'unlike') state.push('engaged', 'liked');
+                           if (testId === 'unretweet') state.push('engaged', 'retweeted');
+                        }
+
+                        const elData = {
+                            id: i,
+                            role: node.getAttribute('role') || tag,
+                            name: name,
+                            // Remove description if identical to name to save tokens
+                            description: (description && description !== name) ? description : undefined,
+                            selector: testId ? '[data-testid="' + testId + '"]' : undefined,
+                            type: type || undefined,
+                            value: (tag === 'input' || tag === 'textarea') ? value : undefined,
+                            href: (tag === 'a') ? href : undefined,
+                            pos: { 
+                                x: Math.round(rect.left + rect.width / 2), 
+                                y: Math.round(rect.top + rect.height / 2) 
+                            },
+                            state: state.length > 0 ? state.join(', ') : undefined
+                        };
+                        // Clean undefineds
+                        Object.keys(elData).forEach(key => elData[key] === undefined && delete elData[key]);
+                        elements.push(elData);
+                    }
                 }
             });
-            return { url: window.location.href, elements: elements.slice(0, 100) };
+            return { 
+                url: window.location.href, 
+                title: document.title, 
+                viewport: { width: vWidth, height: vHeight },
+                elements: elements.slice(0, 75) // Reduced from 150 to 75 for token efficiency 
+            };
           })()
         `);
         return JSON.stringify({ success: true, snapshot: result });
@@ -394,6 +595,37 @@ export function createBrowserTools(): DynamicStructuredTool[] {
     },
   });
 
+  const screenshotTool = new DynamicStructuredTool({
+    name: 'browser_screenshot',
+    description: 'Capture a visual screenshot of the current page. Returns a base64 string AND a file path. Use this to "see" the page.',
+    schema: z.object({}),
+    func: async () => {
+      try {
+        const contents = getContents();
+        // Capture full page is tricky in Electron without resizing, captureVisiblePage is standard
+        const image = await contents.capturePage();
+        const base64 = image.toDataURL();
+
+        // We could save it to a temp file if needed, but base64 is often enough for VLMs
+        // For the agent to "see", returning base64 is direct.
+
+        return JSON.stringify({
+          success: true,
+          message: 'Screenshot captured',
+          data_url_prefix: 'data:image/png;base64,...', // Don't return full string in JSON to avoid huge logs if not needed immediately
+          // The actual base64 might be too large for some context windows if we dump it all. 
+          // But for a VLM tool, we might want to return it. 
+          // Let's assume the agent environment can handle it or we save it to disk.
+          // For now, let's return a truncated msg and maybe save to disk?
+          // Actually, let's return the full thing but warn about size.
+          image_data: base64
+        });
+      } catch (error) {
+        return JSON.stringify({ success: false, error: String(error) });
+      }
+    }
+  });
+
   const waitTool = new DynamicStructuredTool({
     name: 'browser_wait',
     description: 'Wait for a specified amount of time.',
@@ -401,7 +633,23 @@ export function createBrowserTools(): DynamicStructuredTool[] {
       milliseconds: z.number().describe('Time to wait in milliseconds'),
     }),
     func: async ({ milliseconds }) => {
-      await new Promise(resolve => setTimeout(resolve, milliseconds));
+      const startTime = Date.now();
+      const endTime = startTime + milliseconds;
+
+      while (Date.now() < endTime) {
+        const remaining = Math.ceil((endTime - Date.now()) / 1000);
+
+        // Send a debug log every second to show aliveness
+        sendDebugLog('info', `Waiting... ${remaining}s remaining`);
+        console.log(`[browser_wait] ${remaining}s remaining`);
+
+        // Determine wait chunk (max 1 second)
+        const waitChunk = Math.min(1000, endTime - Date.now());
+        if (waitChunk <= 0) break;
+
+        await new Promise(resolve => setTimeout(resolve, waitChunk));
+      }
+
       return JSON.stringify({ success: true, message: `Waited ${milliseconds}ms` });
     },
   });
@@ -428,15 +676,66 @@ export function createBrowserTools(): DynamicStructuredTool[] {
 
   // Re-adding essential tools with strict schemas
   const getPageContentTool = new DynamicStructuredTool({
-    name: 'browser_get_page_content',
-    description: 'Get page info and clickable elements.',
+    name: 'browser_extract',
+    description: 'Advanced page analysis that extracts semantic structure, headlines, and a story summary. Use this to understand the page content and layout.',
     schema: z.object({
-      include_elements: z.boolean().describe('Whether to include interactive elements. Always pass true.')
+      focus: z.string().nullable().describe('Optional focus area or element to deeply analyze.').default(null)
     }),
-    func: async () => {
+    func: async ({ focus }) => {
       const contents = getContents();
-      const result = await contents.executeJavaScript(`({ title: document.title, url: window.location.href })`);
-      return JSON.stringify({ success: true, ...result });
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            const vHeight = window.innerHeight;
+            const vWidth = window.innerWidth;
+            
+            // 1. Extract high-level semantics
+            function getSemantics() {
+                const sections = Array.from(document.querySelectorAll('main, section, header, footer, article, aside, nav, [role="main"], [role="navigation"]'))
+                    .filter(el => el.checkVisibility ? el.checkVisibility() : true)
+                    .map(el => ({
+                        tag: el.tagName.toLowerCase(),
+                        role: el.getAttribute('role'),
+                        id: el.id,
+                        testId: el.getAttribute('data-testid'),
+                        text: (el.innerText || '').slice(0, 100).replace(/\\s+/g, ' ').trim()
+                    }))
+                    .slice(0, 10);
+                return sections;
+            }
+
+            // 2. Extract key visual headlines
+            function getHeadlines() {
+                return Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
+                    .filter(el => {
+                        const rect = el.getBoundingClientRect();
+                        return rect.top >= 0 && rect.top <= vHeight;
+                    })
+                    .map(h => h.innerText.replace(/\\s+/g, ' ').trim())
+                    .filter(Boolean)
+                    .slice(0, 15);
+            }
+
+            // 3. Extract text "story"
+            const bodyText = document.body.innerText.split('\\n')
+                .filter(line => line.trim().length > 30)
+                .slice(0, 15)
+                .join('\\n');
+
+            return {
+                title: document.title,
+                url: window.location.href,
+                viewport: { width: vWidth, height: vHeight },
+                semantics: getSemantics(),
+                headlines: getHeadlines(),
+                storySummary: bodyText
+            };
+          })()
+        `);
+        return JSON.stringify({ success: true, ...result });
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
     }
   });
 
@@ -446,9 +745,308 @@ export function createBrowserTools(): DynamicStructuredTool[] {
     typeTool,
     scrollTool,
     snapshotTool,
+    screenshotTool,
     waitTool,
     clickAtCoordinatesTool,
     getPageContentTool,
+
+    // --- MARK PAGE TOOL (MOVED & IMPROVED BELOW) ---
+
+    // --- ADVANCED INTROSPECTION TOOLS ---
+    new DynamicStructuredTool({
+      name: 'browser_highlight_elements',
+      description: 'Visually highlight elements on the page matching a selector. Use this to verify your selectors or "see" what you found.',
+      schema: z.object({
+        selector: z.string().describe('CSS selector to highlight'),
+        duration: z.number().nullable().describe('Duration in ms (default 2000)')
+      }),
+      func: async ({ selector, duration }) => {
+        const finalDuration = duration || 2000;
+        const contents = getContents();
+        try {
+          const count = await contents.executeJavaScript(`
+                    (function() {
+                        const els = document.querySelectorAll('${selector.replace(/'/g, "\\'")}');
+                        if (els.length > 0) {
+                            // Only scroll the first element to avoid jitter from multiple smooth scrolls
+                            els[0].scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' });
+                        }
+
+          els.forEach((el, index) => {
+            const originalOutline = el.style.outline;
+            const originalTransition = el.style.transition;
+            const originalBoxShadow = el.style.boxShadow;
+
+            el.style.transition = 'outline 0.1s ease-out';
+            el.style.outline = '3px solid #f43f5e';
+            el.style.boxShadow = '0 0 15px rgba(244, 63, 94, 0.6)';
+
+            setTimeout(() => {
+              // Check if element still exists and is in the DOM
+              if (el && document.body.contains(el)) {
+                el.style.outline = originalOutline;
+                el.style.transition = originalTransition;
+                el.style.boxShadow = originalBoxShadow;
+              }
+            }, ${finalDuration});
+          });
+          return els.length;
+        })()
+      `);
+          return JSON.stringify({ success: true, message: `Highlighted ${count} elements matching "${selector}"` });
+        } catch (e) {
+          return JSON.stringify({ success: false, error: String(e) });
+        }
+      }
+    }),
+
+    new DynamicStructuredTool({
+      name: 'browser_get_console_logs',
+      description: 'Get the recent console logs from the browser page. Useful for debugging errors.',
+      schema: z.object({}),
+      func: async () => {
+        const logs = consoleLogs.get(TAB_ID) || [];
+        return JSON.stringify({
+          success: true,
+          logs: logs.length > 0 ? logs : ['No logs captured yet']
+        });
+      }
+    }),
+
+    new DynamicStructuredTool({
+      name: 'browser_inspect_element',
+      description: 'Get detailed inspection info for an element (computed styles, attributes, visibility). Use this to debug why an element is not clickable or visible.',
+      schema: z.object({
+        selector: z.string().describe('CSS selector for the element to inspect'),
+      }),
+      func: async ({ selector }) => {
+        const contents = getContents();
+        try {
+          const result = await contents.executeJavaScript(`
+            (function() {
+              const el = document.querySelector('${selector.replace(/'/g, "\\'")}');
+              if (!el) return { success: false, error: 'Element not found' };
+              
+              const rect = el.getBoundingClientRect();
+              const style = window.getComputedStyle(el);
+              
+              // Check visibility
+              const isVisible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0;
+              
+              // Key attributes
+              const attributes = {};
+              for (const attr of el.attributes) {
+                attributes[attr.name] = attr.value;
+              }
+              
+              // Computed styles of interest
+              const computed = {
+                display: style.display,
+                visibility: style.visibility,
+                opacity: style.opacity,
+                position: style.position,
+                zIndex: style.zIndex,
+                pointerEvents: style.pointerEvents,
+                cursor: style.cursor,
+                width: rect.width + 'px',
+                height: rect.height + 'px',
+                top: rect.top + 'px',
+                left: rect.left + 'px'
+              };
+              
+              // Check for overlapping elements at center
+              const centerX = rect.left + rect.width / 2;
+              const centerY = rect.top + rect.height / 2;
+              const topEl = document.elementFromPoint(centerX, centerY);
+              const isObscured = topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el);
+              
+              return {
+                success: true,
+                tagName: el.tagName,
+                isVisible,
+                isObscured,
+                obscuringElement: isObscured ? (topEl.tagName + (topEl.id ? '#' + topEl.id : '') + (topEl.className ? '.' + topEl.className : '')) : null,
+                text: (el.innerText || '').slice(0, 200),
+                htmlSnippet: el.outerHTML.slice(0, 500),
+                attributes,
+                computedStyles: computed
+              };
+            })()
+          `);
+          return JSON.stringify(result);
+        } catch (e) {
+          return JSON.stringify({ success: false, error: String(e) });
+        }
+      }
+    }),
+
+    new DynamicStructuredTool({
+      name: 'browser_get_accessibility_tree',
+      description: 'Get a simplified accessibility tree of the page. Use this to understand the semantic structure (roles, names, states) like a screen reader.',
+      schema: z.object({}),
+      func: async () => {
+        const contents = getContents();
+        try {
+          const tree = await contents.executeJavaScript(`
+  (function () {
+    function traverse(node, depth = 0) {
+      if (depth > 50) return null; // Safety depth limit
+      if (!node) return null;
+
+      // Skip hidden nodes generally, unless they have aria-hidden="false" explicitly
+      const style = node.nodeType === 1 ? window.getComputedStyle(node) : null;
+      if (style && (style.display === 'none' || style.visibility === 'hidden')) return null;
+
+      const role = node.getAttribute ? node.getAttribute('role') : null;
+      const ariaLabel = node.getAttribute ? node.getAttribute('aria-label') : null;
+      let name = ariaLabel || node.innerText || '';
+
+      // Clean up name
+      if (name && typeof name === 'string') name = name.replace(/\\s+/g, ' ').trim().slice(0, 50);
+
+      const relevantRoles = ['button', 'link', 'textbox', 'checkbox', 'radio', 'combobox', 'listbox', 'menuitem', 'tab', 'heading', 'banner', 'main', 'navigation', 'dialog', 'alert'];
+      const isInteractive = relevantRoles.includes(role) || (node.tagName === 'BUTTON') || (node.tagName === 'A' && node.href) || (node.tagName === 'INPUT');
+
+      const children = [];
+      for (const child of node.childNodes) {
+        if (child.nodeType === 1) { // Element
+          const childNode = traverse(child, depth + 1);
+          if (childNode) children.push(childNode);
+        }
+      }
+
+      // Only return node if it is interactive, has a role, or has interesting children
+      if (isInteractive || role || children.length > 0) {
+        return {
+          role: role || node.tagName.toLowerCase(),
+          name: name,
+          children: children.length > 0 ? children : undefined
+        };
+      }
+
+      return null;
+    }
+
+    // Start from body
+    return traverse(document.body);
+  })()
+  `);
+          return JSON.stringify({ success: true, tree: tree });
+        } catch (e) {
+          return JSON.stringify({ success: false, error: String(e) });
+        }
+      }
+    }),
+
+    new DynamicStructuredTool({
+      name: 'browser_mark_page',
+      description: 'Overlay numeric labels on all interactive elements in the viewport. This gives you exact IDs to use for browser_click or browser_type. This is your most precise tool for complex UIs.',
+      schema: z.object({}),
+      func: async () => {
+        const contents = getContents();
+        try {
+          const count = await contents.executeJavaScript(`
+  (function () {
+    const containerId = 'reavion-marks-container';
+    const attrName = 'data-reavion-id';
+    
+    // Cleanup existing
+    const existing = document.getElementById(containerId);
+    if (existing) existing.remove();
+    document.querySelectorAll('[' + attrName + ']').forEach(el => el.removeAttribute(attrName));
+
+    const container = document.createElement('div');
+    container.id = containerId;
+    container.style.cssText = 'position:fixed;inset:0;z-index:999999;pointer-events:none;';
+
+    const candidates = document.querySelectorAll('button, a, input, textarea, select, [role="button"], [role="link"], [data-testid], [tabindex]:not([tabindex="-1"])');
+    let count = 0;
+
+    candidates.forEach((el, i) => {
+      const rect = el.getBoundingClientRect();
+      // Check if in viewport
+      if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= window.innerHeight && rect.left >= 0 && rect.left <= window.innerWidth) {
+        el.setAttribute(attrName, i.toString());
+        const label = document.createElement('div');
+        label.innerText = i.toString();
+        label.style.cssText = 'position:fixed;background:rgba(139,92,246,0.95);color:white;padding:2px 4px;font-size:11px;font-family:sans-serif;border-radius:3px;z-index:1000000;pointer-events:none;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.3);border:1px solid white;';
+        label.style.left = Math.max(0, rect.left) + 'px';
+        label.style.top = Math.max(0, rect.top) + 'px';
+        container.appendChild(label);
+        count++;
+      }
+    });
+
+    document.body.appendChild(container);
+
+    // Auto-remove after 60 seconds
+    setTimeout(() => {
+      const el = document.getElementById(containerId);
+      if (el) el.remove();
+    }, 60000);
+    return count;
+  })()
+  `);
+          return JSON.stringify({ success: true, message: `Labeled ${count} interactive elements. You can now use numeric IDs (e.g. "42") as the selector in browser_click or browser_type tools.` });
+        } catch (e) {
+          return JSON.stringify({ success: false, error: String(e) });
+        }
+      }
+    }),
+
+    new DynamicStructuredTool({
+      name: 'browser_draw_grid',
+      description: 'Draw a numbered coordinate grid overlay on the page. Use this to find precise coordinates for browser_click_coordinates.',
+      schema: z.object({
+        opacity: z.number().nullable().describe('Grid opacity (0.1 to 1.0, default 0.3)').default(null)
+      }),
+      func: async ({ opacity }) => {
+        const finalOpacity = opacity ?? 0.3;
+        const contents = getContents();
+        try {
+          await contents.executeJavaScript(`
+            (function () {
+              const existing = document.getElementById('reavion-grid-overlay');
+              if (existing) {
+                existing.remove();
+                return;
+              }
+
+              const grid = document.createElement('div');
+              grid.id = 'reavion-grid-overlay';
+              grid.style.cssText = 'position:fixed;inset:0;z-index:999999;pointer-events:none;background:transparent;';
+
+              const width = window.innerWidth;
+              const height = window.innerHeight;
+              const step = 100;
+
+              let html = '';
+              // Draw vertical lines
+              for (let x = 0; x <= width; x += step) {
+                html += \`<div style="position:absolute;left:\${x}px;top:0;bottom:0;width:1px;background:rgba(244,63,94,\${finalOpacity});"><span style="position:absolute;top:5px;left:2px;font-size:10px;color:#f43f5e;">\${x}</span></div>\`;
+              }
+              // Draw horizontal lines
+              for (let y = 0; y <= height; y += step) {
+                html += \`<div style="position:absolute;top:\${y}px;left:0;right:0;height:1px;background:rgba(244,63,94,\${finalOpacity});"><span style="position:absolute;left:5px;top:2px;font-size:10px;color:#f43f5e;">\${y}</span></div>\`;
+              }
+              
+              grid.innerHTML = html;
+              document.body.appendChild(grid);
+              
+              // Auto-remove after 30 seconds
+              setTimeout(() => {
+                 const el = document.getElementById('reavion-grid-overlay');
+                 if (el) el.remove();
+              }, 30000);
+            })()
+          `);
+          return JSON.stringify({ success: true, message: 'Grid overlay drawn. Use coordinates to click.' });
+        } catch (e) {
+          return JSON.stringify({ success: false, error: String(e) });
+        }
+      }
+    }),
+
     ...createSiteTools({ getContents }),
   ];
 }

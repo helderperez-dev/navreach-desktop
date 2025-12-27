@@ -35,8 +35,12 @@ export interface PlaybookExecutionDefaults {
 export type PlaybookNodeType =
     | 'start' | 'end' | 'condition' | 'loop' | 'wait' // Control
     | 'use_target_list' | 'generate_targets' | 'filter_targets' // Target
-    | 'navigate' | 'analyze' | 'engage' | 'extract' | 'scroll' // Action
-    | 'x_search' | 'x_advanced_search' | 'x_like' | 'x_reply' | 'x_post' | 'x_follow' | 'x_engage' // X tools
+    | 'navigate' | 'analyze' | 'engage' | 'extract' | 'scroll' | 'browser_accessibility_tree' | 'browser_inspect' | 'browser_highlight' | 'browser_console_logs' | 'browser_grid' // Action
+    | 'x_search' | 'x_advanced_search' | 'x_scout_topics' | 'x_scout_community' | 'x_like' | 'x_reply' | 'x_post' | 'x_follow' | 'x_engage' // X tools
+    | 'reddit_search' | 'reddit_scout_community' | 'reddit_vote' | 'reddit_comment' | 'reddit_join' // Reddit tools
+    | 'linkedin_search' | 'linkedin_connect' | 'linkedin_message' // LinkedIn
+    | 'instagram_post' | 'instagram_engage' // Instagram
+    | 'bluesky_post' | 'bluesky_reply' // Bluesky
     | 'mcp_call' | 'api_call' | 'browser_action' | 'humanize' // Capability
     | 'approval' | 'pause'; // HITL
 

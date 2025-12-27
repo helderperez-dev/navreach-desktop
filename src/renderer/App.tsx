@@ -57,8 +57,8 @@ export function App() {
 
   if (isLoading) {
     return (
-      <div className="h-screen w-screen flex items-center justify-center bg-[#0A0A0B]">
-        <div className="w-8 h-8 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+      <div className="h-screen w-screen flex items-center justify-center bg-background">
+        <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
       </div>
     );
   }
@@ -66,7 +66,7 @@ export function App() {
   return (
     <>
       {session ? <MainLayout /> : <AuthScreen />}
-      <Toaster position="bottom-right" theme="dark" />
+      <Toaster position="bottom-right" theme={theme as 'light' | 'dark' | 'system'} />
     </>
   );
 }

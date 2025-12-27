@@ -32,20 +32,31 @@ interface ChatRequest {
   refreshToken?: string;
   playbooks?: any[];
   targetLists?: any[];
+  agentRunLimit?: number | null;
 }
 
 function createChatModel(provider: ModelProvider, model: ModelConfig, streaming = true) {
+  const baseUrl = provider.baseUrl?.trim() || undefined;
+
   const baseConfig = {
     modelName: model.id,
     temperature: 0.7,
     streaming,
   };
 
+  console.log(`[AI Service] Creating model ${model.id} for provider ${provider.type} at ${baseUrl}`);
+
   switch (provider.type) {
     case 'openai':
+    case 'custom':
       return new ChatOpenAI({
         ...baseConfig,
+        apiKey: provider.apiKey,
         openAIApiKey: provider.apiKey,
+        configuration: {
+          baseURL: baseUrl,
+          apiKey: provider.apiKey,
+        },
       });
     case 'anthropic':
       return new ChatAnthropic({
@@ -58,14 +69,10 @@ function createChatModel(provider: ModelProvider, model: ModelConfig, streaming 
         openAIApiKey: provider.apiKey,
         configuration: {
           baseURL: 'https://openrouter.ai/api/v1',
-        },
-      });
-    case 'custom':
-      return new ChatOpenAI({
-        ...baseConfig,
-        openAIApiKey: provider.apiKey,
-        configuration: {
-          baseURL: provider.baseUrl,
+          defaultHeaders: {
+            'HTTP-Referer': 'https://reavion.ai',
+            'X-Title': 'Reavion Desktop',
+          },
         },
       });
     default:
@@ -107,132 +114,91 @@ function convertMessages(messages: Message[], systemPrompt?: string): BaseMessag
   return langchainMessages;
 }
 
-const BROWSER_AGENT_PROMPT = `**YOUR ROLE:**
-You are the Navreach Agent, a high-performance autonomous automation engine. You orchestrate web browsing, target management, and playbook execution.
+const BROWSER_AGENT_PROMPT = `**IDENTITY & ROLE**
+You are a **Senior Autonomous Web Agent** and **Browser Automation Expert**. 
+Your mission is to execute complex web tasks with **human-like intelligence**, **resilience**, and **creativity**.
+You are NOT a simple script executor. You are a problem solver. If a door is locked (selector fails), you find a window (visual search).
 
-**EXECUTION COMMANDS:**
-- **PLAYBOOKS**: When asked to "run" or "execute" a playbook (e.g. {{playbooks.ID}}), you MUST:
-  1. Call \`db_get_playbook_details\` with the ID.
-  2. Parse the graph (\`nodes\` and \`edges\`).
-  3. Traverse from 'start' to 'end'. For each node, map its \`type\` to your available tools (e.g., node type 'navigate' -> tool 'browser_navigate', 'engage' -> 'x_engage').
-  4. **SPECIAL NODE HANDLING - 'HUMANIZE'**: If you encounter a 'humanize' node, it is a modifier. It means: "For the NEXT engagement or posting action (x_reply, x_engage, x_post), you MUST first draft your text, then run it through the \`humanize_text\` tool, and use the RESULT of that tool as your final text." Do not call \`humanize_text\` in isolation unless you have distinct text input from a previous step.
-  5. **CRITICAL - PERSONALIZATION**: When the agent encounters an \`engage\` or \`reply\` node in a playbook, you MUST prioritize **Growth & Personalization**. You MUST read the post content you are interacting with (using browser_snapshot or page content) and generate a contextually relevant, human-like response. Do NOT simply use a static template from the playbook if it sounds generic. Use the configuration as a guideline for tone/topic, but always personalize.
-  5. Narrate each step as you process the nodes (e.g. "Now I'm running the search node with the configured hashtags...").
-- **HITL (Human In The Loop)**: If a playbook node has type \`approval\`, you MUST call \`human_approval\`. If type is \`pause\`, you MUST call \`agent_pause\`. These tools will signal the UI to wait for user confirmation.
-- **BROWSER**: For web tasks, use \`browser_snapshot\` first to see elements, then interact. Use site-specific tools (x_like, x_reply) for X.com/Twitter.
-  - **TIP**: X.com search is brittle. Avoid redundant filters (like \`has:hashtags\` when you already have \`#tag\`). DO NOT use \`min_likes:0\`, \`min_replies:0\`, or \`min_retweets:0\` as they often fail. Use \`minLikes:2\` or more for quality results.
-- **FALLBACKS**: If a selector fails, use \`browser_click_coordinates\` based on the rect in the snapshot.
+**CORE OPERATING PROTOCOL (THE O.O.D.A. LOOP)**
+You must apply this cycle to every step of your execution:
 
-**TAG RESOLUTION**:
-The UI uses tags like {{playbooks.xyz}} or {{lists.abc}}. These map to database IDs. You MUST use the ID part (e.g. "xyz") when calling tools. You HAVE access to every resource listed in the context below.
+1.  **OBSERVE (Current State)**
+    *   Where am I? (URL, Page Title)
+    *   What is visible? (Use \`browser_dom_snapshot\` actively)
+    *   Did my last action succeed? (Check tool output)
 
-**TOOL USAGE RULES**:
-- **NEVER** say you lack access. If a resource is tagged, use the tools.
-- **NEVER** write "[Tool Call]" as text. Use the actual function.
-- **NARRATE** briefly before every action (e.g. "Running the 'Login' node of the playbook...").
+2.  **ORIENT (Analysis)**
+    *   Does this page match my goal?
+    *   If "Yes": What interactive elements (buttons, inputs) are relevant?
+    *   If "No": How do I get there? (Navigate, Search, Click Menu)
+    *   *Crucial*: If a specific site tool (e.g., \`x_search\`) exists, prefer it. If NOT, use **Universal Browser Tools** immediately.
 
-**X.COM (TWITTER) TOOL SELECTION - CRITICAL:**
-- **Reply** means responding to an existing post (a tweet you can see in the timeline/search results). For replies you MUST use **x_reply**.
-- **Post** means creating a brand-new standalone tweet from the composer. For new posts you MUST use **x_post**.
-- If the user request includes words like "reply", "respond", "comment", "reply to posts", "engage with posts" then you MUST use **x_reply** (not x_post).
-- If the user explicitly asks to "post", "tweet", "write a post", "publish a tweet" then you can use **x_post**.
-- **Never open /compose/post when the task is replying.** If you end up on /compose/post while trying to reply, stop and report the issue (do not continue).
+3.  **DECIDE (Strategy Selection)**
+    *   **Happy Path**: Element found -> Call Tool.
+    *   **Ambiguity**: Multiple similar elements -> Use \`browser_mark_page\` to assign IDs -> Click by ID.
+    *   **Failure**: Element missing -> Scroll down? Search text? Try different selector?
 
-**PACING + VERIFICATION (MANDATORY ON X.COM):**
-- Do not rush. After EACH X action (x_search/x_like/x_reply/x_follow/x_post), pause briefly and verify the UI state.
-- After EACH successful X action, you MUST call browser_snapshot or browser_get_page_content BEFORE doing any next step.
-- Only proceed when the snapshot confirms the expected state (e.g., reply dialog opened, reply submitted, like toggled).
-- Do NOT "reset to Home" unless recovery is required and you have explained why.
+4.  **ACT (Tool Execution)**
+    *   Execute the chosen tool.
 
-**SMART AUTONOMY ({{agent.decide}} / agent_decide):**
-- Some playbook nodes may have fields set to \`{{agent.decide}}\`, the string \`agent_decide\`, or left blank/null.
-- This is your signal to take full responsibility for that parameter.
-- You MUST observe the current state (via \`browser_snapshot\` or by listing resources), choose the best target or value based on your intelligence, and then use that ACTUAL value.
-- If a \`targetIndex\` is autonomous, find the best element on screen and use its index.
-- If a \`list_id\` is autonomous, fetch the available lists and pick the one that best matches the current task context (e.g., "SaaS Founders" for a SaaS outreach task).
+**UNIVERSAL NAVIGATION STRATEGY (HOW TO BROWSE ANYTHING)**
+You can navigate **ANY** website, even those you've never seen.
+*   **Initial Landing**: When arriving at a new generic site, ALWAYS call \`browser_dom_snapshot\` (snapshot).
+*   **Semantic Search**: To find a link/button, do not guess selectors. Look at the snapshot text.
+*   **Precision Interaction**:
+    *   If standard \`browser_click\` is risky or ambiguous, use \`browser_mark_page\`.
+    *   This draws numeric IDs on everything. Then you simply call \`browser_click\` with the numeric ID (e.g., "42"). **This is your superpower for difficult UIs.**
 
-**CRITICAL NAVIGATION RULES:**
-- **NEVER navigate to a new page immediately after performing an action (like replying, posting, liking, etc.)**
-- **ALWAYS take a browser snapshot (using browser_get_page_content) BEFORE navigating to verify the current state**
-- **ALWAYS wait for action confirmation before proceeding to navigation**
-- When replying or posting, you MUST:
-  1. Execute the reply/post action
-  2. Wait for the tool result confirming success
-  3. Take a snapshot to verify the action completed
-  4. ONLY THEN navigate if needed
-- Navigation should be fluid and smart - verify each action's completion before moving to the next step
-- The system must be reliable - confirm state changes before proceeding
+**TOOL HIERARCHY**
+1.  **SPECIALIZED TOOLS (Highest Priority)**
+    *   If executing a Playbook node or working on X.com/Reddit/LinkedIn, use the specific tools (\`x_like\`, \`reddit_comment\`, etc.).
+    *   They are optimized for those platforms.
 
-**CRITICAL REPLY WORKFLOW - MANDATORY SEQUENCE:**
-BEFORE clicking any reply button, you MUST:
+2.  **UNIVERSAL BROWSER TOOLS (The "Skeleton Key")**
+    *   \`browser_navigate\`: Go to URL.
+    *   \`browser_dom_snapshot\`: **YOUR EYES**. Use \`only_visible: true\` by default.
+    *   \`browser_extract\`: "Read" the page. summaries, finding specific data points.
+    *   \`browser_mark_page\`: **PRECISION AIM**. Use when selectors are complex.
+    *   \`browser_click\`: Click things.
+    *   \`browser_type\`: Type things.
+    *   \`browser_scroll\`: Reveal more content.
 
-**STEP 1: READ POSTS FIRST (MANDATORY)**
-- Use browser_snapshot or browser_get_page_content to see all visible posts
-- Read and analyze the content of each post
-- Identify which posts are relevant and worth replying to
-- Understand what each post is saying - the topic, tone, and message
-- NEVER click reply until you have read and understood the post content
+**ERROR RECOVERY & RESILIENCE**
+*   **NEVER** loop the same failed action.
+*   **ERROR**: "Element not found" -> **FIX**:
+    1.  Is it just off-screen? -> \`browser_scroll\`.
+    2.  Is the selector wrong? -> \`browser_mark_page\` -> Click by ID.
+    3.  Is the page not loaded? -> \`wait\` or \`browser_dom_snapshot\` to verify.
+*   **ERROR**: "Timeout" -> **FIX**: The page might be heavy. Wait longer or stop loading. Check if the *content* you need is valid despite the timeout.
 
-**STEP 2: SELECT POST TO REPLY TO**
-- Choose a specific post based on its content
-- Ensure the post is relevant to your engagement goals
-- Confirm you understand what the author is saying
+**PLAYBOOK EXECUTION RULES (STRICT)**
+If running a Playbook ({{playbooks.ID}}):
+1.  **Follow the Graph**: Move Node -> Edge -> Node.
+2.  **Loop Handling**: If in a Loop Node, process the *current list item*. Do not jump ahead.
+3.  **Placeholders**: **CRITICAL**: Detect and replace {{target.url}}, {{agent.decide}} before calling ANY tool.
+    *   **{{agent.decide}}**: YOU MUST GENERATE FINAL TEXT. Never pass the literal string "{{agent.decide}}". Be creative, professional, and context-aware.
+    *   **{{target.url}}**: Extract the actual URL from your state/context. Never pass the literal string "{{target.url}}".
 
-**STEP 3: CRAFT YOUR REPLY (BEFORE CLICKING)**
-- Based on the post content you just read, write a contextually appropriate reply
-- Your reply MUST:
-  - Directly respond to what the author said
-  - Be relevant to the specific topic they discussed
-  - Make sense as a conversation response
-  - Not be generic, random, or off-topic
-  - Not duplicate the post content
-  - **TONE**: Casual, professional, "founder-to-founder". Lowercase is fine. No hashtags unless critical.
-  - **FORBIDDEN**: "Hi @username!", "Great post!", "Thanks for sharing!", "100% agree!", "Valuable insights!".
-  - **STRATEGY**: Add a specific data point, ask a 2nd-order question, or share a brief contrarian take.
-  - **LENGTH**: Keep it under 280 chars, ideally <150. Short and punchy.
+**DATA COLLECTION RULES**
+*   **Tasks**: "Find leads", "Scrape", "Create list".
+*   **Action**: Use \`db_create_target\` or \`db_create_target_list\`.
+*   **Constraint**: Do NOT engage (like/reply) during data collection unless explicitly told.
 
-**STEP 4: CLICK REPLY BUTTON**
-- Only NOW use x_reply tool with your crafted reply text
-- The tool will click the reply button and open the modal
+**ENGAGEMENT RULES**
+*   **Tone**: Matches the platform (LinkedIn = Pro, X = Casual/Builder, Reddit = Helpful).
+*   **Authenticity**: Never sound like a bot. No "Great post!". Be specific to the content.
+*   **X.com Efficiency**: 
+    1. Check button \`state\` in \`browser_dom_snapshot\` first. 
+    2. Skip humanization/engagement if an item is already "engaged" or "liked".
 
-**STEP 5: VERIFY IN MODAL**
-- The x_reply tool will extract the post content from the modal
-- It will verify your typed reply matches your intent
-- It will check alignment with the post content
-- Review the verification results
+**NARRATION & TRANSPARENCY**
+*   **Announce your steps**: "Orienting: [thought]", "Node: [Name]", "Item [X] of [Total]".
+*   **No placeholders**: Never pass literal {{agent.decide}}. Resolve it to creative content.
 
-**STEP 6: SUBMIT OR ABORT**
-- If verification passes: reply is submitted
-- If verification fails: modal closes automatically, try again
-
-**STEP 7: CONFIRM POSTING**
-- Take a snapshot to verify the reply was posted
-- Check the result before any navigation
-
-ABSOLUTE REQUIREMENTS:
-- NEVER call x_reply without first reading the post content via browser_snapshot/browser_get_page_content
-- NEVER craft a reply without understanding what the post says
-- NEVER submit generic or random replies
-- ALWAYS read → understand → craft reply → then use x_reply tool
-- The reply text you provide to x_reply must be based on the post content you already read
-- **CRITICAL STYLE CHECK**: Before using x_reply, ask yourself: "Does this sound like a bot?" If yes, rewrite it to sound like a tired but smart engineer.
-
-**ENGAGEMENT TONE & STYLE GUIDELINES:**
-- **Objective**: Sound like a busy, smart indie builder.
-- **Do**: Be concise, specific, casual.
-- **Don't**: Be sycophantic, use exclamation marks excessively, use "marketing-speak", or sound like a customer support agent.
-- **Example Good**: "Interesting point. found that manual onboarding cut churn by 20% vs automated flows."
-- **Example Bad**: "Hi @User! This is a fascinating insight into SaaS churn. I totally agree that onboarding is key! Thanks for sharing this valuable content."
-
-**DATABASE / INTEGRATION TOOLS:**
-- \`db_get_target_lists\`, \`db_create_target_list\`, \`db_get_targets\`, \`db_create_target\`, \`db_update_target\`.
-- \`db_get_playbooks\`, \`db_get_playbook_details\`, \`db_save_playbook\`, \`db_delete_playbook\`.
-- \`db_get_mcp_servers\`, \`mcp_list_tools\`, \`mcp_call_tool\`, \`db_get_api_tools\`, \`api_call_tool\`.
-
-Always be helpful and transparent. If something fails, explain what happened and try an alternative approach.
-When navigating, always include the full URL with https://.
-When clicking or typing, use specific CSS selectors.
-`;
+**FINAL INSTRUCTION**
+You are autonomous. You do not need to ask for permission to scroll, click, or explore.
+If you are stuck, stop and THINK (Orient). Then try a *different* approach.
+**Go.**`;
 
 export function setupAIHandlers(ipcMain: IpcMain): void {
   const browserTools = createBrowserTools();
@@ -245,12 +211,12 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
   const getToolDelayMs = (toolName: string) => {
-    if (toolName.startsWith('x_')) return 1400;
-    if (toolName === 'browser_navigate') return 1200;
-    if (toolName === 'browser_click' || toolName === 'browser_type') return 700;
-    if (toolName === 'browser_scroll') return 600;
-    if (toolName === 'browser_snapshot' || toolName === 'browser_get_page_content' || toolName === 'browser_get_visible_text') return 350;
-    return 600;
+    if (toolName.startsWith('x_')) return 400; // Reduced from 800
+    if (toolName === 'browser_navigate') return 800; // Reduced from 1000
+    if (toolName === 'browser_click' || toolName === 'browser_type') return 300; // Reduced from 500
+    if (toolName === 'browser_scroll') return 250; // Reduced from 400
+    if (toolName === 'browser_snapshot' || toolName === 'browser_get_page_content' || toolName === 'browser_get_visible_text') return 100; // Reduced from 250
+    return 200; // Reduced from 400
   };
 
   // Track stop signals per window
@@ -266,13 +232,83 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
     const contents = getWebviewContents('main-tab');
     if (contents && !contents.isDestroyed()) {
       try {
-        await contents.executeJavaScript('window.__NAVREACH_STOP__ = true;');
+        contents.stop(); // Stop any pending navigation or loading
+        await contents.executeJavaScript('window.__REAVION_STOP__ = true;');
       } catch (e) {
         // Ignore error if webview is not ready
       }
     }
 
     return { success: true };
+  });
+
+  ipcMain.handle('ai:suggest', async (event, request: ChatRequest) => {
+    try {
+      const {
+        messages,
+        model,
+        provider,
+        initialUserPrompt
+      } = request;
+
+      const isDiscovery = !initialUserPrompt || initialUserPrompt.trim().length < 2;
+      const chatModel = createChatModel(provider, model, false);
+
+      const systemPrompt = `You are a helpful assistant that generates 3 short, actionable, and distinct suggestions for a powerful autonomous AI agent called Reavion.
+The agent can browse the web, scrape data, and engage on social media (X/Twitter, LinkedIn) to help users grow.
+
+Return ONLY a valid JSON array of objects with 'label' (short title) and 'prompt' (detailed instruction).
+
+${isDiscovery
+          ? "The user hasn't typed anything yet. Generate 3 high-value 'Starter' ideas that showcase the agent's capabilities in areas like social growth, lead generation, or competitor analysis."
+          : `The user is typing: "${initialUserPrompt}". Generate 3 suggestions that continue their thought or offer related high-value actions.`}
+
+Example Output Format:
+[
+  { "label": "Social Growth", "prompt": "Find active accounts in the SaaS niche on X, and like their latest posts to grow followers." },
+  { "label": "Lead Gen", "prompt": "Search LinkedIn for 'Founder' in 'SF', parse profiles, and save to database." }
+]
+
+Keep the 'label' under 20 chars. Keep the 'prompt' practical and precise.
+DO NOT use emojis.
+DO NOT wrap the result in markdown or code blocks. Just the raw JSON string.`;
+
+      const langchainMessages = [
+        new HumanMessage(`${systemPrompt}\n\nUser Input: ${initialUserPrompt || "Show me some starter ideas."}`)
+      ];
+
+      // Add timeout
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Suggestion timed out')), 15000)
+      );
+
+      console.log(`[AI Service] Fetching suggestions for: "${initialUserPrompt || 'Starter ideas'}" using ${model.id}`);
+      const response: any = await Promise.race([
+        chatModel.invoke(langchainMessages),
+        timeoutPromise
+      ]);
+      console.log(`[AI Service] Suggestion response received`);
+
+      let content = typeof response.content === 'string' ? response.content : "";
+      if (content) {
+        // Clean up markdown code blocks if present (despite instructions)
+        content = content.replace(/```json/g, '').replace(/```/g, '').trim();
+        try {
+          const suggestions = JSON.parse(content);
+          if (Array.isArray(suggestions)) {
+            return { success: true, suggestions: suggestions.slice(0, 3) };
+          }
+        } catch (e) {
+          console.error('Failed to parse suggestion JSON', e);
+        }
+      }
+
+      return { success: false, error: 'Invalid response format' };
+
+    } catch (error) {
+      console.error('AI Suggestion Error:', error);
+      return { success: false, error: String(error) };
+    }
   });
 
   ipcMain.handle('ai:chat', async (event, request: ChatRequest) => {
@@ -332,7 +368,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
       const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase });
       const requestPlaybookTools = createPlaybookTools({ playbooks, supabaseClient: scopedSupabase });
       const requestIntegrationTools = createIntegrationTools();
-      const requestUtilityTools = createUtilityTools();
+      const requestUtilityTools = createUtilityTools({ provider, model });
 
       const requestTools = [...requestBrowserTools, ...requestTargetTools, ...requestPlaybookTools, ...requestIntegrationTools, ...requestUtilityTools];
       const requestToolsByName = new Map(requestTools.map(tool => [tool.name, tool]));
@@ -341,7 +377,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
       const contents = getWebviewContents('main-tab');
       if (contents && !contents.isDestroyed()) {
         try {
-          await contents.executeJavaScript('window.__NAVREACH_STOP__ = false;');
+          await contents.executeJavaScript('window.__REAVION_STOP__ = false;');
         } catch (e) {
           // Ignore
         }
@@ -378,7 +414,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
 
       const infiniteDirective =
         infiniteMode && baseUserGoal
-          ? `\nThe user enabled **Infinite Loop Mode**. Treat the goal as an endless campaign:\n- Goal: "${baseUserGoal}"\n- Never ask the user for extra details. Invent reasonable copy, targets, or parameters yourself.\n- After you finish a pass (navigate/snapshot/post/reply/like/follow), immediately start planning the next pass and execute without waiting.\n- Rotate between different engagement tactics so the logged-in account keeps growing organically.\n- Summaries should be brief and should not stop you from continuing. Only halt when explicitly told to stop or when safety limits trigger.`
+          ? `\nThe user enabled **Infinite Loop Mode**. This means you must execute the task continuously without stopping:\n- Goal: "${baseUserGoal}"\n- **CONTINUITY**: Never ask the user for extra details. Self-correct and continue. After one cycle is done, immediately start the next.\n- **IF DATA COLLECTION**: If the goal is to find leads, save targets, or scrape: Continue finding NEW leads (pagination, new searches) and saving them. **DO NOT** switch to engaging/replying.\n- **IF ENGAGEMENT**: If the goal is to reply, like, or post: Rotate tactics and continue engaging to grow the account.\n- **Summaries**: Keep them extremely brief (1 line) and do not stop.`
           : '';
 
       // --- CONTEXT INJECTION START ---
@@ -418,23 +454,32 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
       } catch (e) { console.error('Error fetching settings context:', e); }
 
       contextInjection += "\nUse these IDs when calling tools that require a list_id, playbook_id, etc. The user may write them as tags like 'Run {{playbooks.xyz}}', which translates to the ID 'xyz'.";
+
+      // 4. Active Toolkit (Dynamic Capability Awareness)
+      // This ensures the agent knows exactly which tools are instantiated for this session
+      const activeToolNames = requestTools.map(t => t.name).join(', ');
+      contextInjection += `\n\n**ACTIVE TOOLKIT (Reference):**\n${activeToolNames}\n`;
       // --- CONTEXT INJECTION END ---
 
+      const now = new Date();
+      const timeContext = `\n**TEMPORAL CONTEXT:**\n- Current Date: ${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n- Current Time: ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}\n- ISO Timestamp: ${now.toISOString()}\n- Note: Use this "Current Date" as the anchor for all relative date calculations (e.g., "last week", "yesterday", "30 days ago").\n`;
+
       const effectiveSystemPrompt = enableTools
-        ? `${contextInjection}\n\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
+        ? `${contextInjection}\n${timeContext}\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
         : systemPrompt;
 
       if (enableTools) {
         const chatModel = createChatModel(provider, model, false);
         console.log('Registering AI Tools:', requestTools.map(t => t.name).join(', '));
-        const modelWithTools = chatModel.bindTools(requestTools, { strict: false } as any);
+        // Bind tools without strict mode to avoid "all fields must be required" warning
+        // The strict mode requires all schema fields to be required, which conflicts with optional tool parameters
+        const modelWithTools = chatModel.bindTools(requestTools);
 
         let langchainMessages = convertMessages(messages, effectiveSystemPrompt);
         let fullResponse = '';
         let iteration = 0;
         const sentNarrations = new Set<string>(); // Track sent narrations to prevent duplicates
-        const recentToolCalls: string[] = []; // Track recent tool calls to detect loops
-        const MAX_IDENTICAL_CALLS = 3; // Max times same tool+args can be called consecutively
+
 
         while (iteration < hardStopIterations) {
           // Check if user requested stop
@@ -448,11 +493,12 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
 
           iteration++;
 
-          // Add timeout to prevent hanging - 60 second timeout for model calls
+          // Add timeout to prevent hanging - 180 second timeout for model calls
+          // Increased from 120s to 180s to handle complex operations
           let response;
           try {
             const timeoutPromise = new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('Model call timed out after 60s')), 60000)
+              setTimeout(() => reject(new Error('Model call timed out after 180s')), 180000)
             );
 
             // Wrap the invoke call to catch LangChain internal errors
@@ -571,7 +617,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
               // The AI will narrate its own continuation based on context
               langchainMessages.push(
                 new HumanMessage(
-                  `Remain in autonomous mode. Goal: "${baseUserGoal}". Immediately plan and execute the next set of browser actions (navigate/snapshot/post/reply/like/follow) using the information you already gathered. Do NOT ask the user for clarification—make reasonable assumptions, craft copy yourself, and keep alternating between engagement tactics. After each mini-pass, summarize briefly and keep going.`
+                  `Remain in autonomous mode. Goal: "${baseUserGoal}". Immediately plan and execute the next set of actions. \n- If expanding a list, find NEW targets.\n- If engaging, find NEW posts.\n- Do NOT ask for clarification. Do NOT switch tasks (e.g. dont start engaging if the goal is just data collection).\n- Summarize briefly and continue.`
                 )
               );
               iteration = 0;
@@ -640,37 +686,25 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
               continue;
             }
 
-            // Detect runaway loops - same tool called repeatedly with same args
-            const callSignature = `${toolCall.name}:${JSON.stringify(toolCall.args)}`;
-            const identicalCount = recentToolCalls.filter(c => c === callSignature).length;
+            // Track this call - usage removed
+            // Loop detection removed per user request
 
-            if (identicalCount >= MAX_IDENTICAL_CALLS) {
-              // Break the loop - tell the AI to try something different
-              const loopBreakMsg = new ToolMessage({
-                tool_call_id: toolCall.id || '',
-                content: JSON.stringify({
-                  error: `Loop detected: ${toolCall.name} called ${identicalCount} times with same args. Try a different approach.`,
-                  suggestion: 'Use a different tool or different parameters to make progress.'
-                }),
-              });
-              langchainMessages.push(loopBreakMsg);
+            // --- Placeholder Guardian ---
+            const argsStr = JSON.stringify(toolCall.args);
+            if (argsStr.includes('{{agent.decide}}') || argsStr.includes('{{target.url}}')) {
+              console.warn(`[AI Service] Placeholder detected in tool ${toolCall.name}: ${argsStr}`);
+              langchainMessages.push(new HumanMessage(
+                `⚠️ STOP: You attempted to call tool "${toolCall.name}" with a literal placeholder ({{agent.decide}} or {{target.url}}). 
+                
+You MUST resolve these before calling tools:
+- For {{agent.decide}}: YOU must generate the final text based on the task description and context. Do NOT pass the placeholder to the tool.
+- For {{target.url}}: You must extract this value from your previous observations or the current page.
 
-              if (window && !window.isDestroyed()) {
-                window.webContents.send('ai:stream-chunk', {
-                  content: `⚠️ Loop detected - skipping repeated ${toolCall.name} call\n`,
-                  done: false
-                });
-              }
-
-              // Clear recent calls to give it a fresh start
-              recentToolCalls.length = 0;
-              continue;
+Please try again with the actual content.`
+              ));
+              toolExecutionFailed = true;
+              break;
             }
-
-            // Track this call
-            recentToolCalls.push(callSignature);
-            // Keep only last 10 calls
-            if (recentToolCalls.length > 10) recentToolCalls.shift();
 
             if (window && !window.isDestroyed()) {
               // Send tool call event without text content pollution
@@ -736,14 +770,25 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
                 }
               }
             } catch (toolError) {
+              // Check if the error is due to a stop signal
+              const errorStr = String(toolError);
+              const isStopError = errorStr.includes('Stopped by user') || errorStr.includes('stop signal');
+
+              if (window && (stopSignals.get(window.id) || isStopError)) {
+                stopSignals.set(window.id, false);
+                if (!window.isDestroyed()) {
+                  window.webContents.send('ai:stream-chunk', { content: '', done: true });
+                }
+                return { success: true, response: 'Stopped by user' };
+              }
+
               const errorMessage = new ToolMessage({
                 tool_call_id: toolCall.id || '',
-                content: JSON.stringify({ error: String(toolError) }),
+                content: JSON.stringify({ error: errorStr }),
               });
               langchainMessages.push(errorMessage);
 
               if (window && !window.isDestroyed()) {
-                const errorStr = String(toolError);
                 window.webContents.send('ai:stream-chunk', {
                   content: `Error: ${errorStr}\n`,
                   done: false
@@ -752,7 +797,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
 
               toolExecutionFailed = true;
               lastToolErrorDescription =
-                toolError instanceof Error ? toolError.message : String(toolError);
+                toolError instanceof Error ? toolError.message : errorStr;
               langchainMessages.push(
                 new HumanMessage(
                   `Tool "${toolCall.name}" failed with error: "${lastToolErrorDescription}". Diagnose why the schema/inputs were invalid, update your plan, and resend the appropriate tools with corrected arguments.`

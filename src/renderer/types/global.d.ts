@@ -60,6 +60,7 @@ declare global {
           refreshToken?: string;
           playbooks?: any[];
           targetLists?: any[];
+          agentRunLimit?: number | null;
         }) => Promise<{ success: boolean; response?: string; error?: string }>;
         chatSync: (request: {
           messages: import('@shared/types').Message[];

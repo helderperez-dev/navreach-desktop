@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from 'react';
+import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/stores/app.store';
 import { useDebugStore } from '@/stores/debug.store';
@@ -107,26 +108,27 @@ export function MainLayout() {
               {!chatPanelCollapsed && activeView === 'browser' && (
                 <div
                   onMouseDown={handleMouseDown}
-                  className="group relative w-1.5 h-full cursor-col-resize flex-shrink-0 z-10"
+                  className="group relative w-px h-full cursor-col-resize flex-shrink-0 z-20 bg-border"
                 >
-                  <div className="absolute inset-y-0 left-[2px] w-px bg-border group-hover:bg-white/20 transition-colors" />
+                  {/* Expanded invisible hit area for easier grabbing */}
+                  <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize z-30" />
+                  {/* Visual hover indicator */}
+                  <div className="absolute inset-y-0 -left-[0.5px] -right-[0.5px] bg-primary/0 group-hover:bg-primary/50 transition-colors z-20" />
                 </div>
               )}
 
-              <main className="flex-1 overflow-hidden">
-                <AnimatePresence mode="wait">
-                  {activeView === 'browser' && (
-                    <motion.div
-                      key="browser"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="h-full"
-                    >
-                      <BrowserView />
-                    </motion.div>
+              <main className="flex-1 overflow-hidden relative">
+                {/* Persistent Browser View - Keeps webview alive in background */}
+                <div
+                  className={cn(
+                    "absolute inset-0 w-full h-full bg-background",
+                    activeView === 'browser' ? "z-0" : "opacity-0 pointer-events-none z-[-1]"
                   )}
+                >
+                  <BrowserView />
+                </div>
+
+                <AnimatePresence mode="wait">
                   {activeView === 'settings' && (
                     <motion.div
                       key="settings"
@@ -134,7 +136,7 @@ export function MainLayout() {
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.15 }}
-                      className="h-full"
+                      className="h-full bg-background relative z-10"
                     >
                       <SettingsLayout />
                     </motion.div>
@@ -146,7 +148,7 @@ export function MainLayout() {
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.15 }}
-                      className="h-full"
+                      className="h-full bg-background relative z-10"
                     >
                       <TargetListView />
                     </motion.div>
@@ -158,7 +160,7 @@ export function MainLayout() {
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.15 }}
-                      className="h-full"
+                      className="h-full bg-background relative z-10"
                     >
                       <PlaybooksView />
                     </motion.div>

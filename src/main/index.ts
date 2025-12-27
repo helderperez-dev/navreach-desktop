@@ -15,10 +15,10 @@ let mainWindow: BrowserWindow | null = null;
 // Register protocol
 if (process.defaultApp) {
   if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('navreach', process.execPath, [join(__dirname, '../../')]);
+    app.setAsDefaultProtocolClient('reavion', process.execPath, [join(__dirname, '../../')]);
   }
 } else {
-  app.setAsDefaultProtocolClient('navreach');
+  app.setAsDefaultProtocolClient('reavion');
 }
 
 function handleAuthRedirect(url: string): void {
@@ -79,7 +79,7 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(() => {
-    electronApp.setAppUserModelId('com.navreach.app');
+    electronApp.setAppUserModelId('com.reavion.app');
 
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window);

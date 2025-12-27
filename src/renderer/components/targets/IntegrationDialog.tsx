@@ -60,13 +60,13 @@ export function IntegrationDialog({ open, onOpenChange, listId }: IntegrationDia
         }
     }, [open]);
 
-    const navreachApiUrl = import.meta.env.VITE_API_URL || 'https://navreach-web-app.vercel.app/api';
+    const reavionApiUrl = import.meta.env.VITE_API_URL || 'https://reavion-web-app.vercel.app/api';
     const apiKey = showApiKey ? userApiKey : '••••••••••••••••';
 
     const snippets: Record<Language, { code: string; language: string }> = {
         curl: {
             language: 'bash',
-            code: `curl -X POST "${navreachApiUrl}/targets/event" \\
+            code: `curl -X POST "${reavionApiUrl}/targets/event" \\
   -H "x-api-key: ${apiKey}" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -84,7 +84,7 @@ export function IntegrationDialog({ open, onOpenChange, listId }: IntegrationDia
             language: 'python',
             code: `import requests
 
-url = "${navreachApiUrl}/targets/event"
+url = "${reavionApiUrl}/targets/event"
 headers = {
     "x-api-key": "${apiKey}",
     "Content-Type": "application/json"
@@ -104,7 +104,7 @@ print(response.json())`
         },
         javascript: {
             language: 'javascript',
-            code: `fetch("${navreachApiUrl}/targets/event", {
+            code: `fetch("${reavionApiUrl}/targets/event", {
   method: "POST",
   headers: {
     "x-api-key": "${apiKey}",
@@ -134,7 +134,7 @@ print(response.json())`
 }
 
 const createTarget = async (target: Target) => {
-  const response = await fetch("${navreachApiUrl}/targets/event", {
+  const response = await fetch("${reavionApiUrl}/targets/event", {
     method: "POST",
     headers: {
       "x-api-key": "${apiKey}",
@@ -166,7 +166,7 @@ import (
 )
 
 func main() {
-    url := "${navreachApiUrl}/targets/event"
+    url := "${reavionApiUrl}/targets/event"
     
     payload := map[string]interface{}{
         "list_id": "${listId}",
@@ -194,7 +194,7 @@ func main() {
             code: `require 'net/http'
 require 'json'
 
-uri = URI('${navreachApiUrl}/targets/event')
+uri = URI('${reavionApiUrl}/targets/event')
 http = Net::HTTP.new(uri.host, uri.port)
 http.use_ssl = true
 
@@ -217,7 +217,7 @@ puts JSON.parse(response.body)`
         php: {
             language: 'php',
             code: `<?php
-$url = '${navreachApiUrl}/targets/event';
+$url = '${reavionApiUrl}/targets/event';
 $data = [
     'list_id' => '${listId}',
     'name' => 'Emma Watson',
@@ -265,40 +265,40 @@ echo $result;
     return (
         <Dialog.Root open={open} onOpenChange={onOpenChange}>
             <Dialog.Portal>
-                <Dialog.Overlay className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 animate-in fade-in duration-200" />
-                <Dialog.Content className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-3xl h-[600px] bg-[#0F0F11] border border-white/5 p-8 rounded-3xl shadow-2xl z-50 animate-in zoom-in-95 duration-200 flex flex-col">
+                <Dialog.Overlay className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 animate-in fade-in duration-200" />
+                <Dialog.Content className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-3xl h-[600px] bg-popover border border-border p-8 rounded-3xl shadow-2xl z-50 animate-in zoom-in-95 duration-200 flex flex-col">
                     <div className="flex items-center justify-between mb-6 flex-shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center">
-                                <Code2 className="h-5 w-5 text-blue-400" />
+                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                <Code2 className="h-5 w-5 text-primary" />
                             </div>
                             <div>
-                                <Dialog.Title className="text-xl font-semibold text-white">
+                                <Dialog.Title className="text-xl font-semibold text-foreground">
                                     API Integration
                                 </Dialog.Title>
                                 <p className="text-xs text-muted-foreground mt-0.5">Send targets to this list programmatically</p>
                             </div>
                         </div>
                         <Dialog.Close asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/5 rounded-full">
+                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full">
                                 <X className="h-4 w-4" />
                             </Button>
                         </Dialog.Close>
                     </div>
 
                     <div className="flex-1 flex flex-col overflow-hidden space-y-4">
-                        <div className="bg-blue-500/5 border border-blue-500/10 rounded-xl p-4 flex gap-3 text-sm text-blue-200/80 flex-shrink-0">
-                            <Info className="h-5 w-5 text-blue-400 flex-shrink-0" />
+                        <div className="bg-primary/5 border border-primary/10 rounded-xl p-4 flex gap-3 text-sm text-primary/80 flex-shrink-0">
+                            <Info className="h-5 w-5 text-primary flex-shrink-0" />
                             <p>
                                 You can use these snippets to automatically add targets from external scrapers, browser extensions, or custom tools.
                             </p>
                         </div>
 
                         {!isCollectionEnabled && (
-                            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex gap-3 text-sm text-amber-200/80 flex-shrink-0">
-                                <ShieldAlert className="h-5 w-5 text-amber-500 flex-shrink-0" />
+                            <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 flex gap-3 text-sm text-orange-600/80 dark:text-orange-200/80 flex-shrink-0">
+                                <ShieldAlert className="h-5 w-5 text-orange-500 flex-shrink-0" />
                                 <div className="flex-1">
-                                    <p className="font-medium text-amber-400">External collection is disabled</p>
+                                    <p className="font-medium text-orange-600 dark:text-orange-400">External collection is disabled</p>
                                     <p className="mt-1 text-xs">Requests to the API will fail until you enable this in your Integrations Settings.</p>
                                 </div>
                             </div>
@@ -307,7 +307,7 @@ echo $result;
                         {/* Code Window with Tabs */}
                         <div className="flex-1 flex flex-col overflow-hidden space-y-3">
                             <div className="flex items-center justify-between flex-shrink-0">
-                                <div className="flex gap-1 bg-black/40 p-1 rounded-xl border border-white/5 overflow-x-auto">
+                                <div className="flex gap-1 bg-muted p-1 rounded-xl border border-border overflow-x-auto">
                                     {languages.map((lang) => (
                                         <button
                                             key={lang.id}
@@ -315,8 +315,8 @@ echo $result;
                                             className={cn(
                                                 "px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap",
                                                 selectedLang === lang.id
-                                                    ? "bg-blue-600/20 text-blue-400 shadow-sm"
-                                                    : "text-muted-foreground hover:text-white hover:bg-white/5"
+                                                    ? "bg-primary/20 text-primary shadow-sm"
+                                                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                             )}
                                         >
                                             {lang.label}
@@ -326,7 +326,7 @@ echo $result;
                                 <div className="flex items-center gap-2">
                                     <button
                                         onClick={() => setShowApiKey(!showApiKey)}
-                                        className="text-xs text-muted-foreground hover:text-white transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-white/5"
+                                        className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-muted"
                                         title={showApiKey ? "Hide API Key" : "Show API Key"}
                                     >
                                         {showApiKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
@@ -334,7 +334,7 @@ echo $result;
                                     </button>
                                     <button
                                         onClick={handleCopy}
-                                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-white/5"
+                                        className="text-xs text-primary hover:text-primary/80 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-muted"
                                     >
                                         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
                                         {copied ? 'Copied' : 'Copy'}
@@ -342,7 +342,7 @@ echo $result;
                                 </div>
                             </div>
 
-                            <div className="flex-1 overflow-hidden rounded-2xl border border-white/5">
+                            <div className="flex-1 overflow-hidden rounded-2xl border border-border">
                                 <SyntaxHighlighter
                                     language={snippets[selectedLang].language}
                                     style={vscDarkPlus}
@@ -363,7 +363,7 @@ echo $result;
 
                         <div className="text-center flex-shrink-0">
                             <p className="text-[10px] text-muted-foreground">
-                                List ID: <code className="text-blue-400/80">{listId}</code>
+                                List ID: <code className="text-primary/80">{listId}</code>
                             </p>
                         </div>
                     </div>

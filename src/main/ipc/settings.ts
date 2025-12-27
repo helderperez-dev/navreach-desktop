@@ -1,6 +1,23 @@
-import { IpcMain } from 'electron';
+import { IpcMain, powerSaveBlocker } from 'electron';
 import Store from 'electron-store';
 import type { AppSettings, ModelProvider, MCPServer, APITool } from '../../shared/types';
+
+let sleepBlockerId: number | null = null;
+
+function updatePowerSaveBlocker(prevent: boolean) {
+  if (prevent) {
+    if (sleepBlockerId === null) {
+      sleepBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+      console.log('Power save blocker started:', sleepBlockerId);
+    }
+  } else {
+    if (sleepBlockerId !== null) {
+      powerSaveBlocker.stop(sleepBlockerId);
+      console.log('Power save blocker stopped:', sleepBlockerId);
+      sleepBlockerId = null;
+    }
+  }
+}
 
 const defaultSettings: AppSettings = {
   theme: 'dark',
@@ -11,12 +28,18 @@ const defaultSettings: AppSettings = {
   modelProviders: [],
   mcpServers: [],
   apiTools: [],
+  preventSleep: false,
+  agentRunMode: 'manual',
+  agentRunDuration: 60,
 };
 
 const store = new Store<AppSettings>({
   name: 'settings',
   defaults: defaultSettings,
 });
+
+// Initialize on startup
+updatePowerSaveBlocker(store.get('preventSleep'));
 
 export function setupSettingsHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('settings:get', async (_event, key: keyof AppSettings) => {
@@ -25,6 +48,9 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('settings:set', async (_event, key: keyof AppSettings, value: unknown) => {
     store.set(key, value);
+    if (key === 'preventSleep') {
+      updatePowerSaveBlocker(value as boolean);
+    }
     return { success: true };
   });
 

@@ -231,14 +231,14 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                 return (
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
-                            <Label className="text-[10px] font-semibold text-white/40 uppercase tracking-wider ml-1">URL Source</Label>
-                            <div className="flex bg-black/40 rounded-md p-0.5 border border-white/5 shadow-inner">
+                            <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">URL Source</Label>
+                            <div className="flex bg-muted/60 rounded-md p-0.5 border border-border shadow-inner">
                                 <button
                                     type="button"
                                     onClick={() => handleConfigChange('url_mode', 'dynamic')}
                                     className={cn(
                                         "px-2.5 py-1 text-[10px] rounded",
-                                        !isManual ? "bg-blue-600/30 text-blue-100 font-medium" : "text-white/30 hover:text-white/50"
+                                        !isManual ? "bg-primary/20 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
                                     Dynamic
@@ -248,7 +248,7 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                     onClick={() => handleConfigChange('url_mode', 'manual')}
                                     className={cn(
                                         "px-2.5 py-1 text-[10px] rounded",
-                                        isManual ? "bg-blue-600/30 text-blue-100 font-medium" : "text-white/30 hover:text-white/50"
+                                        isManual ? "bg-primary/20 text-primary font-medium" : "text-muted-foreground hover:text-foreground"
                                     )}
                                 >
                                     Manual
@@ -262,17 +262,17 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                     value={config.url || ''}
                                     onValueChange={(v) => handleConfigChange('url', v)}
                                 >
-                                    <SelectTrigger className="w-full h-12 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-[13px] shadow-sm hover:border-white/20 focus:ring-0 focus:ring-offset-0">
+                                    <SelectTrigger className="w-full h-12 rounded-xl border border-border bg-muted/30 px-4 py-2 text-[13px] shadow-sm hover:border-primary/30 focus:ring-0 focus:ring-offset-0">
                                         <SelectValue placeholder="Select target field..." />
                                     </SelectTrigger>
-                                    <SelectContent className="bg-[#1e1e20] border-border/50 max-h-[300px] shadow-2xl rounded-xl">
+                                    <SelectContent className="bg-popover border-border/50 max-h-[300px] shadow-2xl rounded-xl">
                                         {vars.length > 0 ? (
                                             vars.map((v, i) => (
-                                                <SelectItem key={i} value={v.value} className="focus:bg-white/5 data-[state=checked]:bg-blue-500/10 py-2.5">
+                                                <SelectItem key={i} value={v.value} className="focus:bg-accent/50 data-[state=checked]:bg-primary/10 py-2.5">
                                                     <div className="flex flex-col items-start text-left">
-                                                        <span className="font-medium text-xs text-white/90 leading-tight">{v.label}</span>
+                                                        <span className="font-medium text-xs text-foreground leading-tight">{v.label}</span>
                                                         {v.example && (
-                                                            <span className="text-[9px] text-white/20 truncate max-w-[200px] mt-1 italic">
+                                                            <span className="text-[9px] text-muted-foreground/60 truncate max-w-[200px] mt-1 italic">
                                                                 {v.example}
                                                             </span>
                                                         )}
@@ -281,7 +281,7 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                             ))
                                         ) : (
                                             <div className="px-3 py-6 text-[11px] text-center text-muted-foreground flex flex-col items-center gap-2">
-                                                <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center">
+                                                <div className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center">
                                                     <X className="w-4 h-4 opacity-20" />
                                                 </div>
                                                 <span>No upstream fields found.<br />Connect a list node first.</span>
@@ -351,7 +351,7 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 <SelectContent>
                                     <SelectItem value="agent_decide">
                                         <div className="flex items-center gap-2">
-                                            <Sparkles className="h-3 w-3 text-blue-400" />
+                                            <Sparkles className="h-3 w-3 text-primary" />
                                             <span>Agent Decides</span>
                                         </div>
                                     </SelectItem>
@@ -466,6 +466,54 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 </SelectContent>
                             </Select>
                         </Field>
+                    </div>
+                );
+            case 'x_scout_topics':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Max Items">
+                            <Input
+                                type="number"
+                                value={config.limit || 10}
+                                onChange={(e) => handleConfigChange('limit', parseInt(e.target.value))}
+                                className="h-9 text-xs"
+                            />
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Scouts visible tweets for:
+                            <ul className="list-disc pl-4 mt-1 space-y-0.5">
+                                <li>Trending hashtags</li>
+                                <li>Active accounts</li>
+                            </ul>
+                        </div>
+                    </div>
+                );
+            case 'x_scout_community':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Community ID / URL">
+                            <MentionInput
+                                value={config.communityId || ''}
+                                onChange={(e) => handleConfigChange('communityId', e.target.value)}
+                                placeholder="e.g. 1493446837214187523 or URL"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Filter">
+                            <Select
+                                value={config.filter || 'latest'}
+                                onValueChange={(v) => handleConfigChange('filter', v)}
+                            >
+                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="top">Top</SelectItem>
+                                    <SelectItem value="latest">Latest</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Goes to the specific X Community to scout for high-intent targets.
+                        </div>
                     </div>
                 );
             case 'x_advanced_search':
@@ -607,6 +655,31 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 variableGroups={variableGroups}
                             />
                         </Field>
+                        <div className="pt-4 pb-2 border-t border-border">
+                            <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">Skip Filters</Label>
+                        </div>
+                        <div className="flex items-center justify-between px-1">
+                            <Label className="text-[12px] text-muted-foreground">Skip logged-in user</Label>
+                            <Switch
+                                checked={config.skip_self !== false}
+                                onCheckedChange={(v) => handleConfigChange('skip_self', v)}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between px-1">
+                            <Label className="text-[12px] text-muted-foreground">Skip verified/business profiles</Label>
+                            <Switch
+                                checked={config.skip_verified === true}
+                                onCheckedChange={(v) => handleConfigChange('skip_verified', v)}
+                            />
+                        </div>
+                        <Field label="Skip Keywords (comma separated)">
+                            <Input
+                                value={config.skip_keywords || ''}
+                                onChange={(e) => handleConfigChange('skip_keywords', e.target.value)}
+                                placeholder="promotional, official, bot..."
+                                className="h-9 text-[12px]"
+                            />
+                        </Field>
                     </div>
                 );
             case 'x_post':
@@ -674,6 +747,31 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 variableGroups={variableGroups}
                             />
                         </Field>
+                        <div className="pt-4 pb-2 border-t border-border">
+                            <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">Skip Filters</Label>
+                        </div>
+                        <div className="flex items-center justify-between px-1">
+                            <Label className="text-[12px] text-muted-foreground">Skip logged-in user</Label>
+                            <Switch
+                                checked={config.skip_self !== false}
+                                onCheckedChange={(v) => handleConfigChange('skip_self', v)}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between px-1">
+                            <Label className="text-[12px] text-muted-foreground">Skip verified/business profiles</Label>
+                            <Switch
+                                checked={config.skip_verified === true}
+                                onCheckedChange={(v) => handleConfigChange('skip_verified', v)}
+                            />
+                        </div>
+                        <Field label="Skip Keywords (comma separated)">
+                            <Input
+                                value={config.skip_keywords || ''}
+                                onChange={(e) => handleConfigChange('skip_keywords', e.target.value)}
+                                placeholder="promotional, official, bot..."
+                                className="h-9 text-[12px]"
+                            />
+                        </Field>
                     </div>
                 );
             case 'generate_targets':
@@ -685,6 +783,22 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 onChange={(e) => handleConfigChange('instruction', e.target.value)}
                                 placeholder="Describe targets to find..."
                             />
+                        </Field>
+                        <Field label="Target List">
+                            <Select
+                                value={config.list_id || ''}
+                                onValueChange={(v) => handleConfigChange('list_id', v)}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a list..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="new_list">+ Create New List</SelectItem>
+                                    {lists.map((l: any) => (
+                                        <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </Field>
                         <Field label="Max Targets">
                             <Input
@@ -705,6 +819,369 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                     <SelectItem value="website">Website</SelectItem>
                                 </SelectContent>
                             </Select>
+                        </Field>
+                    </div>
+                );
+            case 'reddit_search':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Query">
+                            <MentionInput
+                                value={config.query || ''}
+                                onChange={(e) => handleConfigChange('query', e.target.value)}
+                                placeholder="Search query..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Sort">
+                            <Select value={config.sort || 'relevance'} onValueChange={(v) => handleConfigChange('sort', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="relevance">Relevance</SelectItem>
+                                    <SelectItem value="hot">Hot</SelectItem>
+                                    <SelectItem value="top">Top</SelectItem>
+                                    <SelectItem value="new">New</SelectItem>
+                                    <SelectItem value="comments">Comments</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <Field label="Time">
+                            <Select value={config.time || 'all'} onValueChange={(v) => handleConfigChange('time', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="hour">Hour</SelectItem>
+                                    <SelectItem value="day">Day</SelectItem>
+                                    <SelectItem value="week">Week</SelectItem>
+                                    <SelectItem value="month">Month</SelectItem>
+                                    <SelectItem value="year">Year</SelectItem>
+                                    <SelectItem value="all">All Time</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <Field label="Type">
+                            <Select value={config.type || 'posts'} onValueChange={(v) => handleConfigChange('type', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="posts">Posts</SelectItem>
+                                    <SelectItem value="communities">Communities</SelectItem>
+                                    <SelectItem value="people">People</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                    </div>
+                );
+            case 'reddit_scout_community':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Subreddit">
+                            <MentionInput
+                                value={config.subreddit || ''}
+                                onChange={(e) => handleConfigChange('subreddit', e.target.value)}
+                                placeholder="e.g. SaaS or r/SaaS"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Sort">
+                            <Select value={config.sort || 'hot'} onValueChange={(v) => handleConfigChange('sort', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="hot">Hot</SelectItem>
+                                    <SelectItem value="new">New</SelectItem>
+                                    <SelectItem value="top">Top</SelectItem>
+                                    <SelectItem value="rising">Rising</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <Field label="Limit">
+                            <Input
+                                type="number"
+                                value={config.limit || 10}
+                                onChange={(e) => handleConfigChange('limit', parseInt(e.target.value))}
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'reddit_vote':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Index">
+                            <MentionInput
+                                value={config.index?.toString() || '0'}
+                                onChange={(e) => handleConfigChange('index', e.target.value)}
+                                placeholder="0, 1, 2... or {{loop.index}}"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Action">
+                            <Select value={config.action || 'up'} onValueChange={(v) => handleConfigChange('action', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="up">Upvote</SelectItem>
+                                    <SelectItem value="down">Downvote</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <Field label="Target Type">
+                            <Select value={config.type || 'post'} onValueChange={(v) => handleConfigChange('type', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="post">Post</SelectItem>
+                                    <SelectItem value="comment">Comment</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                    </div>
+                );
+            case 'reddit_comment':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Index">
+                            <MentionInput
+                                value={config.index?.toString() || '0'}
+                                onChange={(e) => handleConfigChange('index', e.target.value)}
+                                placeholder="0, 1, 2... or {{loop.index}}"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Target Type">
+                            <Select value={config.type || 'post'} onValueChange={(v) => handleConfigChange('type', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="post">Post</SelectItem>
+                                    <SelectItem value="comment">Comment</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <Field label="Comment Text">
+                            <MentionInput
+                                value={config.text || ''}
+                                onChange={(e) => handleConfigChange('text', e.target.value)}
+                                placeholder="Write your comment..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'reddit_join':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Subreddit (Optional)">
+                            <MentionInput
+                                value={config.subreddit || ''}
+                                onChange={(e) => handleConfigChange('subreddit', e.target.value)}
+                                placeholder="Leave empty to use current page"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Action">
+                            <Select value={config.action || 'join'} onValueChange={(v) => handleConfigChange('action', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="join">Join</SelectItem>
+                                    <SelectItem value="leave">Leave</SelectItem>
+                                    <SelectItem value="toggle">Toggle</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                    </div>
+                );
+            case 'linkedin_search':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Query">
+                            <MentionInput
+                                value={config.query || ''}
+                                onChange={(e) => handleConfigChange('query', e.target.value)}
+                                placeholder="Search LinkedIn..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Type">
+                            <Select value={config.type || 'people'} onValueChange={(v) => handleConfigChange('type', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All</SelectItem>
+                                    <SelectItem value="people">People</SelectItem>
+                                    <SelectItem value="jobs">Jobs</SelectItem>
+                                    <SelectItem value="posts">Posts</SelectItem>
+                                    <SelectItem value="companies">Companies</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                    </div>
+                );
+            case 'linkedin_connect':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Personalized Note (Optional)">
+                            <MentionInput
+                                value={config.message || ''}
+                                onChange={(e) => handleConfigChange('message', e.target.value)}
+                                placeholder="I'd like to connect to discuss {{target.metadata.role}}..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'linkedin_message':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Message content">
+                            <MentionInput
+                                value={config.message || ''}
+                                onChange={(e) => handleConfigChange('message', e.target.value)}
+                                placeholder="Hello {{target.name}}, I saw your profile and..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'instagram_post':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Caption">
+                            <MentionInput
+                                value={config.caption || ''}
+                                onChange={(e) => handleConfigChange('caption', e.target.value)}
+                                placeholder="Write your caption..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'instagram_engage':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Action">
+                            <Select value={config.action || 'like'} onValueChange={(v) => handleConfigChange('action', v)}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="like">Like</SelectItem>
+                                    <SelectItem value="comment">Comment</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        {config.action === 'comment' && (
+                            <Field label="Comment Text">
+                                <MentionInput
+                                    value={config.commentText || ''}
+                                    onChange={(e) => handleConfigChange('commentText', e.target.value)}
+                                    variableGroups={variableGroups}
+                                />
+                            </Field>
+                        )}
+                    </div>
+                );
+            case 'bluesky_post':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Post content">
+                            <MentionInput
+                                value={config.text || ''}
+                                onChange={(e) => handleConfigChange('text', e.target.value)}
+                                placeholder="What's up in the sky?"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'bluesky_reply':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Post Index">
+                            <Input
+                                type="number"
+                                value={config.index || 0}
+                                onChange={(e) => handleConfigChange('index', parseInt(e.target.value))}
+                            />
+                        </Field>
+                        <Field label="Reply content">
+                            <MentionInput
+                                value={config.text || ''}
+                                onChange={(e) => handleConfigChange('text', e.target.value)}
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'browser_accessibility_tree':
+                return (
+                    <div className="space-y-4">
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Retrieves the simplified accessibility tree of the page. No configuration needed.
+                        </div>
+                    </div>
+                );
+            case 'browser_inspect':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Selector">
+                            <MentionInput
+                                value={config.selector || ''}
+                                onChange={(e) => handleConfigChange('selector', e.target.value)}
+                                placeholder="CSS selector to inspect..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Analyzes visibility, z-index, and computed styles of the matched element.
+                        </div>
+                    </div>
+                );
+            case 'browser_highlight':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Selector">
+                            <MentionInput
+                                value={config.selector || ''}
+                                onChange={(e) => handleConfigChange('selector', e.target.value)}
+                                placeholder="CSS selector to highlight..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Duration (ms)">
+                            <Input
+                                type="number"
+                                value={config.duration || 2000}
+                                onChange={(e) => handleConfigChange('duration', parseInt(e.target.value))}
+                                placeholder="2000"
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'browser_console_logs':
+                return (
+                    <div className="space-y-4">
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Retrieves the last 50 console messages from the page. No configuration needed.
+                        </div>
+                    </div>
+                );
+            case 'browser_grid':
+                return (
+                    <div className="space-y-4">
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Overlays a numbered coordinate grid on the page for 30 seconds to assist in finding target X/Y coordinates.
+                        </div>
+                    </div>
+                );
+            case 'humanize':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Text to Humanize">
+                            <MentionInput
+                                value={config.text || ''}
+                                onChange={(e) => handleConfigChange('text', e.target.value)}
+                                placeholder="{{item.content}}"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Tone">
+                            <Input
+                                value={config.tone || ''}
+                                onChange={(e) => handleConfigChange('tone', e.target.value)}
+                                placeholder="Casual, professional, witty..."
+                            />
                         </Field>
                     </div>
                 );

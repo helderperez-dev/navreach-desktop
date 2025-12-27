@@ -90,10 +90,10 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
         }),
         func: async ({ name, description }) => {
             try {
-                const { data: { user } } = await supabase.auth.getUser();
+                const { data: { user } } = await supabaseClient.auth.getUser();
                 if (!user) throw new Error('Not authenticated');
 
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('target_lists')
                     .insert([{ name, description, user_id: user.id }])
                     .select()
@@ -121,10 +121,10 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
             try {
                 const { metadata_json, ...rest } = payload;
                 const metadata = JSON.parse(metadata_json || '{}');
-                const { data: { user } } = await supabase.auth.getUser();
+                const { data: { user } } = await supabaseClient.auth.getUser();
                 if (!user) throw new Error('Not authenticated');
 
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('targets')
                     .insert([{ ...rest, metadata, user_id: user.id }])
                     .select()
@@ -156,11 +156,11 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
                 const metadata = JSON.parse(metadata_json || '{}');
                 // First get existing metadata to merge
                 if (metadata && Object.keys(metadata).length > 0) {
-                    const { data: existing } = await supabase.from('targets').select('metadata').eq('id', id).single();
+                    const { data: existing } = await supabaseClient.from('targets').select('metadata').eq('id', id).single();
                     updates.metadata = { ...(existing?.metadata || {}), ...metadata };
                 }
 
-                const { data, error } = await supabase
+                const { data, error } = await supabaseClient
                     .from('targets')
                     .update(updates)
                     .eq('id', id)

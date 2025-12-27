@@ -10,6 +10,9 @@ interface ChatState {
   isStreaming: boolean;
   maxIterations: number;
   infiniteMode: boolean;
+  agentStartTime: number | null;
+  agentRunLimit: number | null; // in minutes
+  currentSessionTime: number; // in seconds
   createConversation: () => string;
   setActiveConversation: (id: string | null) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => void;
@@ -21,6 +24,9 @@ interface ChatState {
   getActiveConversation: () => Conversation | undefined;
   setMaxIterations: (value: number) => void;
   setInfiniteMode: (value: boolean) => void;
+  setAgentStartTime: (time: number | null) => void;
+  setAgentRunLimit: (min: number | null) => void;
+  setCurrentSessionTime: (sec: number) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -32,6 +38,9 @@ export const useChatStore = create<ChatState>()(
       isStreaming: false,
       maxIterations: 10,
       infiniteMode: false,
+      agentStartTime: null,
+      agentRunLimit: null,
+      currentSessionTime: 0,
 
       createConversation: () => {
         const id = uuidv4();
@@ -62,13 +71,13 @@ export const useChatStore = create<ChatState>()(
           conversations: state.conversations.map((conv) =>
             conv.id === conversationId
               ? {
-                  ...conv,
-                  messages: [...conv.messages, newMessage],
-                  updatedAt: Date.now(),
-                  title: conv.messages.length === 0 && message.role === 'user' 
-                    ? message.content.slice(0, 50) + (message.content.length > 50 ? '...' : '')
-                    : conv.title,
-                }
+                ...conv,
+                messages: [...conv.messages, newMessage],
+                updatedAt: Date.now(),
+                title: conv.messages.length === 0 && message.role === 'user'
+                  ? message.content.slice(0, 50) + (message.content.length > 50 ? '...' : '')
+                  : conv.title,
+              }
               : conv
           ),
         }));
@@ -79,12 +88,12 @@ export const useChatStore = create<ChatState>()(
           conversations: state.conversations.map((conv) =>
             conv.id === conversationId
               ? {
-                  ...conv,
-                  messages: conv.messages.map((msg) =>
-                    msg.id === messageId ? { ...msg, content } : msg
-                  ),
-                  updatedAt: Date.now(),
-                }
+                ...conv,
+                messages: conv.messages.map((msg) =>
+                  msg.id === messageId ? { ...msg, content } : msg
+                ),
+                updatedAt: Date.now(),
+              }
               : conv
           ),
         }));
@@ -118,14 +127,19 @@ export const useChatStore = create<ChatState>()(
         set({ maxIterations: Math.min(Math.max(Math.round(value) || 1, 1), 50) }),
 
       setInfiniteMode: (value) => set({ infiniteMode: value }),
+
+      setAgentStartTime: (time) => set({ agentStartTime: time }),
+      setAgentRunLimit: (min) => set({ agentRunLimit: min }),
+      setCurrentSessionTime: (sec) => set({ currentSessionTime: sec }),
     }),
     {
-      name: 'navreach-chat-store',
+      name: 'reavion-chat-store',
       partialize: (state) => ({
         conversations: state.conversations,
         selectedModel: state.selectedModel,
         maxIterations: state.maxIterations,
         infiniteMode: state.infiniteMode,
+        agentRunLimit: state.agentRunLimit,
       }),
     }
   )

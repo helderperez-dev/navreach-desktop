@@ -173,7 +173,7 @@ export function createPlaybookTools(context?: { playbooks?: any[], supabaseClien
         name: 'human_approval',
         description: 'Pause execution and wait for human approval. Use this when a playbook node requires manual confirmation before proceeding to potentially sensitive actions.',
         schema: z.object({
-            message: z.string().describe('A message explaining what needs approval.').default('Manual approval required to proceed.')
+            message: z.string().nullable().describe('A message explaining what needs approval.').default('Manual approval required to proceed.')
         }),
         func: async ({ message }) => {
             return JSON.stringify({

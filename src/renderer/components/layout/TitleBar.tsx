@@ -1,4 +1,5 @@
-import navreachLogo from '@assets/navreach-white.png';
+import reavionLogoWhite from '@assets/reavion-white.png';
+import reavionLogoBlack from '@assets/reavion-black.png';
 import { useAuthStore } from '@/stores/auth.store';
 import { useAppStore } from '@/stores/app.store';
 import {
@@ -23,12 +24,18 @@ export function TitleBar() {
   const avatarUrl = user?.user_metadata?.avatar_url;
 
   return (
-    <div className="h-12 min-h-[48px] flex items-center justify-between bg-sidebar border-b border-border drag-region">
+    <div className="h-12 min-h-[48px] flex items-center justify-between bg-sidebar border-b border-border drag-region transition-colors duration-200">
       <div className="flex items-center gap-2 pl-6">
         <img
-          src={navreachLogo}
-          alt="Navreach"
-          className="h-4 w-auto select-none ml-14"
+          src={reavionLogoWhite}
+          alt="Reavion"
+          className="h-3 w-auto select-none ml-14 hidden dark:block"
+          draggable={false}
+        />
+        <img
+          src={reavionLogoBlack}
+          alt="Reavion"
+          className="h-3 w-auto select-none ml-14 block dark:hidden"
           draggable={false}
         />
       </div>
@@ -37,31 +44,31 @@ export function TitleBar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center justify-center transition-opacity hover:opacity-80 outline-none">
-              <Avatar className="h-8 w-8 border border-white/10">
+              <Avatar className="h-8 w-8 border border-border">
                 <AvatarImage src={avatarUrl} alt={user?.email || 'User'} />
-                <AvatarFallback className="bg-zinc-800 text-[10px] font-bold text-white/60">
+                <AvatarFallback className="bg-muted text-[10px] font-bold text-muted-foreground">
                   {userInitials}
                 </AvatarFallback>
               </Avatar>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 bg-[#161617] border-white/10 text-white">
+          <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
                 <p className="text-sm font-medium leading-none">{user?.email}</p>
-                <p className="text-xs leading-none text-white/40">Personal Account</p>
+                <p className="text-xs leading-none text-muted-foreground">Personal Account</p>
               </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator className="bg-white/10" />
+            <DropdownMenuSeparator />
             <DropdownMenuItem
-              className="focus:bg-white/5 cursor-pointer"
+              className="cursor-pointer"
               onClick={() => setActiveView('settings')}
             >
-              <Settings className="mr-2 h-4 w-4 text-white/60" />
+              <Settings className="mr-2 h-4 w-4" />
               <span>Settings</span>
             </DropdownMenuItem>
             <DropdownMenuItem
-              className="focus:bg-white/5 cursor-pointer text-red-400 focus:text-red-400"
+              className="cursor-pointer text-destructive focus:text-destructive"
               onClick={signOut}
             >
               <LogOut className="mr-2 h-4 w-4" />

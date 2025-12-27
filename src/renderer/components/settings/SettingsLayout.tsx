@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { Server, Wrench, Key, ShieldCheck } from 'lucide-react';
+import { Server, Wrench, Key, ShieldCheck, Monitor } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { GeneralSettings } from './GeneralSettings';
 import { MCPSettings } from './MCPSettings';
 import { APIToolsSettings } from './APIToolsSettings';
 import { IntegrationsSettings } from './IntegrationsSettings';
 import { ModelProvidersSettings } from './ModelProvidersSettings';
 
-type SettingsTab = 'mcp' | 'api-tools' | 'model-providers' | 'integrations';
+type SettingsTab = 'general' | 'mcp' | 'api-tools' | 'model-providers' | 'integrations';
 
 const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
+  { id: 'general', label: 'General', icon: <Monitor className="h-4 w-4" /> },
   { id: 'mcp', label: 'MCP Servers', icon: <Server className="h-4 w-4" /> },
   { id: 'api-tools', label: 'API Tools', icon: <Wrench className="h-4 w-4" /> },
   { id: 'model-providers', label: 'Model Providers', icon: <Key className="h-4 w-4" /> },
@@ -18,12 +19,12 @@ const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
 ];
 
 export function SettingsLayout() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('mcp');
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
       <div className="h-16 border-b border-border flex items-center px-6 bg-card/50 backdrop-blur-sm">
-        <h1 className="text-xl font-semibold bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">
+        <h1 className="text-xl font-semibold bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent">
           Settings
         </h1>
       </div>
@@ -38,8 +39,8 @@ export function SettingsLayout() {
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                 activeTab === tab.id
-                  ? "bg-blue-600/10 text-blue-400"
-                  : "text-muted-foreground hover:bg-white/5 hover:text-white"
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
               {tab.icon}
@@ -51,6 +52,7 @@ export function SettingsLayout() {
         {/* Content */}
         <ScrollArea className="flex-1">
           <div className="p-8 max-w-4xl mx-auto h-full">
+            {activeTab === 'general' && <GeneralSettings />}
             {activeTab === 'mcp' && <MCPSettings />}
             {activeTab === 'api-tools' && <APIToolsSettings />}
             {activeTab === 'model-providers' && <ModelProvidersSettings />}

@@ -128,7 +128,7 @@ export function TargetTable({
         return (
             <div className="space-y-4">
                 {[...Array(5)].map((_, i) => (
-                    <div key={i} className="h-16 w-full rounded-xl bg-white/5 animate-pulse" />
+                    <div key={i} className="h-16 w-full rounded-xl bg-muted/40 animate-pulse" />
                 ))}
             </div>
         );
@@ -159,7 +159,7 @@ export function TargetTable({
                         <tr className="border-b border-border">
                             {visibleColumns.name && (
                                 <th
-                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-white"
+                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-foreground"
                                     style={{ width: `${columnWidths.name}%` }}
                                 >
                                     <div className="flex items-center cursor-pointer select-none h-full min-w-0" onClick={() => handleSort('name')}>
@@ -167,14 +167,14 @@ export function TargetTable({
                                         <SortIcon field="name" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-white/0 group-hover:bg-white/10 transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
                                         onMouseDown={(e) => startResizing('name', e.clientX, columnWidths.name)}
                                     />
                                 </th>
                             )}
                             {visibleColumns.email && (
                                 <th
-                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-white"
+                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-foreground"
                                     style={{ width: `${columnWidths.email}%` }}
                                 >
                                     <div className="flex items-center cursor-pointer select-none h-full min-w-0" onClick={() => handleSort('email')}>
@@ -182,14 +182,14 @@ export function TargetTable({
                                         <SortIcon field="email" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-white/0 group-hover:bg-white/10 transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
                                         onMouseDown={(e) => startResizing('email', e.clientX, columnWidths.email)}
                                     />
                                 </th>
                             )}
                             {visibleColumns.type && (
                                 <th
-                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-white"
+                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-foreground"
                                     style={{ width: `${columnWidths.type}%` }}
                                 >
                                     <div className="flex items-center cursor-pointer select-none h-full min-w-0" onClick={() => handleSort('type')}>
@@ -197,14 +197,14 @@ export function TargetTable({
                                         <SortIcon field="type" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-white/0 group-hover:bg-white/10 transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
                                         onMouseDown={(e) => startResizing('type', e.clientX, columnWidths.type)}
                                     />
                                 </th>
                             )}
                             {visibleColumns.url && (
                                 <th
-                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-white"
+                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-foreground"
                                     style={{ width: `${columnWidths.url}%` }}
                                 >
                                     <div className="flex items-center cursor-pointer select-none h-full min-w-0" onClick={() => handleSort('url')}>
@@ -212,7 +212,7 @@ export function TargetTable({
                                         <SortIcon field="url" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-white/0 group-hover:bg-white/10 transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
                                         onMouseDown={(e) => startResizing('url', e.clientX, columnWidths.url)}
                                     />
                                 </th>
@@ -222,16 +222,16 @@ export function TargetTable({
                                     className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group"
                                     style={{ width: `${columnWidths.tags}%` }}
                                 >
-                                    <div className="truncate">Tags</div>
+                                    <div className="truncate text-muted-foreground/80 group-hover:text-foreground transition-colors">Tags</div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-white/0 group-hover:bg-white/10 transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
                                         onMouseDown={(e) => startResizing('tags', e.clientX, columnWidths.tags)}
                                     />
                                 </th>
                             )}
                             {visibleColumns.created && (
                                 <th
-                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-white"
+                                    className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-foreground"
                                     style={{ width: `${columnWidths.created}%` }}
                                 >
                                     <div className="flex items-center cursor-pointer select-none h-full min-w-0" onClick={() => handleSort('created_at')}>
@@ -239,7 +239,7 @@ export function TargetTable({
                                         <SortIcon field="created_at" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-white/0 group-hover:bg-white/10 transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
                                         onMouseDown={(e) => startResizing('created_at', e.clientX, columnWidths.created)}
                                     />
                                 </th>
@@ -248,14 +248,14 @@ export function TargetTable({
                                 visibleColumns[key] && (
                                     <th
                                         key={key}
-                                        className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-white"
+                                        className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-foreground"
                                         style={{ width: `${metadataWidths[key] || 10}%` }}
                                     >
                                         <div className="truncate w-full">
                                             {key.replace(/_/g, ' ')}
                                         </div>
                                         <div
-                                            className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-white/0 group-hover:bg-white/10 transition-colors z-10"
+                                            className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
                                             onMouseDown={(e) => startResizing(key, e.clientX, metadataWidths[key] || 10, true)}
                                         />
                                     </th>
@@ -268,12 +268,12 @@ export function TargetTable({
                         {filteredAndSortedTargets.map((target) => (
                             <tr
                                 key={target.id}
-                                className="hover:bg-white/[0.04] active:bg-white/[0.02] transition-colors group cursor-pointer"
+                                className="hover:bg-accent/50 active:bg-accent/30 transition-colors group cursor-pointer"
                                 onClick={() => onEdit(target)}
                             >
                                 {visibleColumns.name && (
                                     <td className="px-6 py-4 overflow-hidden">
-                                        <div className="font-medium text-sm text-white group-hover:text-blue-400 transition-colors truncate">
+                                        <div className="font-medium text-sm text-foreground group-hover:text-primary transition-colors truncate">
                                             {target.name}
                                         </div>
                                     </td>
@@ -287,11 +287,11 @@ export function TargetTable({
                                     <td className="px-6 py-4 overflow-hidden">
                                         <span className={cn(
                                             "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider shrink-0",
-                                            target.type === 'profile' && "bg-blue-500/10 text-blue-400 border border-blue-500/20",
-                                            target.type === 'company' && "bg-purple-500/10 text-purple-400 border border-purple-500/20",
-                                            target.type === 'post' && "bg-green-500/10 text-green-400 border border-green-500/20",
-                                            target.type === 'lead' && "bg-orange-500/10 text-orange-400 border border-orange-500/20",
-                                            target.type === 'other' && "bg-slate-500/10 text-slate-400 border border-slate-500/20"
+                                            target.type === 'profile' && "bg-primary/10 text-primary border border-primary/20",
+                                            target.type === 'company' && "bg-purple-500/10 dark:text-purple-400 text-purple-600 border border-purple-500/20",
+                                            target.type === 'post' && "bg-green-500/10 dark:text-green-400 text-green-600 border border-green-500/20",
+                                            target.type === 'lead' && "bg-orange-500/10 dark:text-orange-400 text-orange-600 border border-orange-500/20",
+                                            target.type === 'other' && "bg-slate-500/10 dark:text-slate-400 text-slate-500 border border-slate-500/20"
                                         )}>
                                             {target.type}
                                         </span>
@@ -304,12 +304,12 @@ export function TargetTable({
                                                 href={target.url}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-xs text-muted-foreground hover:text-blue-400 transition-colors truncate min-w-0 flex-1"
+                                                className="text-xs text-muted-foreground hover:text-primary transition-colors truncate min-w-0 flex-1"
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                                 {target.url}
                                             </a>
-                                            <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                                            <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity text-primary" />
                                         </div>
                                     </td>
                                 )}
@@ -318,7 +318,7 @@ export function TargetTable({
                                         <div className="flex items-center gap-1 h-6">
                                             <div className="flex flex-wrap gap-1 min-w-0 overflow-hidden h-full">
                                                 {target.tags?.slice(0, 2).map((tag, i) => (
-                                                    <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-[10px] text-muted-foreground truncate max-w-[80px]">
+                                                    <span key={i} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/60 border border-border text-[10px] text-muted-foreground truncate max-w-[80px]">
                                                         <Tag className="h-2 w-2 shrink-0" />
                                                         {tag}
                                                     </span>
@@ -347,11 +347,11 @@ export function TargetTable({
                                 <td className="px-6 py-4 text-right">
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-white/5 p-0">
+                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50 p-0">
                                                 <MoreHorizontal className="h-4 w-4" />
                                             </Button>
                                         </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-40 bg-[#121214] border-white/5 shadow-2xl">
+                                        <DropdownMenuContent align="end" className="w-40 bg-popover border-border shadow-2xl">
                                             <DropdownMenuItem
                                                 className="gap-2 text-xs"
                                                 onClick={(e) => {

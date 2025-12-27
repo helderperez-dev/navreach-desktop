@@ -5,22 +5,22 @@ import type { SiteToolContext } from './types';
 
 const POINTER_HELPERS = `
   function ensurePointerStyles() {
-    if (document.getElementById('navreach-pointer-styles')) return;
+    if (document.getElementById('reavion-pointer-styles')) return;
     const style = document.createElement('style');
-    style.id = 'navreach-pointer-styles';
-    style.textContent = ' @keyframes navreachFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } } ';
+    style.id = 'reavion-pointer-styles';
+    style.textContent = ' @keyframes reavionFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } } ';
     document.head.appendChild(style);
   }
 
   function movePointer(x, y) {
     ensurePointerStyles();
-    let indicator = document.getElementById('navreach-pointer');
+    let indicator = document.getElementById('reavion-pointer');
     if (!indicator) {
       indicator = document.createElement('div');
-      indicator.id = 'navreach-pointer';
+      indicator.id = 'reavion-pointer';
       const uniqueId = 'glass-gradient-' + Date.now();
       indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#' + uniqueId + ')" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/><defs><linearGradient id="' + uniqueId + '" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="rgba(80, 80, 80, 0.95)"/><stop offset="50%" stop-color="rgba(40, 40, 40, 0.95)"/><stop offset="100%" stop-color="rgba(10, 10, 10, 0.95)"/></linearGradient></defs></svg>';
-      indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:navreachFloat 3s ease-in-out infinite;transition:left 0.3s ease, top 0.3s ease;';
+      indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:left 0.3s ease, top 0.3s ease;';
       document.body.appendChild(indicator);
     }
     indicator.style.left = x + 'px';
@@ -46,50 +46,93 @@ const BASE_SCRIPT_HELPERS = `
     return new Promise((resolve, reject) => {
       const start = Date.now();
       const checking = () => {
-        if (window.__NAVREACH_STOP__) {
+        if (window.__REAVION_STOP__) {
           reject(new Error('Stopped by user'));
           return;
         }
         if (Date.now() - start >= ms) {
           resolve();
         } else {
-          setTimeout(checking, 100);
+          setTimeout(checking, 50); // Reduced check interval
         }
       };
       checking();
     });
   }
 
-  async function safeClick(el, label) {
+  async function safeClick(el, label, options = {}) {
     const clickable = el.closest('button,[role="button"]') || el;
     log('Clicking ' + label, { tagName: clickable.tagName });
-    clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-    await wait(400);
+    
+    // Check if element is already largely in view to skip heavy scroll
+    const rectBefore = clickable.getBoundingClientRect();
+    if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
+      clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+      await wait(options.scrollWait || 250);
+    }
+    
     const rect = clickable.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
     if (typeof movePointer === 'function') movePointer(x, y);
-    try { clickable.focus(); } catch (e) {}
-    await wait(150);
+    
+    // try { clickable.focus(); } catch (e) {} // Removed to prevent stealing focus
+    await wait(options.focusWait || 100);
+    
     try {
       clickable.click();
     } catch (e) {
       log('Native click failed on ' + label, { error: e.toString() });
       throw e;
     }
-    await wait(800);
+    
+    await wait(options.afterWait || 500);
+  }
+
+  function getTweetAuthor(tweet) {
+    if (!tweet) return null;
+    const authorLink = tweet.querySelector('a[href*="/status/"]')?.getAttribute('href')?.split('/')[1];
+    const userNameNode = tweet.querySelector('[data-testid="User-Name"]');
+    const rawText = userNameNode ? userNameNode.innerText : (authorLink || '');
+    return (authorLink || rawText).toLowerCase().replace('@', '');
+  }
+
+  async function findTweetRobustly(index, expectedAuthor) {
+    const getVisibleTweets = () => Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
+    let tweets = getVisibleTweets();
+    const cleanExp = expectedAuthor ? expectedAuthor.toLowerCase().replace('@', '') : null;
+
+    if (cleanExp) {
+      if (tweets[index] && getTweetAuthor(tweets[index]).includes(cleanExp)) return { tweet: tweets[index], index };
+      const matchIndex = tweets.findIndex(t => getTweetAuthor(t).includes(cleanExp));
+      if (matchIndex !== -1) return { tweet: tweets[matchIndex], index: matchIndex, recovered: true };
+      
+      window.scrollBy(0, 400);
+      await wait(300);
+      tweets = getVisibleTweets();
+      const secondScanIndex = tweets.findIndex(t => getTweetAuthor(t).includes(cleanExp));
+      if (secondScanIndex !== -1) return { tweet: tweets[secondScanIndex], index: secondScanIndex, recovered: true };
+    }
+    
+    if (tweets[index]) return { tweet: tweets[index], index };
+    return { tweet: tweets[0] || null, index: 0, error: tweets.length === 0 ? 'No tweets found' : null };
   }
 
   async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
     log('Attempting followAuthorOfTweet', { desiredAction });
     const caret = tweet.querySelector('[data-testid="caret"]');
     if (!caret) {
+      // Check if maybe there is a direct follow button (sometimes present in some layouts)
+      const directFollow = tweet.querySelector('[data-testid$="-follow"]');
+      if (directFollow && isVisible(directFollow)) {
+        await safeClick(directFollow, 'Direct Follow');
+        return { success: true, message: 'Followed (direct)' };
+      }
       log('Caret not found in tweet');
       return { success: false, error: 'Caret menu not found' };
     }
     
-    await safeClick(caret, 'Caret Menu');
-    await wait(800);
+    await safeClick(caret, 'Caret Menu', { afterWait: 600 });
     
     const menu = document.querySelector('[data-testid="Dropdown"]');
     if (!menu) {
@@ -98,8 +141,8 @@ const BASE_SCRIPT_HELPERS = `
     }
     
     const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
-    const followStrings = ['Follow @', 'Sigue a @', 'Siga @', 'Seguir @'];
-    const unfollowStrings = ['Unfollow @', 'Dejar de seguir @', 'Deixar de seguir @'];
+    const followStrings = ['Follow @', 'Sigue a @', 'Siga @', 'Seguir @', 'Follow'];
+    const unfollowStrings = ['Unfollow @', 'Dejar de seguir @', 'Deixar de seguir @', 'Unfollow'];
     
     const followItem = items.find(el => {
       const txt = el.innerText || '';
@@ -112,8 +155,7 @@ const BASE_SCRIPT_HELPERS = `
     });
     
     if ((desiredAction === 'unfollow' || desiredAction === 'toggle') && unfollowItem) {
-      await safeClick(unfollowItem, 'Unfollow Menu Item');
-      await wait(400);
+      await safeClick(unfollowItem, 'Unfollow Menu Item', { afterWait: 400 });
       const confirm = document.querySelector('[data-testid="confirmationSheetConfirm"]');
       if (confirm && isVisible(confirm)) await safeClick(confirm, 'Confirm Unfollow');
       return { success: true, message: 'Unfollowed' };
@@ -128,9 +170,38 @@ const BASE_SCRIPT_HELPERS = `
     if (desiredAction === 'unfollow' && followItem) return { success: true, already: true, message: 'Already unfollowed' };
     
     // Close menu if nothing found
-    await safeClick(caret, 'Close Caret Menu');
+    await safeClick(caret, 'Close Caret Menu', { afterWait: 200 });
     return { success: false, error: 'Follow/Unfollow item not found in menu' };
   }
+`;
+
+const WAIT_FOR_RESULTS_SCRIPT = `
+  (async function() {
+    ${BASE_SCRIPT_HELPERS}
+    return await new Promise((resolve) => {
+      const start = Date.now();
+      const check = () => {
+        // Stop check
+        if (window.__REAVION_STOP__) return resolve({ success: false, error: 'Stopped by user' });
+        
+        // Success case: Tweets found
+        const tweets = document.querySelectorAll('[data-testid="tweet"]');
+        if (tweets.length > 0) return resolve({ success: true, count: tweets.length });
+        
+        // Empty state case: "No results for" or graphic
+        if (document.body.innerText.includes('No results for') || 
+            document.querySelector('[data-testid="emptyState"]')) {
+          return resolve({ success: true, count: 0, message: 'No results found' });
+        }
+        
+        // Timeout (15s)
+        if (Date.now() - start > 15000) return resolve({ success: false, error: 'Timeout waiting for search results' });
+        
+        setTimeout(check, 500);
+      };
+      check();
+    });
+  })()
 `;
 
 export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
@@ -144,14 +215,21 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     func: async ({ query, filter }: { query: string; filter?: string | null }) => {
       try {
         const contents = ctx.getContents();
-        const filterMap: Record<string, string> = { top: 'top', latest: 'live', people: 'user', photos: 'image', videos: 'video' };
+        const filterMap: Record<string, string> = { latest: 'live', people: 'user', photos: 'image', videos: 'video' };
         const params = new URLSearchParams();
         params.set('q', query);
         params.set('src', 'typed_query');
-        if (filter) params.set('f', filterMap[filter] || 'live');
+        // Only set 'f' if filter is provided and NOT 'top' (top is default)
+        if (filter && filter !== 'top' && filterMap[filter]) {
+          params.set('f', filterMap[filter]);
+        }
+
         const url = `https://x.com/search?${params.toString()}`;
         await contents.loadURL(url);
-        return JSON.stringify({ success: true, url });
+
+        // Wait for results to actually load
+        const result = await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+        return JSON.stringify({ ...result, url });
       } catch (error) {
         return JSON.stringify({ success: false, error: String(error) });
       }
@@ -162,17 +240,20 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     name: 'x_advanced_search',
     description: 'On X.com (Twitter), perform a highly filtered search.',
     schema: z.object({
-      allWords: z.string().nullable().default(null),
-      exactPhrase: z.string().nullable().default(null),
-      anyWords: z.string().nullable().default(null),
-      noneWords: z.string().nullable().default(null),
-      hashtags: z.string().nullable().default(null),
-      fromAccount: z.string().nullable().default(null),
-      toAccount: z.string().nullable().default(null),
-      minLikes: z.number().nullable().default(null),
-      since: z.string().nullable().default(null),
-      until: z.string().nullable().default(null),
-      filter: z.enum(['top', 'latest', 'people', 'photos', 'videos']).nullable().default(null),
+      allWords: z.string().nullable().describe('All of these words.').default(null),
+      exactPhrase: z.string().nullable().describe('This exact phrase.').default(null),
+      anyWords: z.string().nullable().describe('Any of these words (OR).').default(null),
+      noneWords: z.string().nullable().describe('None of these words.').default(null),
+      hashtags: z.string().nullable().describe('These hashtags.').default(null),
+      fromAccount: z.string().nullable().describe('From these accounts.').default(null),
+      toAccount: z.string().nullable().describe('To these accounts.').default(null),
+      minLikes: z.coerce.number().nullable().describe('Minimum likes.').default(null),
+      minRetweets: z.coerce.number().nullable().describe('Minimum retweets.').default(null),
+      minReplies: z.coerce.number().nullable().describe('Minimum replies.').default(null),
+      since: z.string().nullable().describe('Start date (YYYY-MM-DD).').default(null),
+      until: z.string().nullable().describe('End date (YYYY-MM-DD).').default(null),
+      filter: z.enum(['top', 'latest', 'people', 'photos', 'videos']).nullable().describe('Search filter tab.').default(null),
+      lang: z.string().nullable().describe('Language code (e.g. "en").').default(null),
     }),
     func: async (args: {
       allWords?: string | null;
@@ -183,9 +264,12 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       fromAccount?: string | null;
       toAccount?: string | null;
       minLikes?: number | null;
+      minRetweets?: number | null;
+      minReplies?: number | null;
       since?: string | null;
       until?: string | null;
       filter?: string | null;
+      lang?: string | null;
     }) => {
       try {
         const contents = ctx.getContents();
@@ -193,36 +277,50 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         if (args.allWords) queryParts.push(args.allWords.trim());
         if (args.exactPhrase) queryParts.push(`"${args.exactPhrase.trim()}"`);
         if (args.anyWords) {
-          const p = args.anyWords.split(/[\\s,]+/).filter(Boolean);
+          const p = Array.from(new Set(args.anyWords.split(/[\s,]+/).filter(Boolean)));
           if (p.length) queryParts.push(`(${p.join(' OR ')})`);
         }
         if (args.noneWords) {
-          args.noneWords.split(/[\\s,]+/).filter(Boolean).forEach(w => queryParts.push(`-${w}`));
+          Array.from(new Set(args.noneWords.split(/[\s,]+/).filter(Boolean)))
+            .forEach(w => queryParts.push(`-${w}`));
         }
         if (args.hashtags) {
-          args.hashtags.split(/[\\s,]+/).filter(Boolean).forEach(h => {
+          const validTags = new Set<string>();
+          args.hashtags.split(/[\s,]+/).filter(Boolean).forEach(h => {
             const t = h.startsWith('#') ? h.slice(1) : h;
-            queryParts.push(`#${t}`);
+            validTags.add(`#${t}`);
           });
+          validTags.forEach(tag => queryParts.push(tag));
         }
         if (args.fromAccount) queryParts.push(`from:${args.fromAccount.replace('@', '').trim()}`);
         if (args.toAccount) queryParts.push(`to:${args.toAccount.replace('@', '').trim()}`);
         if (args.minLikes && args.minLikes > 0) queryParts.push(`min_faves:${args.minLikes}`);
+        if (args.minRetweets && args.minRetweets > 0) queryParts.push(`min_retweets:${args.minRetweets}`);
+        if (args.minReplies && args.minReplies > 0) queryParts.push(`min_replies:${args.minReplies}`);
         if (args.since) queryParts.push(`since:${args.since}`);
         if (args.until) queryParts.push(`until:${args.until}`);
+        if (args.lang) queryParts.push(`lang:${args.lang}`);
 
         const q = queryParts.join(' ');
         if (!q.trim()) return JSON.stringify({ success: false, error: 'No criteria' });
 
-        const filterMap: any = { top: 'top', latest: 'live', people: 'user', photos: 'image', videos: 'video' };
+        const filterMap: Record<string, string> = { latest: 'live', people: 'user', photos: 'image', videos: 'video' };
+
+        let effectiveFilter = args.filter;
+
         const params = new URLSearchParams();
         params.set('q', q);
         params.set('src', 'typed_query');
-        if (args.filter) params.set('f', filterMap[args.filter] || 'live');
-        const finalUrl = `https://x.com/search?${params.toString()}`;
+        if (effectiveFilter && effectiveFilter !== 'top' && filterMap[effectiveFilter]) {
+          params.set('f', filterMap[effectiveFilter]);
+        }
 
+        const finalUrl = `https://x.com/search?${params.toString()}`;
         await contents.loadURL(finalUrl);
-        return JSON.stringify({ success: true, url: finalUrl, query: q });
+
+        // Wait for results to actually load
+        const result = await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+        return JSON.stringify({ ...result, url: finalUrl, query: q });
       } catch (e) {
         return JSON.stringify({ success: false, error: String(e) });
       }
@@ -293,9 +391,23 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     schema: z.object({
       text: z.string().min(1),
       index: z.union([z.number(), z.string()]).nullable().describe('0-based index of the post.').default(0),
+      skip_self: z.boolean().nullable().describe('Whether to skip replying to own posts. Default is true.'),
+      skip_verified: z.boolean().nullable().describe('Whether to skip verified users. Default is false.'),
+      skip_keywords: z.string().nullable().describe('Comma-separated keywords to skip. Default is empty string.'),
+      expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended to prevent index mismatches.'),
     }),
-    func: async ({ text, index }: { text: string; index: number | string | null }) => {
+    func: async ({ text, index, skip_self, skip_verified, skip_keywords, expected_author }: {
+      text: string;
+      index: number | string | null;
+      skip_self: boolean | null;
+      skip_verified: boolean | null;
+      skip_keywords: string | null;
+      expected_author: string | null;
+    }) => {
       const contents = ctx.getContents();
+      const finalSkipSelf = skip_self ?? true;
+      const finalSkipVerified = skip_verified ?? false;
+      const finalSkipKeywords = skip_keywords || '';
       const rIndex = parseInt(String(index ?? 0), 10);
       try {
         const result = await contents.executeJavaScript(`
@@ -305,12 +417,135 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             const host = window.location.hostname || '';
             if (!host.includes('x.com') && !host.includes('twitter.com')) return { success: false, error: 'Not on x.com' };
 
-            const btns = Array.from(document.querySelectorAll('[data-testid="reply"]')).filter(isVisible);
-            if (!btns.length) return { success: false, error: 'No reply buttons' };
-            const btn = btns[${rIndex}] || btns[btns.length - 1];
+            // Handle case where we are already on the compose page
+            if (window.location.pathname.includes('/compose/post')) {
+               // ... logic for compose page (skip verification as context is ambiguous)
+               const composer = document.querySelector('[data-testid="tweetTextarea_0"]') || 
+                                document.querySelector('div[role="textbox"][contenteditable="true"]');
+               if (composer) {
+                  await safeClick(composer, 'Composer');
+                  composer.focus();
+                  document.execCommand('selectAll', false, null);
+                  document.execCommand('insertText', false, ${JSON.stringify(text)});
+                  await wait(800);
+                  const send = document.querySelector('[data-testid="tweetButton"]');
+                  if (send) {
+                      await safeClick(send, 'Send Button');
+                      await wait(2000);
+                      return { success: true, message: 'Replied (from compose page)' };
+                  }
+               }
+            }
 
-            await safeClick(btn, 'Reply Button');
-            await wait(1800);
+            // 1. Find Tweet Robustly
+            const findResult = await findTweetRobustly(${rIndex}, ${JSON.stringify(expected_author)});
+            if (!findResult.tweet) return { success: false, error: findResult.error || 'Tweet not found' };
+            const tweetNode = findResult.tweet;
+            const finalIndex = findResult.index;
+            
+            // 2. SKIP FILTERS
+            const myHandleEl = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"] [data-testid^="AppTabBar_User"] span, [data-testid="SideNav_AccountSwitcher_Button"] div > div:nth-child(2) span');
+            const myHandle = myHandleEl ? myHandleEl.innerText.toLowerCase().replace('@', '') : null;
+            const authorHandle = getTweetAuthor(tweetNode);
+            const authorName = tweetNode.querySelector('[data-testid="User-Name"]')?.innerText || '';
+            const verifiedIcon = tweetNode.querySelector('[data-testid="icon-verified"], [aria-label*="Verified"]');
+            
+            if (${finalSkipSelf} && myHandle && authorHandle === myHandle) {
+              return { success: true, skipped: true, reason: 'self', message: 'Skipped: Logged-in user internal post' };
+            }
+            if (${finalSkipVerified} && verifiedIcon) {
+              return { success: true, skipped: true, reason: 'verified', message: 'Skipped: Verified profile' };
+            }
+            const keywords = ${JSON.stringify(finalSkipKeywords)}.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+            if (keywords.length > 0) {
+              const tweetText = tweetNode.innerText.toLowerCase();
+              if (keywords.some(k => tweetText.includes(k) || authorName.toLowerCase().includes(k))) {
+                return { success: true, skipped: true, reason: 'keyword', message: 'Skipped: Keyword match' };
+              }
+            }
+
+            // 3. Find Reply Button
+            const btn = tweetNode.querySelector('[data-testid="reply"]');
+            if (!btn) return { success: false, error: 'Reply button not found' };
+
+            await safeClick(btn, 'Reply Button', { focusWait: 50, afterWait: 600 });
+            
+            const modalCheck = () => Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible).pop();
+            let modal = modalCheck();
+            if (!modal) {
+               await wait(400); // Small extra buffer for slow modals
+               modal = modalCheck();
+            }
+            const root = modal || document;
+            
+            const composer = root.querySelector('[data-testid="tweetTextarea_0"]') || 
+                             root.querySelector('div[role="textbox"][contenteditable="true"]');
+            
+            if (!composer) return { success: false, error: 'Reply composer not found after click' };
+
+            await safeClick(composer, 'Composer', { focusWait: 50, afterWait: 200 });
+            composer.focus();
+            document.execCommand('selectAll', false, null);
+            document.execCommand('insertText', false, ${JSON.stringify(text)});
+            await wait(500);
+            
+            const send = root.querySelector('[data-testid="tweetButton"]');
+            if (!send) return { success: false, error: 'Send button not found' };
+
+            await safeClick(send, 'Send Reply');
+            await wait(1500);
+
+            // Post-action: Like
+            const likeBtn = tweetNode.querySelector('[data-testid="like"]');
+            if (likeBtn && isVisible(likeBtn)) {
+              await safeClick(likeBtn, 'Post-reply Like', { afterWait: 200 });
+            }
+
+            return { 
+              success: true, 
+              message: 'Replied successfully', 
+              recovered: !!findResult.recovered,
+              finalIndex 
+            };
+     // Safety Check: Already Engaged?
+                const unlikeBtn = tweetNode.querySelector('[data-testid="unlike"]');
+                if (unlikeBtn) {
+                     return { success: true, skipped: true, message: 'Skipped: Already liked (implies previous engagement)' };
+                }
+            }
+            // --- END SKIP FILTERS ---
+
+            // Scroll into view carefully
+            btn.scrollIntoView({ block: 'center', inline: 'center' });
+            await wait(500);
+
+            try {
+                await safeClick(btn, 'Reply Button');
+            } catch (e) {
+                // Force click if safeClick fails (obscured)
+                btn.click();
+            }
+            
+            await wait(1500); 
+
+            // Check for redirect to compose/post
+            if (window.location.pathname.includes('/compose/post')) {
+                 const composer = document.querySelector('[data-testid="tweetTextarea_0"]') || 
+                                  document.querySelector('div[role="textbox"][contenteditable="true"]');
+                 if (!composer) return { success: false, error: 'Redirected to compose but no composer found' };
+                 
+                 await safeClick(composer, 'Composer');
+                 composer.focus();
+                 document.execCommand('selectAll', false, null);
+                 document.execCommand('insertText', false, ${JSON.stringify(text)});
+                 await wait(800);
+                 
+                 const send = document.querySelector('[data-testid="tweetButton"]');
+                 if (!send) return { success: false, error: 'No send button found' };
+                 await safeClick(send, 'Send Button');
+                 await wait(2000);
+                 return { success: true, message: 'Replied (after redirect)' };
+            }
 
             const modals = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible);
             const modal = modals.length ? modals[modals.length - 1] : null;
@@ -325,13 +560,21 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             composer.focus();
             document.execCommand('selectAll', false, null); // Clear existing if any
             document.execCommand('insertText', false, ${JSON.stringify(text)});
-            // Removed manual input event dispatch which caused duplication on some React inputs
-            await wait(500);
+            await wait(800);
 
             const send = searchRoot.querySelector('[data-testid="tweetButton"]');
             if (!send) return { success: false, error: 'No send button found' };
             await safeClick(send, 'Send Button');
             await wait(2000);
+            
+            // Post-action: Like the tweet to mark it as engaged
+            if (tweetNode) {
+                const likeBtn = tweetNode.querySelector('[data-testid="like"]');
+                if (likeBtn) {
+                    try { likeBtn.click(); } catch(e) {}
+                }
+            }
+
             return { success: true, message: 'Replied' };
           })()
         `);
@@ -470,6 +713,99 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     }
   });
 
+  const scoutTool = new DynamicStructuredTool({
+    name: 'x_scout_topics',
+    description: 'Scout the current page for hashtags and accounts to find new growth opportunities (Spider Mode).',
+    schema: z.object({
+      limit: z.number().nullable().describe('Max number of items to return. Default is 10.'),
+    }),
+    func: async ({ limit }: { limit: number | null }) => {
+      const contents = ctx.getContents();
+      const lim = limit ?? 10;
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            // Scroll a few times to get more data
+            for(let i=0; i<3; i++) {
+                window.scrollBy(0, 800);
+                await wait(1000);
+            }
+            
+            // Grab text from all visible tweets
+            const tweets = Array.from(document.querySelectorAll('[data-testid="tweetText"]'));
+            const text = tweets.map(t => t.innerText).join(' ');
+            
+            // Regex for hashtags and mentions
+            const hashtags = (text.match(/#[\\w]+/g) || []).map(h => h.toLowerCase());
+            const mentions = (text.match(/@[\\w]+/g) || []).map(m => m.toLowerCase());
+            
+            // Frequency count and sort
+            const count = (arr) => {
+                const map = {};
+                arr.forEach(i => map[i] = (map[i] || 0) + 1);
+                return Object.entries(map).sort((a,b) => b[1] - a[1]).map(e => e[0]);
+            };
+            
+            return {
+                hashtags: count(hashtags).slice(0, ${lim}),
+                accounts: count(mentions).slice(0, ${lim}),
+                success: true
+            };
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
+  const communityScoutTool = new DynamicStructuredTool({
+    name: 'x_scout_community',
+    description: 'Scout a specific X Community by URL for new posts and targets. Alias: x_community.',
+    schema: z.object({
+      communityId: z.string().describe('The ID or URL-slug of the community'),
+      filter: z.enum(['top', 'latest']).nullable().default('latest'),
+    }),
+    func: async ({ communityId, filter }: { communityId: string; filter?: string | null }) => {
+      try {
+        const contents = ctx.getContents();
+        const cleanId = communityId.split('/').pop() || communityId;
+        const url = `https://x.com/communities/${cleanId}`;
+        await contents.loadURL(url);
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            // Ensure we are on the right tab if needed
+            const tabLabel = ${JSON.stringify(filter === 'top' ? 'Top' : 'Latest')};
+            const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+            const targetTab = tabs.find(t => t.innerText.includes(tabLabel));
+            if (targetTab && targetTab.getAttribute('aria-selected') === 'false') {
+              await safeClick(targetTab, tabLabel + ' Tab');
+              await wait(1500);
+            }
+            // Scroll to load a few more
+            window.scrollBy(0, 800);
+            await wait(1000);
+
+            const tweetCount = document.querySelectorAll('[data-testid="tweet"]').length;
+            return { success: true, tweetCount };
+          })()
+        `);
+        const data = result as { success: boolean; tweetCount: number };
+        return JSON.stringify({
+          success: true,
+          url,
+          tweetCount: data.tweetCount,
+          message: `Community loaded. Found ${data.tweetCount} posts.`
+        });
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
   const engageTool = new DynamicStructuredTool({
     name: 'x_engage',
     description: 'Perform multiple actions (like, follow, retweet, reply) on a tweet.',
@@ -477,9 +813,24 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       targetIndex: z.union([z.number(), z.string()]).nullable().default(0),
       actions: z.string().describe('Comma separated: like,follow,retweet,reply'),
       replyText: z.string().nullable().default(null),
+      skip_self: z.boolean().nullable().describe('Whether to skip engagement for own posts. Default is true.'),
+      skip_verified: z.boolean().nullable().describe('Whether to skip verified users. Default is false.'),
+      skip_keywords: z.string().nullable().describe('Comma-separated keywords to skip. Default is empty string.'),
+      expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended.'),
     }),
-    func: async ({ targetIndex, actions, replyText }: { targetIndex: number | string | null; actions: string; replyText: string | null }) => {
+    func: async ({ targetIndex, actions, replyText, skip_self, skip_verified, skip_keywords, expected_author }: {
+      targetIndex: number | string | null;
+      actions: string;
+      replyText: string | null;
+      skip_self: boolean | null;
+      skip_verified: boolean | null;
+      skip_keywords: string | null;
+      expected_author: string | null;
+    }) => {
       const contents = ctx.getContents();
+      const finalSkipSelf = skip_self ?? true;
+      const finalSkipVerified = skip_verified ?? false;
+      const finalSkipKeywords = skip_keywords || '';
       const rIndex = parseInt(String(targetIndex ?? 0), 10);
       try {
         const result = await contents.executeJavaScript(`
@@ -488,21 +839,52 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               ${POINTER_HELPERS}
               ${BASE_SCRIPT_HELPERS}
 
-              const actionsList = ${JSON.stringify(actions || '')}.split(',').map(a => a.trim().toLowerCase());
-              const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
-              if (!tweets.length) return { success: false, error: 'No tweets visible to engage with.' };
-              const tweet = tweets[${rIndex}] || tweets[0];
+              // 1. Find Tweet Robustly
+              const findResult = await findTweetRobustly(${rIndex}, ${JSON.stringify(expected_author)});
+              if (!findResult.tweet) return { success: false, error: findResult.error || 'Tweet not found' };
+              const tweet = findResult.tweet;
+              const finalIndex = findResult.index;
               
+              const actionsList = ${JSON.stringify(actions || '')}.split(',').map(a => a.trim().toLowerCase());
+              const authorHandle = getTweetAuthor(tweet);
+              const authorName = tweet.querySelector('[data-testid="User-Name"]')?.innerText || '';
+              const verifiedIcon = tweet.querySelector('[data-testid="icon-verified"], [aria-label*="Verified"]');
+
+              // 2. SKIP FILTERS
+              const myHandleEl = document.querySelector('[data-testid^="SideNav_AccountSwitcher_Button"] [data-testid^="AppTabBar_User"] span, [data-testid="SideNav_AccountSwitcher_Button"] div > div:nth-child(2) span');
+              const myHandle = myHandleEl ? myHandleEl.innerText.toLowerCase().replace('@', '') : null;
+
+              if (${finalSkipSelf} && myHandle && authorHandle === myHandle) {
+                return { success: true, skipped: true, reason: 'self', message: 'Skipped: Logged-in user internal post' };
+              }
+              if (${finalSkipVerified} && verifiedIcon) {
+                return { success: true, skipped: true, reason: 'verified', message: 'Skipped: Verified profile' };
+              }
+              const keywords = ${JSON.stringify(finalSkipKeywords)}.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
+              if (keywords.length > 0) {
+                const tweetText = tweet.innerText.toLowerCase();
+                if (keywords.some(k => tweetText.includes(k) || authorName.toLowerCase().includes(k))) {
+                  return { success: true, skipped: true, reason: 'keyword', message: 'Skipped: Keyword match' };
+                }
+              }
+
+              if (actionsList.some(a => ['like', 'reply', 'retweet'].includes(a)) && !actionsList.some(a => ['unlike', 'unretweet'].includes(a))) {
+                const alreadyLiked = tweet.querySelector('[data-testid="unlike"]');
+                if (alreadyLiked) {
+                  return { success: true, skipped: true, message: 'Skipped: Already liked (implies previous engagement)' };
+                }
+              }
+
               const results = [];
 
               if (actionsList.includes('like')) {
                 const b = tweet.querySelector('[data-testid="like"]');
                 const u = tweet.querySelector('[data-testid="unlike"]');
                 if (b && isVisible(b)) {
-                   await safeClick(b, 'Like');
-                   results.push('Liked');
+                  await safeClick(b, 'Like');
+                  results.push('Liked');
                 } else if (u && isVisible(u)) {
-                   results.push('Already Liked');
+                  results.push('Already Liked');
                 }
               }
 
@@ -521,7 +903,6 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                     await safeClick(confirm, 'Retweet Action');
                     results.push('Retweeted');
                   } else {
-                    // Try closing the menu if it opened but no confirm button
                     await safeClick(b, 'Close Retweet Menu');
                     results.push('Retweet Confirm Button Not Found');
                   }
@@ -532,21 +913,18 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 const b = tweet.querySelector('[data-testid="reply"]');
                 if (b && isVisible(b)) {
                   await safeClick(b, 'Reply');
-                  await wait(2000);
+                  await wait(1000); // Reduced from 2000
                   const modals = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible);
                   const modal = modals.length ? modals[modals.length - 1] : null;
                   const searchRoot = modal || document;
-
                   const engagedTweetHandle = tweet.innerText.split('\\n')[1] || 'Unknown';
-
-                  const comp = searchRoot.querySelector('[data-testid="tweetTextarea_0"]') || 
+                  const comp = searchRoot.querySelector('[data-testid="tweetTextarea_0"]') ||
                                searchRoot.querySelector('div[role="textbox"][contenteditable="true"]');
                   if (comp) {
                     await safeClick(comp, 'Composer');
                     comp.focus();
-                    document.execCommand('selectAll', false, null); // Clear existing if any
+                    document.execCommand('selectAll', false, null);
                     document.execCommand('insertText', false, ${JSON.stringify(replyText || '')});
-                    // Removed manual input event dispatch
                     await wait(800);
                     const s = searchRoot.querySelector('[data-testid="tweetButton"]');
                     if (s) {
@@ -562,9 +940,71 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               }
 
               return { success: true, actions_performed: results, logs };
-            } catch(e) {
+            } catch (e) {
               return { success: false, error: e.toString(), logs };
             }
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
+  const checkEngagementTool = new DynamicStructuredTool({
+    name: 'x_check_engagement',
+    description: 'Quickly check if a tweet is already liked or retweeted. Use this to skip crafting/humanizing replies if already engaged. Returns { engaged: boolean }.',
+    schema: z.object({
+      index: z.number().describe('0-based index of the tweet.'),
+      expected_author: z.string().nullable().describe('Expected author handle.'),
+    }),
+    func: async ({ index, expected_author }) => {
+      const contents = ctx.getContents();
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            const findResult = await findTweetRobustly(${index}, ${JSON.stringify(expected_author)});
+            if (!findResult.tweet) return { success: false, error: 'Tweet not found' };
+            const tweet = findResult.tweet;
+            const liked = !!tweet.querySelector('[data-testid="unlike"]');
+            const retweeted = !!tweet.querySelector('[data-testid="unretweet"]');
+            return { success: true, engaged: liked || retweeted, liked, retweeted };
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
+  const scanPostsTool = new DynamicStructuredTool({
+    name: 'x_scan_posts',
+    description: 'Scan visible posts on X.com to get their metadata and engagement status (liked/retweeted) to filter out already-engaged posts. Returns list of posts with indices.',
+    schema: z.object({
+      limit: z.number().nullable().default(10),
+    }),
+    func: async ({ limit }: { limit: number | null }) => {
+      const contents = ctx.getContents();
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible).slice(0, ${limit || 10});
+            
+            const data = tweets.map((t, i) => {
+               const author = getTweetAuthor(t);
+               const textEl = t.querySelector('[data-testid="tweetText"]');
+               const text = textEl ? textEl.innerText.replace(/\\n/g, ' ').slice(0, 60) : '';
+               const isLiked = !!t.querySelector('[data-testid="unlike"]');
+               const isRetweeted = !!t.querySelector('[data-testid="unretweet"]');
+               const isPromoted = !!t.querySelector('[data-testid="placementTracking"]'); // Better check for ads
+               return { index: i, author, text, isLiked, isRetweeted, isPromoted };
+            });
+            
+            return { success: true, count: data.length, posts: data };
           })()
         `);
         return JSON.stringify(result);
@@ -581,5 +1021,5 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     func: engageTool.func,
   });
 
-  return [searchTool, advancedSearchTool, likeTool, replyTool, postTool, followTool, engageTool, engagingTool];
+  return [searchTool, advancedSearchTool, likeTool, replyTool, postTool, followTool, scoutTool, communityScoutTool, engageTool, checkEngagementTool, scanPostsTool, engagingTool];
 }

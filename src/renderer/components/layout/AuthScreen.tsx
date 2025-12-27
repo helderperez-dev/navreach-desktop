@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
-import navreachLogo from '@assets/navreach-white-welcome.png';
+import reavionLogo from '@assets/reavion-white-welcome.png';
 
 export function AuthScreen() {
     const [email, setEmail] = useState('');
@@ -81,7 +81,7 @@ export function AuthScreen() {
                     className="w-full max-w-md z-10 p-8"
                 >
                     <div className="flex flex-col items-center mb-8">
-                        <img src={navreachLogo} alt="Navreach" className="h-10 w-auto mb-10 select-none" draggable={false} />
+                        <img src={reavionLogo} alt="Reavion" className="h-10 w-auto mb-10 select-none" draggable={false} />
 
                         <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60">
                             {mode === 'login' ? 'Welcome Back' : 'Create Account'}
@@ -89,7 +89,7 @@ export function AuthScreen() {
                         <p className="text-white/40 mt-2 text-center">
                             {mode === 'login'
                                 ? 'Enter your credentials to access your workspace'
-                                : 'Join Navreach and start automating your browser'}
+                                : 'Join Reavion and start automating your browser'}
                         </p>
                     </div>
 

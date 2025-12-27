@@ -1,12 +1,14 @@
 import { create } from 'zustand';
-import type { ModelProvider, MCPServer, APITool } from '@shared/types';
+import type { ModelProvider, MCPServer, APITool, AppSettings } from '../../shared/types';
 
 interface SettingsState {
+  settings: Partial<AppSettings>;
   modelProviders: ModelProvider[];
   mcpServers: MCPServer[];
   apiTools: APITool[];
   isLoading: boolean;
   loadSettings: () => Promise<void>;
+  updateSetting: <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => Promise<void>;
   addModelProvider: (provider: ModelProvider) => Promise<void>;
   updateModelProvider: (provider: ModelProvider) => Promise<void>;
   deleteModelProvider: (id: string) => Promise<void>;
@@ -18,7 +20,8 @@ interface SettingsState {
   deleteAPITool: (id: string) => Promise<void>;
 }
 
-export const useSettingsStore = create<SettingsState>((set) => ({
+export const useSettingsStore = create<SettingsState>((set, get) => ({
+  settings: {},
   modelProviders: [],
   mcpServers: [],
   apiTools: [],
@@ -29,6 +32,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     try {
       const settings = await window.api.settings.getAll();
       set({
+        settings,
         modelProviders: settings.modelProviders || [],
         mcpServers: settings.mcpServers || [],
         apiTools: settings.apiTools || [],
@@ -38,68 +42,63 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     }
   },
 
+  updateSetting: async (key, value) => {
+    await window.api.settings.set(key, value);
+    set((state) => ({
+      settings: { ...state.settings, [key]: value }
+    }));
+  },
+
   addModelProvider: async (provider) => {
-    await window.api.settings.set('modelProviders', [
-      ...((await window.api.settings.get<ModelProvider[]>('modelProviders')) || []),
-      provider,
-    ]);
-    set((state) => ({ modelProviders: [...state.modelProviders, provider] }));
+    const providers = [...get().modelProviders, provider];
+    await window.api.settings.set('modelProviders', providers);
+    set({ modelProviders: providers });
   },
 
   updateModelProvider: async (provider) => {
-    const providers = (await window.api.settings.get<ModelProvider[]>('modelProviders')) || [];
-    const updated = providers.map((p) => (p.id === provider.id ? provider : p));
+    const updated = get().modelProviders.map((p) => (p.id === provider.id ? provider : p));
     await window.api.settings.set('modelProviders', updated);
     set({ modelProviders: updated });
   },
 
   deleteModelProvider: async (id) => {
-    const providers = (await window.api.settings.get<ModelProvider[]>('modelProviders')) || [];
-    const filtered = providers.filter((p) => p.id !== id);
+    const filtered = get().modelProviders.filter((p) => p.id !== id);
     await window.api.settings.set('modelProviders', filtered);
     set({ modelProviders: filtered });
   },
 
   addMCPServer: async (server) => {
-    await window.api.settings.set('mcpServers', [
-      ...((await window.api.settings.get<MCPServer[]>('mcpServers')) || []),
-      server,
-    ]);
-    set((state) => ({ mcpServers: [...state.mcpServers, server] }));
+    const servers = [...get().mcpServers, server];
+    await window.api.settings.set('mcpServers', servers);
+    set({ mcpServers: servers });
   },
 
   updateMCPServer: async (server) => {
-    const servers = (await window.api.settings.get<MCPServer[]>('mcpServers')) || [];
-    const updated = servers.map((s) => (s.id === server.id ? server : s));
+    const updated = get().mcpServers.map((s) => (s.id === server.id ? server : s));
     await window.api.settings.set('mcpServers', updated);
     set({ mcpServers: updated });
   },
 
   deleteMCPServer: async (id) => {
-    const servers = (await window.api.settings.get<MCPServer[]>('mcpServers')) || [];
-    const filtered = servers.filter((s) => s.id !== id);
+    const filtered = get().mcpServers.filter((s) => s.id !== id);
     await window.api.settings.set('mcpServers', filtered);
     set({ mcpServers: filtered });
   },
 
   addAPITool: async (tool) => {
-    await window.api.settings.set('apiTools', [
-      ...((await window.api.settings.get<APITool[]>('apiTools')) || []),
-      tool,
-    ]);
-    set((state) => ({ apiTools: [...state.apiTools, tool] }));
+    const tools = [...get().apiTools, tool];
+    await window.api.settings.set('apiTools', tools);
+    set({ apiTools: tools });
   },
 
   updateAPITool: async (tool) => {
-    const tools = (await window.api.settings.get<APITool[]>('apiTools')) || [];
-    const updated = tools.map((t) => (t.id === tool.id ? tool : t));
+    const updated = get().apiTools.map((t) => (t.id === tool.id ? tool : t));
     await window.api.settings.set('apiTools', updated);
     set({ apiTools: updated });
   },
 
   deleteAPITool: async (id) => {
-    const tools = (await window.api.settings.get<APITool[]>('apiTools')) || [];
-    const filtered = tools.filter((t) => t.id !== id);
+    const filtered = get().apiTools.filter((t) => t.id !== id);
     await window.api.settings.set('apiTools', filtered);
     set({ apiTools: filtered });
   },

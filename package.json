@@ -1,9 +1,9 @@
 {
-  "name": "navreach",
+  "name": "reavion",
   "version": "0.1.0",
   "description": "AI-powered browser automation with embedded browser and chat interface",
   "main": "./out/main/index.js",
-  "author": "Navreach",
+  "author": "Reavion",
   "license": "MIT",
   "scripts": {
     "dev": "electron-vite dev",
@@ -14,7 +14,7 @@
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
     "build:linux": "npm run build && electron-builder --linux",
-    "generate-icons": "npx electron-icon-builder --input=./build/icon.png --output=./build --flatten",
+    "generate-icons": "npx electron-icon-builder --input=./src/assets/icon.png --output=./build --flatten",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit"
   },

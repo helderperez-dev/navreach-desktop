@@ -308,11 +308,12 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         const dagreGraph = new dagre.graphlib.Graph();
         dagreGraph.setDefaultEdgeLabel(() => ({}));
 
-        // Layout settings
-        const nodeWidth = 260;
-        const nodeHeight = 160;
+        // Direction: 'TB' (Top-to-Bottom) is standard for logic flows
+        // Increased nodesep prevents crowding of parallel branches
+        dagreGraph.setGraph({ rankdir: 'TB', nodesep: 150, ranksep: 100 });
 
-        dagreGraph.setGraph({ rankdir: 'LR', nodesep: 50, ranksep: 100 });
+        const nodeWidth = 240;
+        const nodeHeight = 120;
 
         nodes.forEach((node) => {
             dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
@@ -324,6 +325,7 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
         dagre.layout(dagreGraph);
 
+        // 1. Apply new positions calculated by Dagre
         const layoutedNodes = nodes.map((node) => {
             const nodeWithPosition = dagreGraph.node(node.id);
             return {
@@ -337,9 +339,31 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
         setNodes(layoutedNodes);
 
+        // 2. Optimize connections for vertical flow
+        // Standardizing on 'bottom-source' -> 'top-target' creates clean vertical lines
+        const layoutedEdges = edges.map(edge => {
+            // Check if this is a specialized handle from a Logic node (Loop, Condition)
+            const isSpecializedHandle = edge.sourceHandle &&
+                ['true', 'false', 'loop', 'done', 'item'].includes(edge.sourceHandle);
+
+            if (isSpecializedHandle) {
+                return edge; // Preserve logic branch connections
+            }
+
+            // For standard flow, enforce vertical connection points
+            return {
+                ...edge,
+                sourceHandle: 'bottom-source',
+                targetHandle: 'top-target',
+                type: 'smoothstep' // Ensure orthogonal routing
+            };
+        });
+
+        setEdges(layoutedEdges);
+
         // Fit view after layout
         setTimeout(() => reactFlowInstance?.fitView({ duration: 800 }), 50);
-    }, [nodes, edges, reactFlowInstance, setNodes]);
+    }, [nodes, edges, reactFlowInstance, setNodes, setEdges]);
 
     const handleSave = async () => {
         // Validate
@@ -416,6 +440,7 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                         onNodeClick={onNodeClick}
                         onPaneClick={onPaneClick}
                         nodeTypes={nodeTypes}
+                        isValidConnection={(connection) => connection.source !== connection.target}
                         defaultEdgeOptions={{
                             type: 'smoothstep',
                             animated: false,

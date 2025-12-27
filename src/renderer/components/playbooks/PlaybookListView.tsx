@@ -116,12 +116,12 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
     return (
         <div className="flex flex-col h-full bg-background">
             {/* Header Section */}
-            <div className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0A0A0B]/80 backdrop-blur-md sticky top-0 z-30">
+            <div className="h-16 border-b border-border flex items-center justify-between px-6 bg-card/80 backdrop-blur-md sticky top-0 z-30">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-blue-600/10 flex items-center justify-center border border-blue-500/20">
-                        <Play className="h-5 w-5 text-blue-400" />
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
+                        <Play className="h-5 w-5 text-primary" />
                     </div>
-                    <h1 className="text-lg font-semibold text-white tracking-tight">
+                    <h1 className="text-lg font-semibold text-foreground tracking-tight">
                         Playbooks
                     </h1>
                 </div>
@@ -132,7 +132,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                         <div
                             className={cn(
                                 "relative flex items-center transition-all duration-300 ease-in-out overflow-hidden h-9",
-                                isSearchExpanded || search ? "w-64 bg-white/[0.03] rounded-xl" : "w-10"
+                                isSearchExpanded || search ? "w-64 bg-muted/40 rounded-xl border border-border/50" : "w-10"
                             )}
                         >
                             <Button
@@ -140,7 +140,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                                 size="sm"
                                 className={cn(
                                     "h-10 w-10 p-0 shrink-0 transition-colors rounded-xl focus-visible:ring-0 focus-visible:outline-none",
-                                    (isSearchExpanded || search) ? "text-blue-400" : "text-white/40 hover:text-white hover:bg-white/5"
+                                    (isSearchExpanded || search) ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                 )}
                                 onClick={() => setIsSearchExpanded(!isSearchExpanded)}
                             >
@@ -151,7 +151,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                                     ref={searchRef}
                                     placeholder="Search Playbooks..."
                                     className={cn(
-                                        "bg-transparent border-none text-xs outline-none text-white/80 placeholder:text-white/20 transition-all duration-300 w-full focus:outline-none leading-none",
+                                        "bg-transparent border-none text-xs outline-none text-foreground placeholder:text-muted-foreground/50 transition-all duration-300 w-full focus:outline-none leading-none",
                                         isSearchExpanded || search ? "opacity-100 pl-1 pr-8" : "opacity-0 w-0 pointer-events-none"
                                     )}
                                     value={search}
@@ -161,7 +161,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                                 {search && (
                                     <button
                                         onClick={() => setSearch('')}
-                                        className="absolute right-2 p-1 text-white/20 hover:text-white/60 transition-colors"
+                                        className="absolute right-2 p-1 text-muted-foreground/30 hover:text-muted-foreground transition-colors"
                                     >
                                         <X className="h-3.5 w-3.5" />
                                     </button>
@@ -180,7 +180,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-10 w-10 p-0 text-white/40 hover:text-white hover:bg-white/5 rounded-xl transition-all"
+                                className="h-10 w-10 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl transition-all"
                                 onClick={() => document.getElementById('import-playbook')?.click()}
                                 title="Import Playbook"
                             >
@@ -189,11 +189,11 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                         </div>
                     </div>
 
-                    <div className="w-[1px] h-4 bg-white/10 mx-1" />
+                    <div className="w-[1px] h-4 bg-border mx-1" />
 
                     <Button
                         size="sm"
-                        className="h-10 gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-5 transition-all active:scale-95 border border-white/10 font-semibold"
+                        className="h-10 gap-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl px-5 transition-all active:scale-95 border border-border/50 font-semibold"
                         onClick={onCreate}
                     >
                         <Plus className="h-4 w-4" />
@@ -225,7 +225,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                         {filteredPlaybooks.map((playbook) => (
                             <div
                                 key={playbook.id}
-                                className="group relative flex flex-col p-4 rounded-xl border border-border bg-card hover:border-primary/50 hover:shadow-sm transition-all cursor-pointer"
+                                className="group relative flex flex-col p-4 rounded-xl border border-border bg-card/60 backdrop-blur-sm hover:border-primary/50 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
                                 onClick={() => onSelect(playbook.id)}
                             >
                                 <div className="flex items-start justify-between mb-2">
