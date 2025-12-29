@@ -61,6 +61,7 @@ interface OpenRouterModel {
   id: string;
   name: string;
   context_length: number;
+  supported_parameters: string[];
 }
 
 interface OpenAIModel {
@@ -88,11 +89,18 @@ async function fetchOpenAIModels(apiKey: string, baseUrl?: string): Promise<Mode
 
     if (data.data && Array.isArray(data.data)) {
       return data.data
+        .filter((m: OpenAIModel) => {
+          const id = m.id.toLowerCase();
+          // Filter for models known to support function calling/tools
+          // This includes gpt-4, gpt-3.5-turbo, and newer o1 models
+          // Exclude -instruct models as they often lack tool support in chat format
+          return (id.includes('gpt-') || id.includes('o1-')) && !id.includes('-instruct');
+        })
         .map((m: OpenAIModel) => ({
           id: m.id,
           name: m.id.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
           providerId: '',
-          contextWindow: m.id.includes('128k') || m.id.includes('gpt-4o') ? 128000 : 16384,
+          contextWindow: m.id.includes('128k') || m.id.includes('gpt-4o') || m.id.includes('o1') ? 128000 : 16384,
           enabled: false,
         }))
         .sort((a: ModelConfig, b: ModelConfig) => a.name.localeCompare(b.name));
@@ -111,7 +119,11 @@ async function fetchOpenRouterModels(): Promise<ModelConfig[]> {
 
     if (data.data && Array.isArray(data.data)) {
       return data.data
-        .filter((m: OpenRouterModel) => m.id && m.name)
+        .filter((m: OpenRouterModel) => {
+          if (!m.id || !m.name) return false;
+          // Only include models that explicitly support tools according to OpenRouter metadata
+          return m.supported_parameters && m.supported_parameters.includes('tools');
+        })
         .map((m: OpenRouterModel) => ({
           id: m.id,
           name: m.name.replace(/^.*?\//, '').replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),

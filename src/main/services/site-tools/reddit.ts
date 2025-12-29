@@ -167,63 +167,67 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
       try {
         const result = await contents.executeJavaScript(`
                (async function() {
-                 ${POINTER_HELPERS}
-                 ${BASE_SCRIPT_HELPERS}
-                 
-                 let target = null;
-                 if ('${rType}' === 'post') {
-                    // Modern Reddit: <shreddit-post>
-                    const posts = Array.from(document.querySelectorAll('shreddit-post, .Post')).filter(isVisible);
-                    target = posts[${rIndex}] || posts[0];
-                 } else {
-                    const comments = Array.from(document.querySelectorAll('shreddit-comment, .Comment')).filter(isVisible);
-                    target = comments[${rIndex}] || comments[0];
-                 }
-
-                 if (!target) return { success: false, error: 'Target not found' };
-
-                 const desired = '${rAction}'; // 'up', 'down'
-                 if (desired === 'clear') return { success: false, error: 'Clear vote not supported yet' };
-
-                 // Selectors based on inspection
-                 let btn = null;
-                 
-                 // 1. Try Shadow DOM (Standard for shreddit-post)
-                 if (target.shadowRoot) {
-                    if (desired === 'up') {
-                        btn = target.shadowRoot.querySelector('button[upvote]');
-                        if (!btn) btn = target.shadowRoot.querySelector('button[name="upvote"]');
-                        // Fallback: search by icon name
-                        if (!btn) btn = target.shadowRoot.querySelector('button[icon-name="upvote-outline"]');
-                        if (!btn) btn = target.shadowRoot.querySelector('button[icon-name="upvote-fill"]');
-                    } else {
-                        btn = target.shadowRoot.querySelector('button[downvote]');
-                        if (!btn) btn = target.shadowRoot.querySelector('button[name="downvote"]');
-                         // Fallback: search by icon name
-                        if (!btn) btn = target.shadowRoot.querySelector('button[icon-name="downvote-outline"]');
-                        if (!btn) btn = target.shadowRoot.querySelector('button[icon-name="downvote-fill"]');
-                    }
-                 }
-                 
-                 // 2. Try Light DOM (Legacy or specific views)
-                 if (!btn) {
-                     if (desired === 'up') {
-                        btn = target.querySelector('button[upvote], button[name="upvote"], button[data-click-id="upvote"]');
-                     } else {
-                        btn = target.querySelector('button[downvote], button[name="downvote"], button[data-click-id="downvote"]');
-                     }
-                 }
-
-                 if (btn) {
-                     // Check if already voted? (Optional, but user said 'vote', so we usually just click)
-                     // Inspecting 'aria-pressed' could tell us state.
-                     // const isPressed = btn.getAttribute('aria-pressed') === 'true';
+                 try {
+                     ${POINTER_HELPERS}
+                     ${BASE_SCRIPT_HELPERS}
                      
-                    await safeClick(btn, desired + 'vote');
-                    return { success: true, message: desired + 'voted' };
-                 } 
-                 
-                 return { success: false, error: 'Vote buttons not found via selectors' };
+                     let target = null;
+                     if ('${rType}' === 'post') {
+                        // Modern Reddit: <shreddit-post>
+                        const posts = Array.from(document.querySelectorAll('shreddit-post, .Post')).filter(isVisible);
+                        target = posts[${rIndex}] || posts[0];
+                     } else {
+                        const comments = Array.from(document.querySelectorAll('shreddit-comment, .Comment')).filter(isVisible);
+                        target = comments[${rIndex}] || comments[0];
+                     }
+
+                     if (!target) return { success: false, error: 'Target not found' };
+
+                     const desired = '${rAction}'; // 'up', 'down'
+                     if (desired === 'clear') return { success: false, error: 'Clear vote not supported yet' };
+
+                     // Selectors based on inspection
+                     let btn = null;
+                     
+                     // 1. Try Shadow DOM (Standard for shreddit-post)
+                     if (target.shadowRoot) {
+                        if (desired === 'up') {
+                            btn = target.shadowRoot.querySelector('button[upvote]');
+                            if (!btn) btn = target.shadowRoot.querySelector('button[name="upvote"]');
+                            // Fallback: search by icon name
+                            if (!btn) btn = target.shadowRoot.querySelector('button[icon-name="upvote-outline"]');
+                            if (!btn) btn = target.shadowRoot.querySelector('button[icon-name="upvote-fill"]');
+                        } else {
+                            btn = target.shadowRoot.querySelector('button[downvote]');
+                            if (!btn) btn = target.shadowRoot.querySelector('button[name="downvote"]');
+                             // Fallback: search by icon name
+                            if (!btn) btn = target.shadowRoot.querySelector('button[icon-name="downvote-outline"]');
+                            if (!btn) btn = target.shadowRoot.querySelector('button[icon-name="downvote-fill"]');
+                        }
+                     }
+                     
+                     // 2. Try Light DOM (Legacy or specific views)
+                     if (!btn) {
+                         if (desired === 'up') {
+                            btn = target.querySelector('button[upvote], button[name="upvote"], button[data-click-id="upvote"]');
+                         } else {
+                            btn = target.querySelector('button[downvote], button[name="downvote"], button[data-click-id="downvote"]');
+                         }
+                     }
+
+                     if (btn) {
+                         // Check if already voted? (Optional, but user said 'vote', so we usually just click)
+                         // Inspecting 'aria-pressed' could tell us state.
+                         // const isPressed = btn.getAttribute('aria-pressed') === 'true';
+                         
+                        await safeClick(btn, desired + 'vote');
+                        return { success: true, message: desired + 'voted' };
+                     } 
+                     
+                     return { success: false, error: 'Vote buttons not found via selectors' };
+                 } catch (e) {
+                     return { success: false, error: e.toString() };
+                 }
                })()
              `);
         return JSON.stringify(result);
@@ -249,204 +253,108 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
-            ${POINTER_HELPERS}
-            ${BASE_SCRIPT_HELPERS}
+            try {
+                ${POINTER_HELPERS}
+                ${BASE_SCRIPT_HELPERS}
 
-            // Context Check: Ensure we are on a post page
-            const isPostPage = window.location.href.includes('/comments/') || !!document.querySelector('shreddit-comment-tree');
-            // Allow if replying to a comment (type != post) regardless, though usually needs post page too
-            // But strict check for type='post'
-            if ('${rType}' === 'post' && !isPostPage) {
-                // Check for overlay (modal post)
-                const overlay = document.querySelector('#overlayScrollContainer');
-                if (!overlay) {
-                     return { 
-                        success: false, 
-                        error: 'WRONG_CONTEXT: You are attempting to comment while on a feed/list page. Reddit requires you to be on the specific post page to comment. Please add a "Navigate" step to open the post first.' 
-                     };
-                }
-            }
-
-            const checkVisible = (el) => {
-                return el && (el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0);
-            };
-
-            if ('${rType}' === 'post') {
-                // Top-level comment interaction flow
-                
-                const findEditor = () => {
-                    // 1. Standard Shreddit elements or explicit role
-                    let el = document.querySelector('shreddit-composer div[role="textbox"]') ||
-                             document.querySelector('shreddit-composer div[contenteditable="true"]') || 
-                             document.querySelector('shreddit-composer [role="textbox"]');
-                    
-                    // 2. Placeholder/Input variants
-                    if (!el) {
-                        const placeholder = document.querySelector('faceplate-textarea-input');
-                        if (placeholder) {
-                            el = placeholder.querySelector('textarea, div[contenteditable="true"], [role="textbox"]') || 
-                                 (placeholder.shadowRoot ? placeholder.shadowRoot.querySelector('textarea, div[contenteditable="true"], [role="textbox"]') : null);
-                        }
+                // Context Check: Ensure we are on a post page
+                const isPostPage = window.location.href.includes('/comments/') || !!document.querySelector('shreddit-comment-tree');
+                // Allow if replying to a comment (type != post) regardless, though usually needs post page too
+                // But strict check for type='post'
+                if ('${rType}' === 'post' && !isPostPage) {
+                    // Check for overlay (modal post)
+                    const overlay = document.querySelector('#overlayScrollContainer');
+                    if (!overlay) {
+                        return { 
+                            success: false, 
+                            error: 'WRONG_CONTEXT: You are attempting to comment while on a feed/list page. Reddit requires you to be on the specific post page to comment. Please add a "Navigate" step to open the post first.',
+                            logs
+                        };
                     }
+                }
 
-                    // 3. Simple textarea fallback
-                    if (!el) el = document.querySelector('textarea[name="text"]');
-                    
-                    return el;
+                const checkVisible = (el) => {
+                    if (!el) return false;
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
                 };
 
-                let editor = findEditor();
-                
-                // If it's a faceplate-textarea-pwa (seen in some mobile/lite views), click it
-                if (!editor || !checkVisible(editor)) {
-                    const potential = document.querySelector('faceplate-textarea-input, faceplate-textarea-pwa');
-                    if (potential) {
-                        log('Clicking potential editor host');
-                        await safeClick(potential, 'Editor Host');
-                        await wait(500);
-                        editor = findEditor();
-                    }
-                }
-
-                if (editor && checkVisible(editor) && editor.tagName !== 'FACEPLATE-TEXTAREA-INPUT') {
-                    log('Found existing visible editor');
-                } else {
-                    const placeholder = document.querySelector('faceplate-textarea-input[placeholder="Share your thoughts"]') || 
-                                        document.querySelector('faceplate-textarea-input');
-                    if (placeholder) {
-                        try {
-                            log('Clicking comment placeholder');
-                            const trigger = placeholder.shadowRoot ? (placeholder.shadowRoot.querySelector('textarea') || placeholder.shadowRoot.querySelector('div')) : null;
-                            if (trigger) {
-                                await safeClick(trigger, 'Comment Placeholder (Shadow)');
-                            } else {
-                                await safeClick(placeholder, 'Comment Placeholder (Host)');
-                            }
-                        } catch (err) {
-                            log('Placeholder click error', err.toString());
-                        }
+                if ('${rType}' === 'post') {
+                    // Top-level comment interaction flow
+                    
+                    const findEditor = () => {
+                        // 1. Standard Shreddit elements or explicit role (Light DOM)
+                        let el = document.querySelector('shreddit-composer div[role="textbox"]') ||
+                                 document.querySelector('shreddit-composer div[contenteditable="true"]') || 
+                                 document.querySelector('shreddit-composer [role="textbox"]');
                         
-                        for (let i = 0; i < 30; i++) {
+                        // 2. Standard Shreddit elements (Shadow DOM)
+                        if (!el) {
+                            const composer = document.querySelector('shreddit-composer');
+                            if (composer && composer.shadowRoot) {
+                                el = composer.shadowRoot.querySelector('div[contenteditable="true"]') || 
+                                     composer.shadowRoot.querySelector('[role="textbox"]') ||
+                                     composer.shadowRoot.querySelector('div.rich-text-editor');
+                            }
+                        }
+
+                        // 3. Placeholder/Input variants
+                        if (!el) {
+                            const placeholder = document.querySelector('faceplate-textarea-input');
+                            if (placeholder) {
+                                el = placeholder.querySelector('textarea, div[contenteditable="true"], [role="textbox"]') || 
+                                     (placeholder.shadowRoot ? placeholder.shadowRoot.querySelector('textarea, div[contenteditable="true"], [role="textbox"]') : null);
+                            }
+                        }
+
+                        // 4. Simple textarea fallback
+                        if (!el) el = document.querySelector('textarea[name="text"]');
+                        
+                        return el;
+                    };
+
+                    let editor = findEditor();
+                    
+                    // If it's a faceplate-textarea-pwa (seen in some mobile/lite views), click it
+                    if (!editor || !checkVisible(editor)) {
+                        const potential = document.querySelector('faceplate-textarea-input') || 
+                                         document.querySelector('faceplate-textarea-pwa') ||
+                                         document.querySelector('shreddit-composer'); // Sometimes clicking the composer host helps
+                        
+                        if (potential) {
+                            log('Clicking potential editor host/placeholder to expand', { tagName: potential.tagName });
+                            try {
+                                // Try to find the specific clickable area in shadow root
+                                let trigger = potential;
+                                if (potential.shadowRoot) {
+                                    trigger = potential.shadowRoot.querySelector('div[role="textbox"]') || potential.shadowRoot.querySelector('textarea') || potential;
+                                }
+                                await safeClick(trigger, 'Editor Host/Trigger');
+                            } catch (e) {
+                                log('Clicking host failed, trying direct click on element', { error: e.toString() });
+                                await safeClick(potential, 'Editor Host (Fallback)');
+                            }
+                            await wait(800);
                             editor = findEditor();
-                            if (editor && editor.tagName !== 'FACEPLATE-TEXTAREA-INPUT' && checkVisible(editor)) break;
+                        }
+                    }
+
+                    // Retry lookups
+                    if (!editor || !checkVisible(editor)) {
+                         log('Editor not visible yet, waiting...');
+                         for (let i = 0; i < 30; i++) {
+                            editor = findEditor();
+                            if (editor && checkVisible(editor)) break;
                             await new Promise(r => setTimeout(r, 100));
                         }
                     }
-                }
-                
-                if (!editor) {
-                     return { success: false, error: 'Comment editor not found after attempting validation' };
-                }
-
-                if (editor) {
-                    log('Focusing and clicking editor', { tagName: editor.tagName });
-                    editor.scrollIntoView({ behavior: 'instant', block: 'center' });
-                    await wait(200);
-
-                    const r = editor.getBoundingClientRect();
-                    const x = r.left + r.width/2;
-                    const y = r.top + r.height/2;
-
-                    if (typeof movePointer === 'function') movePointer(x, y);
                     
-                    // Simulate full click sequence for framework listeners
-                    editor.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
-                    editor.focus();
-                    editor.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
-                    try { (editor as any).click(); } catch(e) {}
-                    await wait(300);
-                    
-                    // Clear
-                    try {
-                        const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
-                        if (isDiv) {
-                            editor.innerHTML = ''; 
-                            const selection = window.getSelection();
-                            const range = document.createRange();
-                            range.selectNodeContents(editor);
-                            selection.removeAllRanges();
-                            selection.addRange(range);
-                            document.execCommand('delete', false, null);
-                        } else {
-                            (editor as any).value = '';
-                        }
-                    } catch (e) { log('Clear failed', e.toString()); }
-
-                    log('Typing text into editor');
-                    // Use beforeinput for rich editors that use it to update state
-                    try {
-                        editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: ${JSON.stringify(text)}, bubbles: true }));
-                    } catch(e) {}
-                    
-                    document.execCommand('insertText', false, ${JSON.stringify(text)});
-                    
-                    const currentVal = editor.tagName === 'DIV' ? editor.textContent : (editor as any).value;
-                    if (!currentVal || currentVal.length < 2) {
-                        log('Fallback assignment');
-                        if (editor.tagName === 'DIV') {
-                            editor.textContent = ${JSON.stringify(text)};
-                        } else {
-                            (editor as any).value = ${JSON.stringify(text)};
-                        }
-                        editor.dispatchEvent(new Event('input', { bubbles: true }));
-                        editor.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (!editor) {
+                         return { success: false, error: 'Comment editor not found after attempting validation. Start logs: ' + JSON.stringify(logs) };
                     }
 
-                    await wait(500);
-                    
-                    // Submit button logic
-                    const composer = editor.closest('shreddit-composer') || editor.closest('faceplate-textarea-input') || document;
-                    let submitBtn = composer.querySelector('button[slot="submit-button"]') || 
-                                    composer.querySelector('button[type="submit"]');
-                    
-                    if (!submitBtn) {
-                        const buttons = Array.from(document.querySelectorAll('button')).filter(checkVisible);
-                        submitBtn = buttons.find(b => {
-                            const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                            return txt === 'comment' || txt === 'post';
-                        });
-                    }
-                    
-                    if (submitBtn) {
-                         await safeClick(submitBtn, 'Submit Comment');
-                         return { success: true, message: 'Comment submitted' };
-                    } else {
-                         return { success: false, error: 'Submit button not found' };
-                    }
-                }
-
-            } else {
-                // Reply to a comment
-                 const comments = Array.from(document.querySelectorAll('shreddit-comment, .Comment')).filter(checkVisible);
-                 const target = comments[${rIndex}] || comments[0];
-                 if (!target) return { success: false, error: 'Comment to reply to not found' };
-                 
-                 let replyBtn = target.querySelector('button[slot="reply"]');
-                 if (!replyBtn && target.shadowRoot) replyBtn = target.shadowRoot.querySelector('button[slot="reply"]');
-                 
-                 if (replyBtn) {
-                    await safeClick(replyBtn, 'Reply Button');
-                    
-                    let editor = null;
-                    const findReplyEditor = () => {
-                         return target.querySelector('shreddit-composer div[role="textbox"]') ||
-                                target.querySelector('shreddit-composer div[contenteditable="true"]') ||
-                                target.querySelector('shreddit-composer [role="textbox"]') ||
-                                (target.shadowRoot ? target.shadowRoot.querySelector('shreddit-composer div[role="textbox"]') : null);
-                    };
-
-                    for (let i = 0; i < 30; i++) {
-                        editor = findReplyEditor();
-                        if (!editor && target.nextElementSibling && target.nextElementSibling.tagName === 'SHREDDIT-COMPOSER') {
-                            editor = target.nextElementSibling.querySelector('div[contenteditable="true"]') ||
-                                     target.nextElementSibling.querySelector('[role="textbox"]');
-                        }
-                        if (editor && checkVisible(editor)) break;
-                        await new Promise(r => setTimeout(r, 100));
-                    }
-                    
                     if (editor) {
-                        log('Focusing and clicking reply editor');
+                        log('Focusing and clicking editor', { tagName: editor.tagName });
                         editor.scrollIntoView({ behavior: 'instant', block: 'center' });
                         await wait(200);
 
@@ -456,16 +364,19 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
 
                         if (typeof movePointer === 'function') movePointer(x, y);
                         
+                        // Simulate full click sequence for framework listeners
                         editor.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
                         editor.focus();
                         editor.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
                         try { (editor as any).click(); } catch(e) {}
                         await wait(300);
                         
+                        // Clear
                         try {
                             const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
                             if (isDiv) {
-                                editor.innerHTML = '';
+                                editor.innerHTML = ''; 
+                                // Also try to clear via selection which some editors rely on
                                 const selection = window.getSelection();
                                 const range = document.createRange();
                                 range.selectNodeContents(editor);
@@ -475,50 +386,193 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
                             } else {
                                 (editor as any).value = '';
                             }
-                        } catch (e) {}
+                        } catch (e) { log('Clear failed', e.toString()); }
 
-                        log('Typing reply text');
+                        log('Typing text into editor');
+                        // Use beforeinput for rich editors that use it to update state
                         try {
                             editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: ${JSON.stringify(text)}, bubbles: true }));
                         } catch(e) {}
+                        
                         document.execCommand('insertText', false, ${JSON.stringify(text)});
-
+                        
+                        // Verify content
                         const currentVal = editor.tagName === 'DIV' ? editor.textContent : (editor as any).value;
-                        if (!currentVal || currentVal.length < 2) {
+                        if (!currentVal || currentVal.length < 1) {
+                            log('Fallback assignment used');
                             if (editor.tagName === 'DIV') {
                                 editor.textContent = ${JSON.stringify(text)};
                             } else {
                                 (editor as any).value = ${JSON.stringify(text)};
                             }
                             editor.dispatchEvent(new Event('input', { bubbles: true }));
+                            editor.dispatchEvent(new Event('change', { bubbles: true }));
                         }
 
                         await wait(500);
                         
-                        const composer = editor.closest('shreddit-composer') || document;
-                        let submitBtn = composer.querySelector('button[slot="submit-button"]') ||
+                        // Submit button logic
+                        const composer = editor.closest('shreddit-composer') || editor.closest('faceplate-textarea-input') || document;
+                        let submitBtn = composer.querySelector('button[slot="submit-button"]') || 
                                         composer.querySelector('button[type="submit"]');
                         
+                        // Search in Shadow DOM of composer if not found
+                        if (!submitBtn && composer !== document && composer.shadowRoot) {
+                             submitBtn = composer.shadowRoot.querySelector('button[slot="submit-button"]') || 
+                                         composer.shadowRoot.querySelector('button[type="submit"]');
+                        }
+
                         if (!submitBtn) {
                             const buttons = Array.from(document.querySelectorAll('button')).filter(checkVisible);
                             submitBtn = buttons.find(b => {
                                 const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                return txt === 'reply' || txt === 'comment' || txt === 'post';
+                                return txt === 'comment' || txt === 'post';
                             });
                         }
-
+                        
                         if (submitBtn) {
-                            await safeClick(submitBtn, 'Submit Reply');
-                            return { success: true, message: 'Replied to comment' };
+                             await safeClick(submitBtn, 'Submit Comment');
+                             return { success: true, message: 'Comment submitted', logs };
                         } else {
-                            return { success: false, error: 'Reply submit button not found' };
+                             return { success: false, error: 'Submit button not found', logs };
                         }
-                    } else {
-                        return { success: false, error: 'Reply composer editor not found after waiting' };
                     }
-                 } else {
-                    return { success: false, error: 'Reply button not found' };
-                 }
+
+                } else {
+                    // Reply to a comment
+                     const comments = Array.from(document.querySelectorAll('shreddit-comment, .Comment')).filter(checkVisible);
+                     const target = comments[${rIndex}] || comments[0];
+                     if (!target) return { success: false, error: 'Comment to reply to not found', logs };
+                     
+                     let replyBtn = target.querySelector('button[slot="reply"]');
+                     if (!replyBtn && target.shadowRoot) replyBtn = target.shadowRoot.querySelector('button[slot="reply"]');
+                     
+                     if (replyBtn) {
+                        await safeClick(replyBtn, 'Reply Button');
+                        
+                        let editor = null;
+                        const findReplyEditor = () => {
+                             // Light DOM
+                             let el = target.querySelector('shreddit-composer div[role="textbox"]') ||
+                                    target.querySelector('shreddit-composer div[contenteditable="true"]') ||
+                                    target.querySelector('shreddit-composer [role="textbox"]');
+                             
+                             // Shadow DOM of a nested composer in the comment
+                             if (!el) {
+                                  const localComposer = target.querySelector('shreddit-composer');
+                                  if (localComposer && localComposer.shadowRoot) {
+                                      el = localComposer.shadowRoot.querySelector('div[contenteditable="true"]') ||
+                                           localComposer.shadowRoot.querySelector('[role="textbox"]');
+                                  }
+                             }
+                             
+                             // Shadow DOM of the comment itself? Rarely contains the composer directly, but good to check
+                             if (!el && target.shadowRoot) {
+                                  el = target.shadowRoot.querySelector('shreddit-composer div[role="textbox"]');
+                             }
+
+                             return el;
+                        };
+
+                        for (let i = 0; i < 30; i++) {
+                            editor = findReplyEditor();
+                            // Fallback: look for sibling composer (old reddit/some views)
+                            if (!editor && target.nextElementSibling && target.nextElementSibling.tagName === 'SHREDDIT-COMPOSER') {
+                                const sibling = target.nextElementSibling;
+                                editor = sibling.querySelector('div[contenteditable="true"]') ||
+                                         sibling.querySelector('[role="textbox"]');
+                                // Check sibling shadow
+                                if (!editor && sibling.shadowRoot) {
+                                     editor = sibling.shadowRoot.querySelector('div[contenteditable="true"]') ||
+                                              sibling.shadowRoot.querySelector('[role="textbox"]');
+                                }
+                            }
+                            if (editor && checkVisible(editor)) break;
+                            await new Promise(r => setTimeout(r, 100));
+                        }
+                        
+                        if (editor) {
+                            log('Focusing and clicking reply editor');
+                            editor.scrollIntoView({ behavior: 'instant', block: 'center' });
+                            await wait(200);
+
+                            const r = editor.getBoundingClientRect();
+                            const x = r.left + r.width/2;
+                            const y = r.top + r.height/2;
+
+                            if (typeof movePointer === 'function') movePointer(x, y);
+                            
+                            editor.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
+                            editor.focus();
+                            editor.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
+                            try { (editor as any).click(); } catch(e) {}
+                            await wait(300);
+                            
+                            try {
+                                const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
+                                if (isDiv) {
+                                    editor.innerHTML = '';
+                                    const selection = window.getSelection();
+                                    const range = document.createRange();
+                                    range.selectNodeContents(editor);
+                                    selection.removeAllRanges();
+                                    selection.addRange(range);
+                                    document.execCommand('delete', false, null);
+                                } else {
+                                    (editor as any).value = '';
+                                }
+                            } catch (e) {}
+
+                            log('Typing reply text');
+                            try {
+                                editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: ${JSON.stringify(text)}, bubbles: true }));
+                            } catch(e) {}
+                            document.execCommand('insertText', false, ${JSON.stringify(text)});
+
+                            const currentVal = editor.tagName === 'DIV' ? editor.textContent : (editor as any).value;
+                            if (!currentVal || currentVal.length < 1) {
+                                if (editor.tagName === 'DIV') {
+                                    editor.textContent = ${JSON.stringify(text)};
+                                } else {
+                                    (editor as any).value = ${JSON.stringify(text)};
+                                }
+                                editor.dispatchEvent(new Event('input', { bubbles: true }));
+                            }
+
+                            await wait(500);
+                            
+                            const composer = editor.closest('shreddit-composer') || document;
+                            let submitBtn = composer.querySelector('button[slot="submit-button"]') ||
+                                            composer.querySelector('button[type="submit"]');
+                            
+                            if (!submitBtn && composer !== document && composer.shadowRoot) {
+                                submitBtn = composer.shadowRoot.querySelector('button[slot="submit-button"]') ||
+                                            composer.shadowRoot.querySelector('button[type="submit"]');
+                            }
+
+                            if (!submitBtn) {
+                                const buttons = Array.from(document.querySelectorAll('button')).filter(checkVisible);
+                                submitBtn = buttons.find(b => {
+                                    const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                                    return txt === 'reply' || txt === 'comment' || txt === 'post';
+                                });
+                            }
+
+                            if (submitBtn) {
+                                await safeClick(submitBtn, 'Submit Reply');
+                                return { success: true, message: 'Replied to comment', logs };
+                            } else {
+                                return { success: false, error: 'Reply submit button not found', logs };
+                            }
+                        } else {
+                            return { success: false, error: 'Reply composer editor not found after waiting', logs };
+                        }
+                     } else {
+                        return { success: false, error: 'Reply button not found', logs };
+                     }
+                }
+            } catch (err) {
+                return { success: false, error: err.toString(), stack: err.stack, logs };
             }
           })()
         `);

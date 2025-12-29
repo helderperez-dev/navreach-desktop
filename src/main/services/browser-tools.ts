@@ -67,12 +67,27 @@ export function getWebviewContents(tabId: string): Electron.WebContents | undefi
 
 const TAB_ID = 'main-tab';
 
+const SCRIPT_HELPERS = `
+  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms * (window.__REAVION_SPEED_MULTIPLIER__ || 1.0)));
+`;
+
 function getContents(): Electron.WebContents {
   const contents = webviewContents.get(TAB_ID);
   if (!contents) {
     throw new Error('Browser not ready. Please wait for the page to load.');
   }
   return contents;
+}
+
+async function ensureSpeedMultiplier(getSpeed: () => 'slow' | 'normal' | 'fast'): Promise<void> {
+  const speed = getSpeed();
+  const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.2 : 1.0;
+  try {
+    const contents = getContents();
+    await contents.executeJavaScript(`window.__REAVION_SPEED_MULTIPLIER__ = ${multiplier};`);
+  } catch (e) {
+    // Ignore if browser not ready
+  }
 }
 
 export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal' | 'fast' }): DynamicStructuredTool[] {
@@ -87,6 +102,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     func: async ({ url }) => {
       try {
         const contents = getContents();
+        await ensureSpeedMultiplier(getSpeed);
         let targetUrl = url;
         if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
           targetUrl = `https://${targetUrl}`;
@@ -125,9 +141,11 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       const targetIndex = index;
       try {
         const contents = getContents();
+        await ensureSpeedMultiplier(getSpeed);
 
         const result = await contents.executeJavaScript(`
           (async function() {
+            ${SCRIPT_HELPERS}
             const host = window.location.hostname || '';
             const xDomain = host.includes('x.com') || host.includes('twitter.com');
             let element = null;
@@ -224,7 +242,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             element.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
             
             // Brief wait for scroll to settle
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await wait(100);
             
             // Get element position after scroll
             const rect = element.getBoundingClientRect();
@@ -326,7 +344,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             
             if (!element.disabled) element.click();
             
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await wait(200);
             return { success: true, message: 'Clicked element: ${selector}' };
           })()
         `);
@@ -348,6 +366,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     func: async ({ selector, text }) => {
       try {
         const contents = getContents();
+        await ensureSpeedMultiplier(getSpeed);
         const result = await contents.executeJavaScript(`
           (async function() {
             const selStr = String('${selector.replace(/'/g, "\\'")}').trim();
@@ -640,18 +659,21 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       const adjustedDelay = Math.round(milliseconds * speedMultiplier);
       const startTime = Date.now();
       const endTime = startTime + adjustedDelay;
+      const contents = getContents();
 
       while (Date.now() < endTime) {
+        // Check for stop signal injected into the webview or global state
+        const isStopped = await contents.executeJavaScript('window.__REAVION_STOP__').catch(() => false);
+        if (isStopped) {
+          console.log('[browser_wait] Stop signal detected via window flag. Aborting.');
+          return JSON.stringify({ success: false, error: 'Stopped by user' });
+        }
+
         const remaining = Math.ceil((endTime - Date.now()) / 1000);
-
-        // Send a debug log every second to show aliveness
         sendDebugLog('info', `Waiting... ${remaining}s remaining`);
-        console.log(`[browser_wait] ${remaining}s remaining ${speed !== 'normal' ? `(${speed} x${speedMultiplier})` : ''}`);
 
-        // Determine wait chunk (max 1 second)
         const waitChunk = Math.min(1000, endTime - Date.now());
         if (waitChunk <= 0) break;
-
         await new Promise(resolve => setTimeout(resolve, waitChunk));
       }
 
@@ -1029,11 +1051,12 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
     new DynamicStructuredTool({
       name: 'browser_mark_page',
-      description: 'Overlay numeric labels on all interactive elements in the viewport. This gives you exact IDs to use for browser_click or browser_type. This is your most precise tool for complex UIs.',
+      description: 'Overlay numeric labels on all interactive elements. This provides you with exact numeric IDs (e.g., "7") to use in the "selector" field of browser_click or browser_type. Use this for 100% precision on complex sites.',
       schema: z.object({}),
       func: async () => {
         const contents = getContents();
         try {
+          await ensureSpeedMultiplier(getSpeed);
           const count = await contents.executeJavaScript(`
   (function () {
     const containerId = 'reavion-marks-container';
@@ -1093,6 +1116,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         const finalOpacity = opacity ?? 0.3;
         const contents = getContents();
         try {
+          await ensureSpeedMultiplier(getSpeed);
           await contents.executeJavaScript(`
             (function () {
               const existing = document.getElementById('reavion-grid-overlay');
@@ -1136,6 +1160,9 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       }
     }),
 
-    ...createSiteTools({ getContents }),
+    ...createSiteTools({
+      getContents,
+      getSpeed: (options?.getSpeed || (() => 'normal'))
+    }),
   ];
 }

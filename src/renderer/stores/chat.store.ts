@@ -109,20 +109,20 @@ export const useChatStore = create<ChatState>()(
 
             // Only merge if roles match and it's assistant/system
             if (lastMsg && lastMsg.role === messageUpdate.role) {
-              const newContent = messageUpdate.content !== undefined ? messageUpdate.content.trim() : '';
+              const newContent = messageUpdate.content !== undefined ? messageUpdate.content : '';
               const existingContent = lastMsg.content || '';
 
               // To prevent duplication while allowing normal streaming:
-              // 1. If it's a small chunk (short string), always append
-              // 2. If it's a larger block, check if it's already there
-              const isChunk = newContent.length < 10;
+              // For assistant messages, we check if the new content is already a suffix or repeating
+              const isChunk = newContent.length < 15;
+              const isAssistant = lastMsg.role === 'assistant';
               const isDuplicate = !isChunk && (existingContent.endsWith(newContent) || existingContent.includes(newContent));
               const shouldAppend = newContent && !isDuplicate;
 
               const updatedLastMsg = {
                 ...lastMsg,
                 content: shouldAppend
-                  ? (existingContent + (isChunk || existingContent.endsWith(' ') || existingContent.endsWith('\n') ? '' : '\n') + newContent).trim()
+                  ? (existingContent + (isChunk || existingContent.endsWith(' ') || existingContent.endsWith('\t') || existingContent.endsWith('\n') ? '' : ' ') + newContent)
                   : existingContent,
                 toolCalls: [
                   ...(lastMsg.toolCalls || []),

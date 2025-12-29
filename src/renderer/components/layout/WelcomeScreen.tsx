@@ -253,6 +253,8 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
         initialUserPrompt: userMessage,
         accessToken: token,
         refreshToken: refreshToken,
+        playbooks: playbooks,
+        targetLists: lists,
       });
 
       if (!result.success && result.error) {

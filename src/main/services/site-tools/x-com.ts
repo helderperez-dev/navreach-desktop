@@ -189,9 +189,10 @@ const WAIT_FOR_RESULTS_SCRIPT = `
         // Stop check
         if (window.__REAVION_STOP__) return resolve({ success: false, error: 'Stopped by user' });
         
-        // Success case: Tweets found
+        // Success case: Tweets or People (UserCell) found
         const tweets = document.querySelectorAll('[data-testid="tweet"]');
-        if (tweets.length > 0) return resolve({ success: true, count: tweets.length });
+        const users = document.querySelectorAll('[data-testid="UserCell"]');
+        if (tweets.length > 0 || users.length > 0) return resolve({ success: true, count: tweets.length + users.length });
         
         // Empty state case: "No results for" or graphic
         if (document.body.innerText.includes('No results for') || 
@@ -202,7 +203,7 @@ const WAIT_FOR_RESULTS_SCRIPT = `
         // Timeout (15s)
         if (Date.now() - start > 15000) return resolve({ success: false, error: 'Timeout waiting for search results' });
         
-        setTimeout(check, 500);
+        setTimeout(check, 200);
       };
       check();
     });
@@ -812,36 +813,43 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const result = await contents.executeJavaScript(`
           (async function() {
             ${BASE_SCRIPT_HELPERS}
-            // Scroll a few times to get more data
-            for(let i=0; i<2; i++) {
-                window.scrollBy(0, 1000);
-                await wait(1000);
-            }
-            
-            // Grab text from all visible tweets
-            const tweets = Array.from(document.querySelectorAll('[data-testid="tweetText"]'));
-            const text = tweets.map(t => t.innerText).join(' ');
-            
-            // Regex for hashtags and mentions
-            const hashtags = (text.match(/#[\\w]+/g) || []).map(h => h.toLowerCase());
-            const mentions = (text.match(/@[\\w]+/g) || []).map(m => m.toLowerCase());
-            
-            // Frequency count and sort
-            const count = (arr) => {
-                const map = {};
-                arr.forEach(i => map[i] = (map[i] || 0) + 1);
-                return Object.entries(map).sort((a,b) => (b[1] as number) - (a[1] as number)).map(e => e[0]);
-            };
-            
-            const scrapedHashtags = count(hashtags).slice(0, ${lim});
-            const scrapedAccounts = count(mentions).slice(0, ${lim});
+            try {
+              // Scroll a few times to get more data
+              for(let i=0; i<2; i++) {
+                  window.scrollBy(0, 1000);
+                  await wait(1000);
+              }
+              
+              // Grab text from all visible tweets
+              const tweets = Array.from(document.querySelectorAll('[data-testid="tweetText"]'));
+              const text = tweets.map(t => t.innerText).join(' ');
+              
+              // Regex for hashtags and mentions
+              const hashtagsList = (text.match(/#[\\w]+/g) || []).map(h => h.toLowerCase());
+              const mentionsList = (text.match(/@[\\w]+/g) || []).map(m => m.toLowerCase());
+              
+              // Frequency count and sort
+              const count = (arr) => {
+                  const map = {};
+                  arr.forEach(i => map[i] = (map[i] || 0) + 1);
+                  return Object.entries(map).sort((a,b) => (b[1] as any) - (a[1] as any)).map(e => e[0]);
+              };
+              
+              const scrapedHashtags = count(hashtagsList).slice(0, ${lim});
+              const scrapedAccounts = count(mentionsList).slice(0, ${lim});
 
-            return {
-                hashtags: scrapedHashtags,
-                accounts: scrapedAccounts,
-                topics: scrapedHashtags.join(' '), // Useful for search nodes
-                success: true
-            };
+              return {
+                  hashtags: scrapedHashtags,
+                  accounts: scrapedAccounts,
+                  topics: scrapedHashtags.join(' '), 
+                  success: true,
+                  message: (scrapedHashtags.length || scrapedAccounts.length) 
+                            ? ('Scouted ' + scrapedHashtags.length + ' hashtags and ' + scrapedAccounts.length + ' accounts.')
+                            : 'Scouting complete, but no trends found on the current page.'
+              };
+            } catch (err) {
+              return { success: false, error: err.toString(), logs };
+            }
           })()
         `);
         return JSON.stringify(result);

@@ -244,11 +244,6 @@ export function ChatPanel() {
   const saveNarrationMessage = useCallback((content: string) => {
     if (!activeConversationId || !content.trim()) return;
 
-    // Deduplicate using first 50 chars as key
-    const key = content.trim().slice(0, 50);
-    if (savedMessagesRef.current.has(key)) return;
-    savedMessagesRef.current.add(key);
-
     mergeMessage(activeConversationId, {
       role: 'assistant',
       content: content.trim(),
@@ -258,11 +253,6 @@ export function ChatPanel() {
   useEffect(() => {
     const unsubscribe = window.api.ai.onStreamChunk((data) => {
       if (data.done) {
-        // End of stream - flush any remaining text
-        if (streamingContentRef.current.trim()) {
-          saveNarrationMessage(streamingContentRef.current);
-        }
-
         setIsStreaming(false);
         setAgentStartTime(null);
         setStreamingContent('');
@@ -272,9 +262,26 @@ export function ChatPanel() {
         toolHistoryRef.current = [];
         committedNarrativeLinesRef.current = 0;
         savedMessagesRef.current.clear();
+        streamingContentRef.current = '';
       } else {
         const content = data.content;
-        const streamData = data as any; // toolCall, toolResult
+        const streamData = data as any; // toolCall, toolResult, isNewTurn
+
+        // 0. Handle New Turn Signal (Starts a fresh chronological block)
+        if (streamData.isNewTurn && activeConversationId) {
+          // Clear tracking for the new turn without double-merging
+          streamingContentRef.current = '';
+          setStreamingContent('');
+
+          // Add a fresh assistant message that subsequent chunks will merge into
+          addMessage(activeConversationId, {
+            role: 'assistant',
+            content: '',
+          });
+
+          // Reset tracking for the new turn
+          savedMessagesRef.current.clear();
+        }
 
         // 1. Handle Text Content (Narration)
         if (content && content.trim()) {
@@ -282,6 +289,14 @@ export function ChatPanel() {
           if (streamData.isNarration !== false) { // True or undefined
             streamingContentRef.current += content;
             setStreamingContent(streamingContentRef.current);
+
+            // Proactively merge into the current assistant message to show it in the turn list immediately
+            if (activeConversationId) {
+              mergeMessage(activeConversationId, {
+                role: 'assistant',
+                content: content,
+              });
+            }
           } else {
             // It is a final response part
             if (activeConversationId) {
@@ -295,12 +310,9 @@ export function ChatPanel() {
 
         // 2. Handle Tool Call Start
         if (streamData.toolCall) {
-          // Flush pending narration before starting a tool
-          if (streamingContentRef.current.trim()) {
-            saveNarrationMessage(streamingContentRef.current);
-            streamingContentRef.current = '';
-            setStreamingContent('');
-          }
+          // Clear pending narration tracking before starting a tool without double-merging
+          streamingContentRef.current = '';
+          setStreamingContent('');
 
           const toolCall = streamData.toolCall;
           // Track for correlation

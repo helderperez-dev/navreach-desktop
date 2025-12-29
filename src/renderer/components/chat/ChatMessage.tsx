@@ -207,7 +207,7 @@ function parseMessageContent(content: string) {
   return blocks;
 }
 
-function StructuredToolCard({ toolCall, toolResult, narration }: { toolCall: any; toolResult?: any; narration?: string }) {
+function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResult?: any }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const status = toolResult ? (toolResult.error ? 'failed' : 'success') : 'running';
   const isSuccess = status === 'success';
@@ -277,15 +277,9 @@ function StructuredToolCard({ toolCall, toolResult, narration }: { toolCall: any
         {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />}
       </button>
 
-      {/* Expanded Details - Only show if there's meaningful text or error */}
-      {isExpanded && (resultDisplay || narration) && (
+      {/* Expanded Details - Only show if there's meaningful results or error */}
+      {isExpanded && resultDisplay && (
         <div className="px-3 py-3 border-t border-border/30 bg-muted/20 text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
-          {/* Agent Narration if present */}
-          {narration && (
-            <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground leading-relaxed italic mb-2">
-              <ReactMarkdown>{narration}</ReactMarkdown>
-            </div>
-          )}
 
           {/* Output Result */}
           {resultDisplay && (
@@ -445,20 +439,9 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
           ) : (
             <>
               {/* 1. Structured Tool Executions (Consolidated) */}
-              {hasStructuredTools && (
-                <div className="space-y-1.5 my-1">
-                  {message.toolCalls!.map((toolCall, idx) => {
-                    const result = message.toolResults?.find((r) => r.toolCallId === toolCall.id);
-                    // Only pass narration to the first tool card if it exists
-                    const narration = idx === 0 ? message.content : undefined;
-                    return <StructuredToolCard key={toolCall.id} toolCall={toolCall} toolResult={result} narration={narration} />;
-                  })}
-                </div>
-              )}
-
-              {/* 2. Text Content (Narration or Answer) - Hidden if tools are present as it is now inside the first tool accordion */}
-              {!hasStructuredTools && message.content && message.content.trim() && (
-                <div className="prose prose-sm max-w-none w-full text-foreground leading-relaxed text-left dark:prose-invert break-words">
+              {/* 1. Text Content (Narration or Answer) */}
+              {message.content && message.content.trim() && (
+                <div className="prose prose-sm max-w-none w-full text-foreground leading-relaxed text-left dark:prose-invert break-words mb-2">
                   <ReactMarkdown
                     components={{
                       p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
@@ -474,6 +457,16 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                   >
                     {message.content.trim()}
                   </ReactMarkdown>
+                </div>
+              )}
+
+              {/* 2. Structured Tool Executions (Consolidated) */}
+              {hasStructuredTools && (
+                <div className="space-y-1.5 my-1">
+                  {message.toolCalls!.map((toolCall) => {
+                    const result = message.toolResults?.find((r) => r.toolCallId === toolCall.id);
+                    return <StructuredToolCard key={toolCall.id} toolCall={toolCall} toolResult={result} />;
+                  })}
                 </div>
               )}
 
