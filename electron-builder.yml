@@ -26,5 +26,5 @@ linux:
 
 publish:
   provider: github
-  owner: helderperez
+  owner: helderperez-dev
   repo: navreach-desktop
