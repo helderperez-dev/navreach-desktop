@@ -1,7 +1,7 @@
 {
   "name": "reavion",
   "productName": "Reavion",
-  "version": "0.1.0",
+  "version": "0.1.6",
   "description": "AI-powered browser automation with embedded browser and chat interface",
   "main": "./out/main/index.js",
   "author": "Reavion",
