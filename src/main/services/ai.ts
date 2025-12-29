@@ -386,8 +386,8 @@ CRITICAL:
         // Since we can't easily import it here without changing imports, we'll try to use the global one but
         // it's safer to create a new one. The best way is to rely on the fact that if we just want to query,
         // we can create a client with the token.
-        const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-        const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
         const { createClient } = require('@supabase/supabase-js');
 
         scopedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
