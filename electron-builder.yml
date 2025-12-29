@@ -1,0 +1,37 @@
+appId: com.reavion.app
+productName: Reavion
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - from: out
+    to: .
+    filter:
+      - "**/*"
+  - package.json
+
+mac:
+  category: public.app-category.productivity
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  target:
+    - dmg
+    - zip
+
+win:
+  target:
+    - nsis
+  signingHashAlgorithms:
+    - sha256
+
+linux:
+  target:
+    - AppImage
+
+publish:
+  provider: github
+  owner: helderperez
+  repo: navreach-desktop

@@ -17,6 +17,7 @@ interface ChatState {
   setActiveConversation: (id: string | null) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => void;
   updateMessage: (conversationId: string, messageId: string, content: string) => void;
+  mergeMessage: (conversationId: string, message: Partial<Message> & { role: 'assistant' | 'system' }) => void;
   deleteConversation: (id: string) => void;
   clearConversations: () => void;
   setSelectedModel: (model: ModelConfig | null) => void;
@@ -96,6 +97,61 @@ export const useChatStore = create<ChatState>()(
               }
               : conv
           ),
+        }));
+      },
+      mergeMessage: (conversationId, messageUpdate) => {
+        set((state) => ({
+          conversations: state.conversations.map((conv) => {
+            if (conv.id !== conversationId) return conv;
+
+            const messages = [...conv.messages];
+            const lastMsg = messages[messages.length - 1];
+
+            // Only merge if roles match and it's assistant/system
+            if (lastMsg && lastMsg.role === messageUpdate.role) {
+              const newContent = messageUpdate.content !== undefined ? messageUpdate.content.trim() : '';
+              const existingContent = lastMsg.content || '';
+
+              // To prevent duplication while allowing normal streaming:
+              // 1. If it's a small chunk (short string), always append
+              // 2. If it's a larger block, check if it's already there
+              const isChunk = newContent.length < 10;
+              const isDuplicate = !isChunk && (existingContent.endsWith(newContent) || existingContent.includes(newContent));
+              const shouldAppend = newContent && !isDuplicate;
+
+              const updatedLastMsg = {
+                ...lastMsg,
+                content: shouldAppend
+                  ? (existingContent + (isChunk || existingContent.endsWith(' ') || existingContent.endsWith('\n') ? '' : '\n') + newContent).trim()
+                  : existingContent,
+                toolCalls: [
+                  ...(lastMsg.toolCalls || []),
+                  ...(messageUpdate.toolCalls || [])
+                ],
+                toolResults: [
+                  ...(lastMsg.toolResults || []),
+                  ...(messageUpdate.toolResults || [])
+                ]
+              };
+              messages[messages.length - 1] = updatedLastMsg;
+              return { ...conv, messages, updatedAt: Date.now() };
+            }
+
+            // Otherwise, add as new (same as addMessage)
+            const newMessage: Message = {
+              role: messageUpdate.role,
+              content: messageUpdate.content || '',
+              toolCalls: messageUpdate.toolCalls || [],
+              toolResults: messageUpdate.toolResults || [],
+              id: uuidv4(),
+              timestamp: Date.now(),
+            };
+            return {
+              ...conv,
+              messages: [...conv.messages, newMessage],
+              updatedAt: Date.now()
+            };
+          })
         }));
       },
 

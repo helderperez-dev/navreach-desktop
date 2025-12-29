@@ -1,5 +1,6 @@
 {
   "name": "reavion",
+  "productName": "Reavion",
   "version": "0.1.0",
   "description": "AI-powered browser automation with embedded browser and chat interface",
   "main": "./out/main/index.js",
@@ -49,6 +50,8 @@
     "dexie": "^4.0.8",
     "dotenv": "^17.2.3",
     "electron-store": "^8.2.0",
+    "electron-updater": "^6.6.2",
+    "elkjs": "^0.11.0",
     "framer-motion": "^11.11.0",
     "langchain": "^0.3.0",
     "lucide-react": "^0.460.0",

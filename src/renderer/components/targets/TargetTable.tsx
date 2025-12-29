@@ -149,14 +149,14 @@ export function TargetTable({
     };
 
     return (
-        <div className="rounded-2xl border border-border bg-card/30 overflow-hidden w-full h-full flex flex-col">
+        <div className="rounded-2xl border border-border/30 bg-card/10 overflow-hidden w-full h-full flex flex-col shadow-sm">
             <div className="overflow-x-auto custom-scrollbar w-full">
                 <table
                     ref={tableRef}
                     className="text-left border-collapse table-fixed w-full"
                 >
-                    <thead className="bg-card/50">
-                        <tr className="border-b border-border">
+                    <thead className="bg-card/30">
+                        <tr className="border-b border-border/30">
                             {visibleColumns.name && (
                                 <th
                                     className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-foreground"
@@ -167,7 +167,7 @@ export function TargetTable({
                                         <SortIcon field="name" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border/50 transition-colors z-10"
                                         onMouseDown={(e) => startResizing('name', e.clientX, columnWidths.name)}
                                     />
                                 </th>
@@ -182,7 +182,7 @@ export function TargetTable({
                                         <SortIcon field="email" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border/50 transition-colors z-10"
                                         onMouseDown={(e) => startResizing('email', e.clientX, columnWidths.email)}
                                     />
                                 </th>
@@ -197,7 +197,7 @@ export function TargetTable({
                                         <SortIcon field="type" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border/50 transition-colors z-10"
                                         onMouseDown={(e) => startResizing('type', e.clientX, columnWidths.type)}
                                     />
                                 </th>
@@ -212,7 +212,7 @@ export function TargetTable({
                                         <SortIcon field="url" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border/50 transition-colors z-10"
                                         onMouseDown={(e) => startResizing('url', e.clientX, columnWidths.url)}
                                     />
                                 </th>
@@ -224,7 +224,7 @@ export function TargetTable({
                                 >
                                     <div className="truncate text-muted-foreground/80 group-hover:text-foreground transition-colors">Tags</div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border/50 transition-colors z-10"
                                         onMouseDown={(e) => startResizing('tags', e.clientX, columnWidths.tags)}
                                     />
                                 </th>
@@ -239,7 +239,7 @@ export function TargetTable({
                                         <SortIcon field="created_at" />
                                     </div>
                                     <div
-                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
+                                        className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border/50 transition-colors z-10"
                                         onMouseDown={(e) => startResizing('created_at', e.clientX, columnWidths.created)}
                                     />
                                 </th>
@@ -255,7 +255,7 @@ export function TargetTable({
                                             {key.replace(/_/g, ' ')}
                                         </div>
                                         <div
-                                            className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border transition-colors z-10"
+                                            className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border/50 transition-colors z-10"
                                             onMouseDown={(e) => startResizing(key, e.clientX, metadataWidths[key] || 10, true)}
                                         />
                                     </th>
@@ -264,7 +264,7 @@ export function TargetTable({
                             <th className="px-6 py-4 text-right w-[60px]"></th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/50">
+                    <tbody className="divide-y divide-border/30">
                         {filteredAndSortedTargets.map((target) => (
                             <tr
                                 key={target.id}

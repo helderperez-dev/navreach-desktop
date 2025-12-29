@@ -106,8 +106,6 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
         // Reset input
         e.target.value = '';
     }
-
-
     const filteredPlaybooks = playbooks.filter(p =>
         p.name.toLowerCase().includes(search.toLowerCase()) ||
         p.description?.toLowerCase().includes(search.toLowerCase())
@@ -199,8 +197,8 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                         <Plus className="h-4 w-4" />
                         <span className="text-sm">New Playbook</span>
                     </Button>
-                </div>
-            </div>
+                </div >
+            </div >
 
             <div className="flex-1 overflow-auto p-6">
                 {loading ? (
@@ -262,6 +260,6 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 }

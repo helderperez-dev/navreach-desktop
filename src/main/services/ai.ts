@@ -9,6 +9,7 @@ import type { ModelProvider, ModelConfig, Message } from '../../shared/types';
 import { createBrowserTools, getWebviewContents } from './browser-tools';
 import { createTargetTools } from './target-tools';
 import { createPlaybookTools } from './playbook-tools';
+import { createSiteTools } from './site-tools';
 import { createIntegrationTools } from './integration-tools';
 import { createUtilityTools } from './utility-tools';
 import { supabase } from '../lib/supabase';
@@ -33,6 +34,7 @@ interface ChatRequest {
   playbooks?: any[];
   targetLists?: any[];
   agentRunLimit?: number | null;
+  speed?: 'slow' | 'normal' | 'fast';
 }
 
 function createChatModel(provider: ModelProvider, model: ModelConfig, streaming = true) {
@@ -48,15 +50,24 @@ function createChatModel(provider: ModelProvider, model: ModelConfig, streaming 
 
   switch (provider.type) {
     case 'openai':
+      return new ChatOpenAI({
+        ...baseConfig,
+        apiKey: provider.apiKey,
+        configuration: {
+          baseURL: baseUrl,
+        },
+      });
     case 'custom':
       return new ChatOpenAI({
         ...baseConfig,
         apiKey: provider.apiKey,
-        openAIApiKey: provider.apiKey,
         configuration: {
           baseURL: baseUrl,
-          apiKey: provider.apiKey,
         },
+        // Disable parallel tool calls for custom providers as they often don't support it
+        modelKwargs: {
+          parallel_tool_calls: false
+        }
       });
     case 'anthropic':
       return new ChatAnthropic({
@@ -66,7 +77,7 @@ function createChatModel(provider: ModelProvider, model: ModelConfig, streaming 
     case 'openrouter':
       return new ChatOpenAI({
         ...baseConfig,
-        openAIApiKey: provider.apiKey,
+        apiKey: provider.apiKey,
         configuration: {
           baseURL: 'https://openrouter.ai/api/v1',
           defaultHeaders: {
@@ -74,6 +85,10 @@ function createChatModel(provider: ModelProvider, model: ModelConfig, streaming 
             'X-Title': 'Reavion Desktop',
           },
         },
+        // IMPORTANT: OpenRouter models (like DeepSeek, GLM, Llama) often fail with 400 
+        // if parallel tool calls are enabled or if the schema is strictly enforced.
+        // However, explicitly sending 'parallel_tool_calls: false' also causes 400s for some models.
+        // We will omit it and let the provider handle defaults.
       });
     default:
       throw new Error(`Unsupported provider type: ${provider.type}`);
@@ -157,11 +172,18 @@ You can navigate **ANY** website, even those you've never seen.
 2.  **UNIVERSAL BROWSER TOOLS (The "Skeleton Key")**
     *   \`browser_navigate\`: Go to URL.
     *   \`browser_dom_snapshot\`: **YOUR EYES**. Use \`only_visible: true\` by default.
+    *   \`browser_move_to_element\`: **VISUAL MOTION**. Use this to scroll smoothly to an element and move the pointer helper. **Highly recommended to show the user what you are focusing on.**
     *   \`browser_extract\`: "Read" the page. summaries, finding specific data points.
     *   \`browser_mark_page\`: **PRECISION AIM**. Use when selectors are complex.
     *   \`browser_click\`: Click things.
     *   \`browser_type\`: Type things.
     *   \`browser_scroll\`: Reveal more content.
+*   **PLATFORMS & SPECIALIZED STRATEGY**: 
+    *   **X (Twitter)**: Always prefer \`x_advanced_search\` for discovery. **DO NOT** use generic \`browser_navigate\` with search queries. 
+    *   **X SCAN SUPERPOWER**: Use \`x_scan_posts\` immediately after searching to get 10-15 posts at once. It captures engagement state, authors, and content in one go.
+    *   **ENGAGEMENT**: Always use the \`expected_author\` parameter in \`x_engage\`/\`x_reply\` to ensure you don't engage with the wrong target if the feed scrolls.
+    *   **LINKEDIN/REDDIT**: Use platform-specific tools first, then fallback to \`browser_mark_page\` + \`browser_click\` for high precision.
+
 
 **ERROR RECOVERY & RESILIENCE**
 *   **NEVER** loop the same failed action.
@@ -174,10 +196,12 @@ You can navigate **ANY** website, even those you've never seen.
 **PLAYBOOK EXECUTION RULES (STRICT)**
 If running a Playbook ({{playbooks.ID}}):
 1.  **Follow the Graph**: Move Node -> Edge -> Node.
-2.  **Loop Handling**: If in a Loop Node, process the *current list item*. Do not jump ahead.
-3.  **Placeholders**: **CRITICAL**: Detect and replace {{target.url}}, {{agent.decide}} before calling ANY tool.
-    *   **{{agent.decide}}**: YOU MUST GENERATE FINAL TEXT. Never pass the literal string "{{agent.decide}}". Be creative, professional, and context-aware.
-    *   **{{target.url}}**: Extract the actual URL from your state/context. Never pass the literal string "{{target.url}}".
+2.  **Variable Resolution**: **CRITICAL**: You must resolve all variables like \`{{scout-1.topics}}\`, \`{{search-1.items[0].url}}\`, etc. BEFORE calling any tool.
+    *   Look at the tool outputs from previous nodes in the chat history.
+    *   If a node output is a list, pick the current item correctly.
+3.  **Placeholders**: Never pass literal \`{{target.url}}\` or \`{{agent.decide}}\`.
+    *   **{{agent.decide}}**: YOU MUST GENERATE FINAL TEXT. Be creative and context-aware.
+    *   **{{target.url}}**: Extract the actual URL from your state/context.
 
 **DATA COLLECTION RULES**
 *   **Tasks**: "Find leads", "Scrape", "Create list".
@@ -210,13 +234,17 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
   const toolsByName = new Map(allTools.map(tool => [tool.name, tool]));
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-  const getToolDelayMs = (toolName: string) => {
-    if (toolName.startsWith('x_')) return 400; // Reduced from 800
-    if (toolName === 'browser_navigate') return 800; // Reduced from 1000
-    if (toolName === 'browser_click' || toolName === 'browser_type') return 300; // Reduced from 500
-    if (toolName === 'browser_scroll') return 250; // Reduced from 400
-    if (toolName === 'browser_snapshot' || toolName === 'browser_get_page_content' || toolName === 'browser_get_visible_text') return 100; // Reduced from 250
-    return 200; // Reduced from 400
+  const getToolDelayMs = (toolName: string, speed: 'slow' | 'normal' | 'fast' = 'normal') => {
+    const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.5 : 1.0;
+    let baseDelay = 200;
+
+    if (toolName.startsWith('x_')) baseDelay = 400;
+    else if (toolName === 'browser_navigate') baseDelay = 800;
+    else if (toolName === 'browser_click' || toolName === 'browser_type') baseDelay = 300;
+    else if (toolName === 'browser_scroll') baseDelay = 250;
+    else if (toolName === 'browser_snapshot' || toolName === 'browser_get_page_content' || toolName === 'browser_get_visible_text') baseDelay = 100;
+
+    return Math.round(baseDelay * multiplier);
   };
 
   // Track stop signals per window
@@ -254,35 +282,55 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
       const isDiscovery = !initialUserPrompt || initialUserPrompt.trim().length < 2;
       const chatModel = createChatModel(provider, model, false);
 
-      const systemPrompt = `You are a helpful assistant that generates 3 short, actionable, and distinct suggestions for a powerful autonomous AI agent called Reavion.
-The agent can browse the web, scrape data, and engage on social media (X/Twitter, LinkedIn) to help users grow.
+      // Extract context for better suggestions
+      const playbookContext = request.playbooks?.map(p => `- ${p.name}: ${p.description}`).join('\n') || 'No active playbooks.';
+      const listContext = request.targetLists?.map(l => `- ${l.name} (${l.target_count} targets)`).join('\n') || 'No target lists yet.';
 
-Return ONLY a valid JSON array of objects with 'label' (short title) and 'prompt' (detailed instruction).
+      const systemPrompt = `You are a high-performance growth strategist and AI orchestrator for Reavion, an autonomous agent that dominates social media and lead generation.
+Your goal is to generate 3 BRILLIANT, high-impact suggestions that will WOW the user by showing what Reavion can truly do.
 
+COMMANDS & CAPABILITIES:
+- X.com (Twitter): Search, advanced search, scanning posts, multi-step engagement, liking, replying, following.
+- LinkedIn: Researching profiles, lead extraction.
+- Browser: Navigating, clicking, typing, scrolling, extracting data, taking snapshots.
+- Database: Saving leads to Target Lists, running Playbooks.
+
+AVAILABLE ASSETS:
+Playbooks:
+${playbookContext}
+
+Target Lists:
+${listContext}
+
+INSTRUCTIONS:
 ${isDiscovery
-          ? "The user hasn't typed anything yet. Generate 3 high-value 'Starter' ideas that showcase the agent's capabilities in areas like social growth, lead generation, or competitor analysis."
-          : `The user is typing: "${initialUserPrompt}". Generate 3 suggestions that continue their thought or offer related high-value actions.`}
+          ? "The user is at the start. Suggest 3 'Power Moves'. One for aggressive social growth, one for precise lead generation using LinkedIn/web, and one for competitive analysis or multi-platform research."
+          : `The user is interested in: "${initialUserPrompt}". Create 3 context-aware suggestions. One should be a direct continuation of their thought, one should be a more advanced version of it, and one should be a related 'cross-platform' synergy (e.g., if they mention X, suggest saving leads from X to a database).`}
 
-Example Output Format:
+Return ONLY a raw JSON array of objects: { "label": string (max 18 chars), "prompt": string (one clear sentence) }.
+
+Example:
 [
-  { "label": "Social Growth", "prompt": "Find active accounts in the SaaS niche on X, and like their latest posts to grow followers." },
-  { "label": "Lead Gen", "prompt": "Search LinkedIn for 'Founder' in 'SF', parse profiles, and save to database." }
+  { "label": "X Growth Hack", "prompt": "Find top SaaS influencers on X, scan their recent posts, and engage with high-value replies using my 'Growth' playbook." },
+  { "label": "Sales Intel", "prompt": "Search LinkedIn for tech founders in New York, scrape their details, and save them to my 'Early Adopters' list." }
 ]
 
-Keep the 'label' under 20 chars. Keep the 'prompt' practical and precise.
-DO NOT use emojis.
-DO NOT wrap the result in markdown or code blocks. Just the raw JSON string.`;
+CRITICAL:
+- No emojis.
+- No markdown code blocks.
+- No conversational filler.
+- Focus on autonomy and multi-step actions.`;
 
       const langchainMessages = [
-        new HumanMessage(`${systemPrompt}\n\nUser Input: ${initialUserPrompt || "Show me some starter ideas."}`)
+        new HumanMessage(`${systemPrompt}\n\nUser Input: ${initialUserPrompt || "Show me some power moves."}`)
       ];
 
-      // Add timeout
+      // Add timeout - increased to 45s to handle slower models/providers
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Suggestion timed out')), 15000)
+        setTimeout(() => reject(new Error('Suggestion timed out')), 45000)
       );
 
-      console.log(`[AI Service] Fetching suggestions for: "${initialUserPrompt || 'Starter ideas'}" using ${model.id}`);
+      console.log(`[AI Service] Fetching smart suggestions for: "${initialUserPrompt || 'Starter ideas'}" using ${model.id}`);
       const response: any = await Promise.race([
         chatModel.invoke(langchainMessages),
         timeoutPromise
@@ -325,7 +373,8 @@ DO NOT wrap the result in markdown or code blocks. Just the raw JSON string.`;
         accessToken,
         refreshToken,
         playbooks = [],
-        targetLists = []
+        targetLists = [],
+        speed
       } = request;
       const window = BrowserWindow.fromWebContents(event.sender);
 
@@ -358,19 +407,49 @@ DO NOT wrap the result in markdown or code blocks. Just the raw JSON string.`;
         targetListsCount: targetLists?.length
       });
 
-      // Clear stop signal at start
-      if (window) {
-        stopSignals.set(window.id, false);
+      // Track current speed for this session
+      let currentSessionSpeed: 'slow' | 'normal' | 'fast' = speed || 'normal';
+      const getSpeed = () => currentSessionSpeed;
+
+      // Check if any playbook in the context is the primary one being discussed and has a speed set
+      if (initialUserPrompt && playbooks.length > 0) {
+        const mentionedPlaybook = playbooks.find(p =>
+          initialUserPrompt.toLowerCase().includes(p.name.toLowerCase())
+        );
+        if (mentionedPlaybook?.execution_defaults?.speed) {
+          currentSessionSpeed = mentionedPlaybook.execution_defaults.speed;
+          console.log(`[AI Service] Auto-detected speed from mentioned playbook: ${currentSessionSpeed}`);
+        }
       }
 
       // Re-create tools with context AND the scoped supabase client
-      const requestBrowserTools = createBrowserTools();
+      const requestBrowserTools = createBrowserTools({ getSpeed });
       const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase });
-      const requestPlaybookTools = createPlaybookTools({ playbooks, supabaseClient: scopedSupabase });
+      const requestPlaybookTools = createPlaybookTools({
+        playbooks,
+        supabaseClient: scopedSupabase,
+        onPlaybookLoaded: (playbook) => {
+          if (playbook.execution_defaults?.speed) {
+            currentSessionSpeed = playbook.execution_defaults.speed;
+            console.log(`[AI Service] Speed updated from loaded playbook: ${currentSessionSpeed}`);
+          }
+        }
+      });
+      const requestSiteTools = createSiteTools({
+        getContents: () => getWebviewContents('main-tab')!,
+        getSpeed
+      });
       const requestIntegrationTools = createIntegrationTools();
       const requestUtilityTools = createUtilityTools({ provider, model });
 
-      const requestTools = [...requestBrowserTools, ...requestTargetTools, ...requestPlaybookTools, ...requestIntegrationTools, ...requestUtilityTools];
+      const requestTools = [
+        ...requestBrowserTools,
+        ...requestTargetTools,
+        ...requestPlaybookTools,
+        ...requestSiteTools,
+        ...requestIntegrationTools,
+        ...requestUtilityTools
+      ];
       const requestToolsByName = new Map(requestTools.map(tool => [tool.name, tool]));
 
       // Reset renderer stop signal
@@ -473,7 +552,7 @@ DO NOT wrap the result in markdown or code blocks. Just the raw JSON string.`;
         console.log('Registering AI Tools:', requestTools.map(t => t.name).join(', '));
         // Bind tools without strict mode to avoid "all fields must be required" warning
         // The strict mode requires all schema fields to be required, which conflicts with optional tool parameters
-        const modelWithTools = chatModel.bindTools(requestTools);
+        const modelWithTools = chatModel.bindTools(requestTools, { strict: false } as any);
 
         let langchainMessages = convertMessages(messages, effectiveSystemPrompt);
         let fullResponse = '';
@@ -691,14 +770,18 @@ DO NOT wrap the result in markdown or code blocks. Just the raw JSON string.`;
 
             // --- Placeholder Guardian ---
             const argsStr = JSON.stringify(toolCall.args);
-            if (argsStr.includes('{{agent.decide}}') || argsStr.includes('{{target.url}}')) {
-              console.warn(`[AI Service] Placeholder detected in tool ${toolCall.name}: ${argsStr}`);
+            // Catch ANY {{placeholder}} pattern
+            const placeholderMatch = argsStr.match(/\{\{.*?\}\}/);
+            if (placeholderMatch) {
+              const placeholder = placeholderMatch[0];
+              console.warn(`[AI Service] Placeholder detected in tool ${toolCall.name}: ${placeholder}`);
               langchainMessages.push(new HumanMessage(
-                `⚠️ STOP: You attempted to call tool "${toolCall.name}" with a literal placeholder ({{agent.decide}} or {{target.url}}). 
+                `⚠️ STOP: You attempted to call tool "${toolCall.name}" with a literal placeholder "${placeholder}". 
                 
-You MUST resolve these before calling tools:
-- For {{agent.decide}}: YOU must generate the final text based on the task description and context. Do NOT pass the placeholder to the tool.
-- For {{target.url}}: You must extract this value from your previous observations or the current page.
+You MUST resolve all variables before calling tools:
+- For {{node-id.property}}: Extract the actual value from your previous observations or tool outputs in the chat history.
+- For {{agent.decide}}: YOU must generate the final text based on the task description and context.
+- For {{target.url}}: You must extract this value from your previous observations.
 
 Please try again with the actual content.`
               ));
@@ -723,6 +806,11 @@ Please try again with the actual content.`
               const startTime = Date.now();
               const result = await tool.invoke(toolCall.args);
               const duration = Date.now() - startTime;
+
+              // Apply dynamic sleep based on tool and speed
+              const delay = getToolDelayMs(toolCall.name, getSpeed());
+              await sleep(delay);
+
               const toolMessage = new ToolMessage({
                 tool_call_id: toolCall.id || '',
                 content: result,
@@ -914,6 +1002,56 @@ Please try again with the actual content.`
     } catch (e) {
       console.error('Error listing workflows:', e);
       return [];
+    }
+  });
+
+  ipcMain.handle('ai:test-connection', async (_event, { provider, modelId }: { provider: ModelProvider; modelId?: string }) => {
+    try {
+      console.log(`[AI Service] Testing connection for ${provider.type} (${provider.name})`);
+
+      // Determine a model to use for testing
+      let testModelId = modelId;
+      if (!testModelId) {
+        if (provider.models.length > 0) {
+          testModelId = provider.models[0].id;
+        } else {
+          // Fallbacks for empty providers (e.g. new ones)
+          switch (provider.type) {
+            case 'openai': testModelId = 'gpt-3.5-turbo'; break;
+            case 'anthropic': testModelId = 'claude-3-haiku-20240307'; break;
+            case 'openrouter': testModelId = 'openai/gpt-3.5-turbo'; break;
+            case 'custom': testModelId = 'gpt-3.5-turbo'; break; // Common default for compatible APIs
+            default: testModelId = 'gpt-3.5-turbo';
+          }
+        }
+      }
+
+      // Create a temporary model config for testing
+      const testModel: ModelConfig = {
+        id: testModelId!,
+        name: 'Test Model',
+        providerId: provider.id,
+        contextWindow: 4096,
+        enabled: true
+      };
+
+      const chatModel = createChatModel(provider, testModel, false);
+
+      // Simple test using invoke instead of stream for speed
+      // Use a very short prompt to save tokens/time
+      const response = await chatModel.invoke([new HumanMessage("Test connection. Reply with 'OK'.")]);
+
+      return {
+        success: true,
+        message: 'Connection verified successfully',
+        response: response.content
+      };
+    } catch (error: any) {
+      console.error('AI Connection Test Error:', error);
+      return {
+        success: false,
+        error: error.message || String(error)
+      };
     }
   });
 }

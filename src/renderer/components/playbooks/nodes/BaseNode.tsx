@@ -28,11 +28,9 @@ const BaseNode = ({ data, type, selected }: NodeProps) => {
 
                 // Only show Top/Bottom handles unless it's a specialized node that needs side ports
                 // Loop and Condition handles are handled separately or by specialized logic
-                if (!isVertical && !isControl) return null;
-
                 // Hide handles for specific sides on Start/End
-                if (isStart && side === 'top') return null;
-                if (isEnd && side === 'bottom') return null;
+                if (isStart && (side === 'top' || side === 'left')) return null;
+                if (isEnd && (side === 'bottom' || side === 'right')) return null;
 
                 return (
                     <div key={side} className="absolute inset-0 pointer-events-none">

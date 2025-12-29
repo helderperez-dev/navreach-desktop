@@ -75,7 +75,9 @@ function getContents(): Electron.WebContents {
   return contents;
 }
 
-export function createBrowserTools(): DynamicStructuredTool[] {
+export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal' | 'fast' }): DynamicStructuredTool[] {
+  const getSpeed = options?.getSpeed || (() => 'normal');
+
   const navigateTool = new DynamicStructuredTool({
     name: 'browser_navigate',
     description: 'Navigate the browser to a specific URL. Use this to open websites. WARNING: Before navigating after completing an action (reply, post, like, etc.), you MUST take a browser snapshot first to verify the action completed successfully.',
@@ -633,15 +635,18 @@ export function createBrowserTools(): DynamicStructuredTool[] {
       milliseconds: z.number().describe('Time to wait in milliseconds'),
     }),
     func: async ({ milliseconds }) => {
+      const speed = getSpeed();
+      const speedMultiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.5 : 1.0;
+      const adjustedDelay = Math.round(milliseconds * speedMultiplier);
       const startTime = Date.now();
-      const endTime = startTime + milliseconds;
+      const endTime = startTime + adjustedDelay;
 
       while (Date.now() < endTime) {
         const remaining = Math.ceil((endTime - Date.now()) / 1000);
 
         // Send a debug log every second to show aliveness
         sendDebugLog('info', `Waiting... ${remaining}s remaining`);
-        console.log(`[browser_wait] ${remaining}s remaining`);
+        console.log(`[browser_wait] ${remaining}s remaining ${speed !== 'normal' ? `(${speed} x${speedMultiplier})` : ''}`);
 
         // Determine wait chunk (max 1 second)
         const waitChunk = Math.min(1000, endTime - Date.now());
@@ -650,7 +655,7 @@ export function createBrowserTools(): DynamicStructuredTool[] {
         await new Promise(resolve => setTimeout(resolve, waitChunk));
       }
 
-      return JSON.stringify({ success: true, message: `Waited ${milliseconds}ms` });
+      return JSON.stringify({ success: true, message: `Waited ${adjustedDelay}ms (speed: ${speed})` });
     },
   });
 
@@ -739,6 +744,88 @@ export function createBrowserTools(): DynamicStructuredTool[] {
     }
   });
 
+  const moveToElementTool = new DynamicStructuredTool({
+    name: 'browser_move_to_element',
+    description: 'Scroll smoothly to an element and move the pointer indicator to its position. Use this to orient the view and show what the agent is focusing on before taking action.',
+    schema: z.object({
+      selector: z.string().describe('CSS selector for the element to focus on'),
+      index: z.number().nullable().describe('0-based index if multiple elements match'),
+    }),
+    func: async ({ selector, index = 0 }) => {
+      try {
+        const contents = getContents();
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            const selStr = '${selector.replace(/'/g, "\\'")}';
+            const targetIndex = ${index};
+            const matches = Array.from(document.querySelectorAll(selStr)).filter(el => {
+              const style = window.getComputedStyle(el);
+              return el.offsetParent !== null && style.display !== 'none' && style.visibility !== 'hidden';
+            });
+
+            const element = matches[targetIndex] || matches[0];
+            if (!element) return { success: false, error: 'Element not found: ' + selStr };
+
+            // Smooth scroll to Center
+            element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+            
+            // Wait for scroll to start/finish
+            await new Promise(resolve => setTimeout(resolve, 400));
+
+            const rect = element.getBoundingClientRect();
+            const x = rect.left + rect.width / 2;
+            const y = rect.top + rect.height / 2;
+
+            // Ensure Pointer Styles
+            if (!document.getElementById('reavion-pointer-styles')) {
+              const style = document.createElement('style');
+              style.id = 'reavion-pointer-styles';
+              style.textContent = '@keyframes reavionFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }';
+              document.head.appendChild(style);
+            }
+
+            // Move or Create Pointer
+            let pointer = document.getElementById('reavion-pointer');
+            if (!pointer) {
+              pointer = document.createElement('div');
+              pointer.id = 'reavion-pointer';
+              const uniqueId = 'mouse-' + Date.now();
+              pointer.innerHTML = \`
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#\${uniqueId})" stroke="white" stroke-width="1.5"/>
+                  <defs>
+                    <linearGradient id="\${uniqueId}" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse">
+                      <stop offset="0%" stop-color="#8b5cf6"/>
+                      <stop offset="100%" stop-color="#7c3aed"/>
+                    </linearGradient>
+                  </defs>
+                </svg>
+              \`;
+              pointer.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);';
+              document.body.appendChild(pointer);
+            }
+
+            pointer.style.left = x + 'px';
+            pointer.style.top = y + 'px';
+            pointer.style.transform = 'scale(1.1)';
+            setTimeout(() => { pointer.style.transform = 'scale(1)'; }, 500);
+
+            // Brief Highlight
+            const originalOutline = element.style.outline;
+            element.style.outline = '2px dashed rgba(139, 92, 246, 0.5)';
+            element.style.outlineOffset = '2px';
+            setTimeout(() => { element.style.outline = originalOutline; }, 1000);
+
+            return { success: true, message: 'Focused on ' + (element.innerText || selector).slice(0, 30) };
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (error) {
+        return JSON.stringify({ success: false, error: String(error) });
+      }
+    }
+  });
+
   return [
     navigateTool,
     clickTool,
@@ -749,6 +836,8 @@ export function createBrowserTools(): DynamicStructuredTool[] {
     waitTool,
     clickAtCoordinatesTool,
     getPageContentTool,
+    moveToElementTool,
+
 
     // --- MARK PAGE TOOL (MOVED & IMPROVED BELOW) ---
 

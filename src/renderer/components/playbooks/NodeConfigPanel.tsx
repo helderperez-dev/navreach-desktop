@@ -66,7 +66,6 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
     };
 
     const getUpstreamVariables = React.useCallback(() => {
-        // Find nodes providing targets upstream
         const groups: Group[] = [];
 
         const findUpstream = (nodeId: string, visited = new Set<string>()) => {
@@ -77,48 +76,41 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
             incoming.forEach(edge => {
                 const sourceNode = nodes.find(n => n.id === edge.source);
                 if (sourceNode) {
+                    const sourceDef = NODE_DEFINITIONS[sourceNode.type as PlaybookNodeType];
+                    const nodeVars: any[] = [];
+
+                    // 1. Schema-based variables (n8n style)
+                    if (sourceDef?.outputs_schema) {
+                        sourceDef.outputs_schema.forEach(schema => {
+                            nodeVars.push({
+                                label: schema.label,
+                                value: `{{${sourceNode.id}.${schema.value}}}`,
+                                example: schema.example
+                            });
+                        });
+                    }
+
+                    // 2. Legacy/List-specific variables (still needed for target lists)
                     if (sourceNode.type === 'use_target_list' || sourceNode.type === 'generate_targets') {
                         const listId = sourceNode.data.config?.list_id;
                         const sample = listId ? samples[listId] : null;
 
-                        const vars = [
-                            {
-                                label: 'URL',
-                                value: '{{target.url}}',
-                                example: sample?.url || 'https://example.com/profile'
-                            },
-                            {
-                                label: 'Name',
-                                value: '{{target.name}}',
-                                example: sample?.name || 'John Doe'
-                            },
-                            {
-                                label: 'Email',
-                                value: '{{target.email}}',
-                                example: sample?.email || 'john@example.com'
-                            },
-                            {
-                                label: 'Type',
-                                value: '{{target.type}}',
-                                example: sample?.type || 'profile'
-                            }
+                        const legacyVars = [
+                            { label: 'URL', value: '{{target.url}}', example: sample?.url },
+                            { label: 'Name', value: '{{target.name}}', example: sample?.name },
+                            { label: 'Email', value: '{{target.email}}', example: sample?.email },
+                            { label: 'Metadata', value: '{{target.metadata}}', example: 'JSON' }
                         ];
+                        nodeVars.push(...legacyVars);
+                    }
 
-                        if (sample && sample.metadata) {
-                            Object.entries(sample.metadata).forEach(([key, value]) => {
-                                vars.push({
-                                    label: key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' '),
-                                    value: `{{target.metadata.${key}}}`,
-                                    example: String(value)
-                                });
-                            });
-                        }
-
+                    if (nodeVars.length > 0) {
                         groups.push({
-                            nodeName: sourceNode.data.label,
-                            variables: vars
+                            nodeName: sourceNode.data.label || sourceDef?.label || sourceNode.id,
+                            variables: nodeVars
                         });
                     }
+
                     findUpstream(sourceNode.id, visited);
                 }
             });
@@ -303,14 +295,33 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                     </div>
                 );
             case 'wait':
+                // Helper to determine best unit for display if not explicitly set
+                const currentMs = config.duration || 1000;
+
+                // We use a ref to track if we've initialized local state to avoid re-calculating on every render
+                // forcing the UI to jump around if the user matches a perfect multiple.
+                // Actually, just local state initialized once per node selection is best.
+                // But since 'case' is inside a render function, we can't conditionally call hooks easily 
+                // without extracting a component.
+                // Let's extract a small inline component or just use immediate calculation for simplicity
+                // but that prevents "1.5 minutes" from staying as "1.5 minutes" if we just store ms.
+
+                // Strategy: Calculate "Best Unit" for display ONLY if we don't have a better idea.
+                let bestUnit = 'ms';
+                let bestVal = currentMs;
+
+                if (currentMs >= 3600000 && currentMs % 3600000 === 0) { bestUnit = 'h'; bestVal = currentMs / 3600000; }
+                else if (currentMs >= 60000 && currentMs % 60000 === 0) { bestUnit = 'm'; bestVal = currentMs / 60000; }
+                else if (currentMs >= 1000 && currentMs % 1000 === 0) { bestUnit = 's'; bestVal = currentMs / 1000; }
+
                 return (
-                    <Field label="Duration (ms)">
-                        <Input
-                            type="number"
-                            value={config.duration || 1000}
-                            onChange={(e) => handleConfigChange('duration', parseInt(e.target.value))}
-                        />
-                    </Field>
+                    <WaitNodeConfig
+                        valueMs={currentMs}
+                        onChange={(val) => handleConfigChange('duration', val)}
+                        initialUnit={bestUnit}
+                        initialValue={bestVal}
+                        key={selectedNode.id} // Re-mount on node change to reset local state
+                    />
                 );
             case 'scroll':
                 return (
@@ -471,6 +482,14 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
             case 'x_scout_topics':
                 return (
                     <div className="space-y-4">
+                        <Field label="Target Niche (Optional)">
+                            <MentionInput
+                                value={config.niche || ''}
+                                onChange={(e) => handleConfigChange('niche', e.target.value)}
+                                placeholder="e.g. SaaS growth, Indie Hackers..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
                         <Field label="Max Items">
                             <Input
                                 type="number"
@@ -479,12 +498,8 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 className="h-9 text-xs"
                             />
                         </Field>
-                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
-                            Scouts visible tweets for:
-                            <ul className="list-disc pl-4 mt-1 space-y-0.5">
-                                <li>Trending hashtags</li>
-                                <li>Active accounts</li>
-                            </ul>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            Scouts visible tweets for trending hashtags and active accounts. If Niche is provided, it will search for it first.
                         </div>
                     </div>
                 );
@@ -772,6 +787,30 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 className="h-9 text-[12px]"
                             />
                         </Field>
+                    </div>
+                );
+            case 'x_scan_posts':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Query (Optional)">
+                            <MentionInput
+                                value={config.query || ''}
+                                onChange={(e) => handleConfigChange('query', e.target.value)}
+                                placeholder="e.g. to:me or from:elonmusk"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Max Posts">
+                            <Input
+                                type="number"
+                                value={config.limit || 15}
+                                onChange={(e) => handleConfigChange('limit', parseInt(e.target.value))}
+                                className="h-9 text-xs"
+                            />
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            Scans the current page or performs a search to identify multiple posts and their authors in a single operation. Use "to:me" for mentions.
+                        </div>
                     </div>
                 );
             case 'generate_targets':
@@ -1253,6 +1292,61 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                 <Button variant="destructive" className="w-full" onClick={() => onDelete(selectedNode.id)}>
                     Delete Node
                 </Button>
+            </div>
+        </div>
+    );
+}
+
+interface WaitNodeConfigProps {
+    valueMs: number;
+    onChange: (ms: number) => void;
+    initialUnit: string;
+    initialValue: number;
+}
+
+function WaitNodeConfig({ valueMs, onChange, initialUnit, initialValue }: WaitNodeConfigProps) {
+    const [unit, setUnit] = React.useState(initialUnit);
+    const [val, setVal] = React.useState(initialValue);
+
+    const handleTimeChange = (newValue: number, newUnit: string) => {
+        let ms = newValue;
+        if (newUnit === 's') ms = newValue * 1000;
+        if (newUnit === 'm') ms = newValue * 60000;
+        if (newUnit === 'h') ms = newValue * 3600000;
+
+        setUnit(newUnit);
+        setVal(newValue);
+        onChange(ms);
+    };
+
+    return (
+        <div className="space-y-4">
+            <Field label="Duration">
+                <div className="flex gap-2">
+                    <Input
+                        type="number"
+                        value={val}
+                        onChange={(e) => handleTimeChange(parseFloat(e.target.value) || 0, unit)}
+                        className="flex-1"
+                    />
+                    <Select
+                        value={unit}
+                        onValueChange={(v) => handleTimeChange(val, v)}
+                    >
+                        <SelectTrigger className="w-[110px]">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="ms">Milliseconds</SelectItem>
+                            <SelectItem value="s">Seconds</SelectItem>
+                            <SelectItem value="m">Minutes</SelectItem>
+                            <SelectItem value="h">Hours</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+            </Field>
+            <div className="text-[10px] text-muted-foreground text-right pr-1">
+                Total: {(valueMs / 1000).toFixed(1)}s
             </div>
         </div>
     );

@@ -19,12 +19,15 @@ const POINTER_HELPERS = `
       indicator = document.createElement('div');
       indicator.id = 'reavion-pointer';
       const uniqueId = 'glass-gradient-' + Date.now();
-      indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#' + uniqueId + ')" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/><defs><linearGradient id="' + uniqueId + '" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="rgba(80, 80, 80, 0.95)"/><stop offset="50%" stop-color="rgba(40, 40, 40, 0.95)"/><stop offset="100%" stop-color="rgba(10, 10, 10, 0.95)"/></linearGradient></defs></svg>';
-      indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:left 0.3s ease, top 0.3s ease;';
+      indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#' + uniqueId + ')" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/><defs><linearGradient id="' + uniqueId + '" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="50%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#6d28d9"/></linearGradient></defs></svg>';
+      indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);';
       document.body.appendChild(indicator);
     }
     indicator.style.left = x + 'px';
     indicator.style.top = y + 'px';
+    // Visual kick on movement
+    indicator.style.transform = 'scale(1.1)';
+    setTimeout(() => { if (indicator) indicator.style.transform = 'scale(1)'; }, 400);
   }
 `;
 
@@ -43,6 +46,8 @@ const BASE_SCRIPT_HELPERS = `
   }
 
   function wait(ms) {
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
+    const adjustedMs = Math.round(ms * multiplier);
     return new Promise((resolve, reject) => {
       const start = Date.now();
       const checking = () => {
@@ -50,7 +55,7 @@ const BASE_SCRIPT_HELPERS = `
           reject(new Error('Stopped by user'));
           return;
         }
-        if (Date.now() - start >= ms) {
+        if (Date.now() - start >= adjustedMs) {
           resolve();
         } else {
           setTimeout(checking, 50); // Reduced check interval
@@ -216,8 +221,17 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       try {
         const contents = ctx.getContents();
         const filterMap: Record<string, string> = { latest: 'live', people: 'user', photos: 'image', videos: 'video' };
+        const sanitizedQuery = query
+          .replace(/<arg_key>.*?<\/arg_key>/gi, '')
+          .replace(/<arg_value>|<\/arg_value>/gi, '')
+          .replace(/\{\{.*?\}\}/g, '')
+          .replace(/<\/?[^>]+(>|$)/g, '')
+          .trim();
+
+        if (!sanitizedQuery) return JSON.stringify({ success: false, error: 'No query provided' });
+
         const params = new URLSearchParams();
-        params.set('q', query);
+        params.set('q', sanitizedQuery);
         params.set('src', 'typed_query');
         // Only set 'f' if filter is provided and NOT 'top' (top is default)
         if (filter && filter !== 'top' && filterMap[filter]) {
@@ -225,7 +239,14 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         }
 
         const url = `https://x.com/search?${params.toString()}`;
-        await contents.loadURL(url);
+        const currentUrl = contents.getURL();
+
+        // Skip reload if already on this search
+        if (currentUrl.includes(url) || url.includes(currentUrl) && currentUrl.includes('q=')) {
+          console.log(`[X Tool] Already on search page, skipping reload: ${url}`);
+        } else {
+          await contents.loadURL(url);
+        }
 
         // Wait for results to actually load
         const result = await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
@@ -247,9 +268,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       hashtags: z.string().nullable().describe('These hashtags.').default(null),
       fromAccount: z.string().nullable().describe('From these accounts.').default(null),
       toAccount: z.string().nullable().describe('To these accounts.').default(null),
-      minLikes: z.coerce.number().nullable().describe('Minimum likes.').default(null),
-      minRetweets: z.coerce.number().nullable().describe('Minimum retweets.').default(null),
-      minReplies: z.coerce.number().nullable().describe('Minimum replies.').default(null),
+      minLikes: z.any().nullable().describe('Minimum likes (number).').default(null),
+      minRetweets: z.any().nullable().describe('Minimum retweets (number).').default(null),
+      minReplies: z.any().nullable().describe('Minimum replies (number).').default(null),
       since: z.string().nullable().describe('Start date (YYYY-MM-DD).').default(null),
       until: z.string().nullable().describe('End date (YYYY-MM-DD).').default(null),
       filter: z.enum(['top', 'latest', 'people', 'photos', 'videos']).nullable().describe('Search filter tab.').default(null),
@@ -274,32 +295,80 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       try {
         const contents = ctx.getContents();
         const queryParts: string[] = [];
-        if (args.allWords) queryParts.push(args.allWords.trim());
-        if (args.exactPhrase) queryParts.push(`"${args.exactPhrase.trim()}"`);
+        const sanitize = (val: any): string => {
+          if (!val) return '';
+          // Remove AI hallucinations like <arg_key> or {{placeholder}}
+          return String(val)
+            .replace(/<arg_key>.*?<\/arg_key>/gi, '')
+            .replace(/<arg_value>|<\/arg_value>/gi, '')
+            .replace(/\{\{.*?\}\}/g, '')
+            .replace(/<\/?[^>]+(>|$)/g, '') // Strip any other HTML tags
+            .trim();
+        };
+
+        const safeInt = (val: any): number => {
+          if (val === null || val === undefined) return 0;
+          if (typeof val === 'number') return Math.floor(val);
+          const sanitized = sanitize(val);
+          const n = parseInt(sanitized, 10);
+          return isNaN(n) ? 0 : n;
+        };
+
+        if (args.allWords) {
+          const s = sanitize(args.allWords);
+          if (s) queryParts.push(s);
+        }
+        if (args.exactPhrase) {
+          const s = sanitize(args.exactPhrase);
+          if (s) queryParts.push(`"${s}"`);
+        }
         if (args.anyWords) {
-          const p = Array.from(new Set(args.anyWords.split(/[\s,]+/).filter(Boolean)));
+          const s = sanitize(args.anyWords);
+          const p = Array.from(new Set(s.split(/[\s,]+/).filter(Boolean)));
           if (p.length) queryParts.push(`(${p.join(' OR ')})`);
         }
         if (args.noneWords) {
-          Array.from(new Set(args.noneWords.split(/[\s,]+/).filter(Boolean)))
+          const s = sanitize(args.noneWords);
+          Array.from(new Set(s.split(/[\s,]+/).filter(Boolean)))
             .forEach(w => queryParts.push(`-${w}`));
         }
         if (args.hashtags) {
+          const s = sanitize(args.hashtags);
           const validTags = new Set<string>();
-          args.hashtags.split(/[\s,]+/).filter(Boolean).forEach(h => {
+          s.split(/[\s,]+/).filter(Boolean).forEach(h => {
             const t = h.startsWith('#') ? h.slice(1) : h;
             validTags.add(`#${t}`);
           });
           validTags.forEach(tag => queryParts.push(tag));
         }
-        if (args.fromAccount) queryParts.push(`from:${args.fromAccount.replace('@', '').trim()}`);
-        if (args.toAccount) queryParts.push(`to:${args.toAccount.replace('@', '').trim()}`);
-        if (args.minLikes && args.minLikes > 0) queryParts.push(`min_faves:${args.minLikes}`);
-        if (args.minRetweets && args.minRetweets > 0) queryParts.push(`min_retweets:${args.minRetweets}`);
-        if (args.minReplies && args.minReplies > 0) queryParts.push(`min_replies:${args.minReplies}`);
-        if (args.since) queryParts.push(`since:${args.since}`);
-        if (args.until) queryParts.push(`until:${args.until}`);
-        if (args.lang) queryParts.push(`lang:${args.lang}`);
+        if (args.fromAccount) {
+          const s = sanitize(args.fromAccount).replace('@', '');
+          if (s) queryParts.push(`from:${s}`);
+        }
+        if (args.toAccount) {
+          const s = sanitize(args.toAccount).replace('@', '');
+          if (s) queryParts.push(`to:${s}`);
+        }
+
+        const mL = safeInt(args.minLikes);
+        const mRt = safeInt(args.minRetweets);
+        const mRp = safeInt(args.minReplies);
+
+        if (mL > 0) queryParts.push(`min_faves:${mL}`);
+        if (mRt > 0) queryParts.push(`min_retweets:${mRt}`);
+        if (mRp > 0) queryParts.push(`min_replies:${mRp}`);
+        if (args.since) {
+          const s = sanitize(args.since);
+          if (s) queryParts.push(`since:${s}`);
+        }
+        if (args.until) {
+          const s = sanitize(args.until);
+          if (s) queryParts.push(`until:${s}`);
+        }
+        if (args.lang) {
+          const s = sanitize(args.lang);
+          if (s) queryParts.push(`lang:${s}`);
+        }
 
         const q = queryParts.join(' ');
         if (!q.trim()) return JSON.stringify({ success: false, error: 'No criteria' });
@@ -316,7 +385,14 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         }
 
         const finalUrl = `https://x.com/search?${params.toString()}`;
-        await contents.loadURL(finalUrl);
+        const currentUrl = contents.getURL();
+
+        // Skip reload if already on this search
+        if (currentUrl.includes(`q=${encodeURIComponent(q)}`) || (currentUrl.includes('search?') && currentUrl.includes(params.get('q') || ''))) {
+          console.log(`[X Tool] Already on advanced search page, skipping reload: ${q}`);
+        } else {
+          await contents.loadURL(finalUrl);
+        }
 
         // Wait for results to actually load
         const result = await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
@@ -715,20 +791,30 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const scoutTool = new DynamicStructuredTool({
     name: 'x_scout_topics',
-    description: 'Scout the current page for hashtags and accounts to find new growth opportunities (Spider Mode).',
+    description: 'Scout the current page or a specific niche for hashtags and accounts to find new growth opportunities.',
     schema: z.object({
+      niche: z.string().nullable().describe('Optional niche to search for before scouting (e.g. "SaaS").').default(null),
       limit: z.number().nullable().describe('Max number of items to return. Default is 10.'),
     }),
-    func: async ({ limit }: { limit: number | null }) => {
+    func: async ({ niche, limit }: { niche: string | null; limit: number | null }) => {
       const contents = ctx.getContents();
       const lim = limit ?? 10;
       try {
+        if (niche) {
+          const params = new URLSearchParams();
+          params.set('q', niche);
+          params.set('src', 'typed_query');
+          params.set('f', 'live'); // Latest results are better for scouting trends
+          await contents.loadURL(`https://x.com/search?${params.toString()}`);
+          await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+        }
+
         const result = await contents.executeJavaScript(`
           (async function() {
             ${BASE_SCRIPT_HELPERS}
             // Scroll a few times to get more data
-            for(let i=0; i<3; i++) {
-                window.scrollBy(0, 800);
+            for(let i=0; i<2; i++) {
+                window.scrollBy(0, 1000);
                 await wait(1000);
             }
             
@@ -744,12 +830,16 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             const count = (arr) => {
                 const map = {};
                 arr.forEach(i => map[i] = (map[i] || 0) + 1);
-                return Object.entries(map).sort((a,b) => b[1] - a[1]).map(e => e[0]);
+                return Object.entries(map).sort((a,b) => (b[1] as number) - (a[1] as number)).map(e => e[0]);
             };
             
+            const scrapedHashtags = count(hashtags).slice(0, ${lim});
+            const scrapedAccounts = count(mentions).slice(0, ${lim});
+
             return {
-                hashtags: count(hashtags).slice(0, ${lim}),
-                accounts: count(mentions).slice(0, ${lim}),
+                hashtags: scrapedHashtags,
+                accounts: scrapedAccounts,
+                topics: scrapedHashtags.join(' '), // Useful for search nodes
                 success: true
             };
           })()
@@ -881,10 +971,12 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 const b = tweet.querySelector('[data-testid="like"]');
                 const u = tweet.querySelector('[data-testid="unlike"]');
                 if (b && isVisible(b)) {
-                  await safeClick(b, 'Like');
+                  await safeClick(b, 'Like', { afterWait: 400 });
                   results.push('Liked');
                 } else if (u && isVisible(u)) {
                   results.push('Already Liked');
+                } else {
+                  results.push('Like Button Not Found (Check visibility)');
                 }
               }
 
@@ -992,19 +1084,45 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const result = await contents.executeJavaScript(`
           (async function() {
             ${BASE_SCRIPT_HELPERS}
-            const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible).slice(0, ${limit || 10});
+            // Use a broader selector and filter for better reliability
+            const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).slice(0, ${limit || 15});
             
             const data = tweets.map((t, i) => {
                const author = getTweetAuthor(t);
                const textEl = t.querySelector('[data-testid="tweetText"]');
-               const text = textEl ? textEl.innerText.replace(/\\n/g, ' ').slice(0, 60) : '';
+               const text = textEl ? textEl.innerText.replace(/\\n/g, ' ').slice(0, 120) : ''; // More context
+               
+               // Check engagement
                const isLiked = !!t.querySelector('[data-testid="unlike"]');
                const isRetweeted = !!t.querySelector('[data-testid="unretweet"]');
-               const isPromoted = !!t.querySelector('[data-testid="placementTracking"]'); // Better check for ads
-               return { index: i, author, text, isLiked, isRetweeted, isPromoted };
+               const hasReplied = !!t.querySelector('[data-testid="reply"] [aria-label*="Replied"]'); // Some UI states show this
+               
+               // Special X detection
+               const isPromoted = !!t.querySelector('[data-testid="placementTracking"]') || t.innerText.includes('Promoted');
+               const analyticsValue = t.querySelector('[href*="/analytics"]')?.innerText || '0';
+               
+               const rect = t.getBoundingClientRect();
+               const isVisibleNow = rect.top >= 0 && rect.bottom <= window.innerHeight;
+
+               return { 
+                 index: i, 
+                 author, 
+                 text, 
+                 isLiked, 
+                 isRetweeted, 
+                 isPromoted,
+                 isEngaged: isLiked || isRetweeted,
+                 metrics: analyticsValue,
+                 visible: isVisibleNow
+               };
             });
             
-            return { success: true, count: data.length, posts: data };
+            return { 
+              success: true, 
+              count: data.length, 
+              posts: data,
+              message: 'Scanned ' + data.length + ' posts. Suggesting those not yet engaged.'
+            };
           })()
         `);
         return JSON.stringify(result);

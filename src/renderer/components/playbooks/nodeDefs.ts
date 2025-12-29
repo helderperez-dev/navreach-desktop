@@ -33,6 +33,7 @@ export interface NodeTypeDefinition {
     color: string;
     inputs: number; // 0, 1, or more (simplified validity check)
     outputs: number;
+    outputs_schema?: { label: string; value: string; example?: string }[];
 }
 
 export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
@@ -74,7 +75,11 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         description: 'Iterate over items',
         color: 'bg-primary/10 text-primary',
         inputs: 1,
-        outputs: 2
+        outputs: 2,
+        outputs_schema: [
+            { label: 'Current Item', value: 'item', example: '{ id: "123", content: "..." }' },
+            { label: 'Current Index', value: 'index', example: '0' }
+        ]
     },
     wait: {
         type: 'wait',
@@ -134,7 +139,11 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         description: 'Analyze page content',
         color: 'bg-blue-500/10 text-blue-500',
         inputs: 1,
-        outputs: 1
+        outputs: 1,
+        outputs_schema: [
+            { label: 'Analysis Result', value: 'analysis', example: 'This post is about...' },
+            { label: 'Confidence', value: 'confidence', example: '0.95' }
+        ]
     },
     scroll: {
         type: 'scroll',
@@ -234,7 +243,11 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         description: 'Advanced X.com Search',
         color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
         inputs: 1,
-        outputs: 1
+        outputs: 1,
+        outputs_schema: [
+            { label: 'Search Results', value: 'items', example: '[{ id: "123", text: "..." }]' },
+            { label: 'Total Count', value: 'count', example: '50' }
+        ]
     },
     x_scout_topics: {
         type: 'x_scout_topics',
@@ -244,7 +257,11 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         description: 'Auto-discover accounts/hashtags',
         color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
         inputs: 1,
-        outputs: 1
+        outputs: 1,
+        outputs_schema: [
+            { label: 'Trending Topics', value: 'topics', example: '#saas #ai' },
+            { label: 'Active Accounts', value: 'accounts', example: '@founder1 @indie_maker' }
+        ]
     },
     x_scout_community: {
         type: 'x_scout_community',
@@ -305,6 +322,20 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
         inputs: 1,
         outputs: 1
+    },
+    x_scan_posts: {
+        type: 'x_scan_posts',
+        label: 'X Scan',
+        category: NODE_CATEGORIES.X,
+        icon: Eye,
+        description: 'Identify 10-15 posts and authors in one go',
+        color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
+        inputs: 1,
+        outputs: 1,
+        outputs_schema: [
+            { label: 'Posts Found', value: 'posts', example: '[{ author: "@user", text: "..." }]' },
+            { label: 'Total Count', value: 'count', example: '12' }
+        ]
     },
     reddit_search: {
         type: 'reddit_search',

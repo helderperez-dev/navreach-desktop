@@ -16,51 +16,67 @@ interface ChatMessageProps {
 
 // Tool name aliases for user-friendly display
 const toolAliases: Record<string, string> = {
-  'browser_navigate': 'Navigating',
+  'browser_navigate': 'Navigating to URL',
   'browser_click': 'Clicking Element',
-  'browser_click_at': 'Clicking Position',
-  'browser_type': 'Typing Text',
-  'browser_scroll': 'Scrolling',
-  'browser_snapshot': 'Taking Snapshot',
-  'browser_get_page_content': 'Reading Page',
-  'browser_extract': 'Extracting Data',
-  'browser_go_back': 'Going Back',
-  'browser_go_forward': 'Going Forward',
-  'browser_reload': 'Reloading',
-  'browser_wait': 'Waiting',
-  'browser_find_elements': 'Locating Elements',
-  'browser_get_accessibility_tree': 'Analyzing Page Structure',
-  'browser_hover': 'Hovering',
-  'x_search': 'Searching X',
-  'x_advanced_search': 'Advanced Search',
-  'x_like': 'Liking Post',
-  'x_reply': 'Replying',
-  'x_post': 'Posting',
-  'x_follow': 'Following User',
-  'x_engage': 'Engaging',
-  'x_scout_topics': 'Scouting Topics',
-  'x_scout_community': 'Scouting Community',
-  'browser_get_visible_text': 'Reading Visible Text',
+  'browser_click_at': 'Clicking at Position',
   'browser_click_coordinates': 'Clicking Coordinates',
+  'browser_type': 'Typing Text',
+  'browser_scroll': 'Scrolling Page',
+  'browser_snapshot': 'Capturing Viewport',
+  'browser_get_page_content': 'Reading Page Data',
+  'browser_extract': 'Extracting Details',
+  'browser_go_back': 'Navigating Back',
+  'browser_go_forward': 'Navigating Forward',
+  'browser_reload': 'Refreshing Page',
+  'browser_wait': 'Waiting For UI',
+  'browser_find_elements': 'Locating Elements',
+  'browser_get_accessibility_tree': 'Analyzing DOM Tree',
+  'browser_hover': 'Hovering Over Element',
+  'browser_get_visible_text': 'Reading Visible Text',
+  'browser_inspect_element': 'Inspecting Node',
+  'browser_highlight_elements': 'Highlighting Targets',
+  'x_search': 'Searching X',
+  'x_advanced_search': 'Advanced X Search',
+  'x_like': 'Engaging: Like',
+  'x_reply': 'Engaging: Reply',
+  'x_post': 'Creating New Post',
+  'x_follow': 'Following User',
+  'x_engage': 'Multi-step Engagement',
+  'x_scout_topics': 'Scouting X Topics',
+  'x_scout_community': 'Analyzing Community',
   'humanize_text': 'Humanizing Text',
-  'db_get_targets': 'Fetching Targets',
-  'db_get_target_lists': 'Fetching Target Lists',
-  'db_create_target_list': 'Creating Target List',
-  'db_create_target': 'Creating Target',
-  'db_update_target': 'Updating Target',
-  'db_get_mcp_servers': 'Fetching MCP Servers',
-  'mcp_list_tools': 'Listing MCP Tools',
-  'mcp_call_tool': 'Calling MCP Tool',
-  'db_get_api_tools': 'Fetching API Tools',
-  'api_call_tool': 'Calling API Tool',
-  'db_get_playbooks': 'Fetching Playbooks',
-  'db_get_playbook_details': 'Fetching Playbook Details',
+  'db_get_targets': 'Loading Targets',
+  'db_get_target_lists': 'Fetching Lists',
+  'db_create_target_list': 'Saving New List',
+  'db_create_target': 'Recording Target',
+  'db_update_target': 'Syncing Data',
+  'db_get_mcp_servers': 'Checking Integrations',
+  'mcp_list_tools': 'Listing API Methods',
+  'mcp_call_tool': 'Invoking Integration',
+  'db_get_api_tools': 'Fetching Custom Tools',
+  'api_call_tool': 'Invoking API Step',
+  'db_get_playbooks': 'Loading Playbooks',
+  'db_get_playbook_details': 'Reading Playbook',
   'db_save_playbook': 'Saving Playbook',
-  'db_delete_playbook': 'Deleting Playbook',
-  'human_approval': 'Requesting Approval',
-  'agent_pause': 'Pausing Agent',
+  'db_delete_playbook': 'Removing Playbook',
+  'human_approval': 'Awaiting Approval',
+  'agent_pause': 'Agent Paused',
+  'x_scan_posts': 'Scanning X (Twitter) Posts',
+  'browser_move_to_element': 'Focusing on Element',
   'unknown_tool': 'Running Action'
 };
+
+function getToolDisplayName(name: string) {
+  if (toolAliases[name]) return toolAliases[name];
+  // Fallback: convert snake_case to Title Case (e.g. browser_navigate -> Browser Navigate)
+  return name
+    .replace(/^browser_/, '') // Optional: remove common prefixes for brevity
+    .replace(/^db_/, '')
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 
 // Helper to structure the message content into logical blocks
 // We want to group: Thinking Process -> Tool Executions -> Final Answer
@@ -85,7 +101,7 @@ function parseMessageContent(content: string) {
       currentBlock = {
         type: 'tool-group',
         content: toolName,
-        title: toolAliases[toolName] || toolName,
+        title: getToolDisplayName(toolName),
         status: 'running',
         params: '',
         result: ''
@@ -94,10 +110,10 @@ function parseMessageContent(content: string) {
       continue;
     }
 
-    // Check for Tool Completion/Status - catch ✅/❌ or "Success"/"Error"
-    const statusMatch = line.match(/^(?:✅|❌|Success|Completed|Error)\s*(?:\(([\d.]+)s\))?/);
+    // Check for Tool Completion/Status - catch ✅/❌/⚠️ or "Success"/"Error"
+    const statusMatch = line.match(/^(?:✅|❌|⚠️|Success|Completed|Error)\s*(?::\s*)?(?:\(([\d.]+)s\))?/i);
     if (statusMatch) {
-      const isError = line.startsWith('❌') || line.startsWith('Error');
+      const isError = line.startsWith('❌') || line.startsWith('⚠️') || line.toLowerCase().startsWith('error');
       const duration = statusMatch[1];
 
       // Find the last tool block to update
@@ -106,6 +122,13 @@ function parseMessageContent(content: string) {
       if (lastTool) {
         lastTool.status = isError ? 'failed' : 'success';
         if (duration) lastTool.duration = duration;
+      } else if (isError) {
+        // If it's an error not associated with a tool, create an error block
+        if (currentBlock && currentBlock.type === 'text') {
+          blocks.push(currentBlock);
+        }
+        blocks.push({ type: 'error', content: line.replace(/^(?:❌|Error)\s*/, '').trim() });
+        currentBlock = null;
       }
       // Do not treat this line as text content
       continue;
@@ -127,6 +150,16 @@ function parseMessageContent(content: string) {
       } else {
         currentBlock.content += line.replace('Thinking:', '').trim() + '\n';
       }
+      continue;
+    }
+
+    // Explicitly ignore troubleshooting and technical doc lines to keep UI clean
+    const isInternalDoc =
+      line.trim().startsWith('Troubleshooting') ||
+      (line.trim().startsWith('http') && (line.includes('langchain') || line.includes('openrouter.ai/docs'))) ||
+      line.toLowerCase().includes('to learn more about provider routing');
+
+    if (isInternalDoc) {
       continue;
     }
 
@@ -174,7 +207,7 @@ function parseMessageContent(content: string) {
   return blocks;
 }
 
-function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResult?: any }) {
+function StructuredToolCard({ toolCall, toolResult, narration }: { toolCall: any; toolResult?: any; narration?: string }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const status = toolResult ? (toolResult.error ? 'failed' : 'success') : 'running';
   const isSuccess = status === 'success';
@@ -224,23 +257,18 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
 
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <span className={cn(
-            "font-medium text-[13px] truncate",
+            "font-medium text-[13px] truncate flex-shrink min-w-0",
             isSuccess ? "text-foreground/80" :
               isFailed ? "text-destructive" :
                 "text-primary"
           )}>
-            {toolAliases[toolCall.name] || toolCall.name}
+            {getToolDisplayName(toolCall.name)}
           </span>
 
-          {/* Quick info preview if collapsed */}
-          {!isExpanded && !isSnapshot && resultDisplay && !resultDisplay.trim().startsWith('{') && !resultDisplay.trim().startsWith('[') && (
-            <span className="text-xs text-muted-foreground/60 truncate max-w-[200px] hidden sm:block">
-              {resultDisplay.replace(/\n.*/s, '')}
-            </span>
-          )}
+
 
           {duration && (
-            <span className="text-[10px] text-muted-foreground ml-auto font-mono opacity-70">
+            <span className="text-[10px] text-muted-foreground ml-auto font-mono opacity-70 flex-shrink-0">
               {duration}
             </span>
           )}
@@ -250,24 +278,33 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
       </button>
 
       {/* Expanded Details - Only show if there's meaningful text or error */}
-      {isExpanded && resultDisplay && (
-        <div className="px-3 py-3 border-t border-border bg-muted/30 text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+      {isExpanded && (resultDisplay || narration) && (
+        <div className="px-3 py-3 border-t border-border/30 bg-muted/20 text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+          {/* Agent Narration if present */}
+          {narration && (
+            <div className="prose prose-sm dark:prose-invert max-w-none text-muted-foreground leading-relaxed italic mb-2">
+              <ReactMarkdown>{narration}</ReactMarkdown>
+            </div>
+          )}
+
           {/* Output Result */}
-          <div>
-            <div className={cn(
-              "flex items-center gap-1.5 text-[10px] uppercase tracking-wider mb-1.5 font-semibold",
-              isFailed ? "text-destructive/50" : "text-emerald-500/50"
-            )}>
-              {isFailed ? <AlertCircle className="h-3 w-3" /> : <Activity className="h-3 w-3" />}
-              {isFailed ? 'Error' : 'Output'}
+          {resultDisplay && (
+            <div>
+              <div className={cn(
+                "flex items-center gap-1.5 text-[10px] uppercase tracking-wider mb-1.5 font-bold",
+                isFailed ? "text-destructive" : "text-emerald-500/70"
+              )}>
+                {isFailed ? <AlertCircle className="h-3 w-3" /> : <Activity className="h-3 w-3" />}
+                {isFailed ? 'System Error' : 'Tool Result'}
+              </div>
+              <div className={cn(
+                "rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed",
+                isFailed ? "bg-destructive/5 border-destructive/20 text-destructive/90" : "bg-background/50 border-border/30 text-muted-foreground"
+              )}>
+                {resultDisplay}
+              </div>
             </div>
-            <div className={cn(
-              "rounded border p-2 overflow-x-auto whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar",
-              isFailed ? "bg-destructive/10 border-destructive/20 text-destructive" : "bg-background border-border text-muted-foreground"
-            )}>
-              {resultDisplay}
-            </div>
-          </div>
+          )}
         </div>
       )}
     </div>
@@ -286,16 +323,21 @@ function AgentControlUI({ onApprove, variant = 'approval' }: { onApprove: () => 
 
   return (
     <div className={cn(
-      "mt-3 mb-2 flex flex-col gap-2 p-3 rounded-lg animate-in fade-in slide-in-from-top-2",
-      isPause ? "bg-amber-500/10 border border-amber-500/20" : "bg-blue-500/10 border border-blue-500/20"
+      "mt-3 mb-2 flex flex-col gap-3 p-4 rounded-xl animate-in fade-in slide-in-from-top-2 border shadow-lg backdrop-blur-sm",
+      isPause ? "bg-amber-500/5 border-amber-500/20" : "bg-blue-500/5 border-blue-500/20"
     )}>
-      <div className="flex items-start gap-3">
-        {isPause ? <Square className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" /> : <AlertCircle className="h-5 w-5 text-blue-400 mt-0.5 shrink-0" />}
-        <div className="space-y-1">
-          <p className={cn("text-sm font-medium", isPause ? "text-amber-100" : "text-blue-100")}>
-            {isPause ? 'Agent Paused' : 'Approval Required'}
+      <div className="flex items-start gap-4">
+        <div className={cn(
+          "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border",
+          isPause ? "bg-amber-500/10 border-amber-500/20" : "bg-blue-500/10 border-blue-500/20"
+        )}>
+          {isPause ? <Square className="h-5 w-5 text-amber-500" /> : <AlertCircle className="h-5 w-5 text-blue-400" />}
+        </div>
+        <div className="space-y-1 py-0.5">
+          <p className={cn("text-sm font-semibold tracking-tight", isPause ? "text-amber-200" : "text-blue-200")}>
+            {isPause ? 'Workflow Paused' : 'Approval Required'}
           </p>
-          <p className={cn("text-xs opacity-80", isPause ? "text-amber-200/80" : "text-blue-200/80")}>
+          <p className={cn("text-xs leading-relaxed opacity-70", isPause ? "text-amber-100/70" : "text-blue-100/70")}>
             {isPause ? 'The playbook is waiting to continue to the next step.' : 'The agent is waiting for your confirmation to proceed.'}
           </p>
         </div>
@@ -305,17 +347,17 @@ function AgentControlUI({ onApprove, variant = 'approval' }: { onApprove: () => 
         <button
           onClick={handleApprove}
           className={cn(
-            "self-end mt-1 px-4 py-2 text-white text-xs font-medium rounded transition-colors flex items-center gap-2 shadow-lg",
-            isPause ? "bg-amber-600 hover:bg-amber-500" : "bg-blue-600 hover:bg-blue-500"
+            "self-end mt-1 px-5 py-2 text-white text-[13px] font-semibold rounded-lg transition-all active:scale-95 flex items-center gap-2 shadow-xl border-t border-white/10",
+            isPause ? "bg-amber-600 hover:bg-amber-550 shadow-amber-900/20" : "bg-blue-600 hover:bg-blue-550 shadow-blue-900/20"
           )}
         >
-          {isPause ? <ChevronRight className="h-3.5 w-3.5" /> : <Check className="h-3.5 w-3.5" />}
-          {isPause ? 'Continue Playbook' : 'Approve & Proceed'}
+          {isPause ? <ChevronRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+          {isPause ? 'Continue Workflow' : 'Approve & Proceed'}
         </button>
       ) : (
-        <div className="self-end mt-1 px-4 py-2 text-emerald-400 text-xs font-medium flex items-center gap-2">
-          <Check className="h-3.5 w-3.5" />
-          {isPause ? 'Continuing...' : 'Approved'}
+        <div className="self-end mt-1 px-4 py-2 text-emerald-400 text-[13px] font-semibold flex items-center gap-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+          <Check className="h-4 w-4" />
+          {isPause ? 'Resuming...' : 'Action Approved'}
         </div>
       )}
     </div>
@@ -389,32 +431,34 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
       'group relative px-4 py-2 transition-colors duration-200',
       isUser ? 'bg-transparent' : 'bg-transparent'
     )}>
-      <div className={cn('w-full flex', isUser ? 'flex-row-reverse' : 'flex-row')}>
+      <div className={cn('w-full flex min-w-0', isUser ? 'flex-row-reverse' : 'flex-row')}>
 
         {/* Content Body */}
-        <div className={cn('flex-1 min-w-0 space-y-2', isUser && 'text-right')}>
+        <div className={cn('flex-1 min-w-0 space-y-2 overflow-hidden', isUser && 'flex flex-col items-end')}>
 
           {isUser ? (
-            <div className="inline-block bg-secondary/80 hover:bg-secondary text-secondary-foreground px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm leading-relaxed shadow-sm border border-white/5 mx-0 text-left">
-              <div className="whitespace-pre-wrap">
+            <div className="max-w-[90%] bg-secondary/80 hover:bg-secondary text-secondary-foreground px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm leading-relaxed shadow-sm border border-white/5 mx-0 text-left break-words">
+              <div className="whitespace-pre-wrap break-words">
                 <ProcessedText text={message.content} variables={variables} />
               </div>
             </div>
           ) : (
             <>
-              {/* 1. Structured Tool Executions (New Way) */}
+              {/* 1. Structured Tool Executions (Consolidated) */}
               {hasStructuredTools && (
-                <div className="space-y-1 my-1">
-                  {message.toolCalls!.map((toolCall) => {
+                <div className="space-y-1.5 my-1">
+                  {message.toolCalls!.map((toolCall, idx) => {
                     const result = message.toolResults?.find((r) => r.toolCallId === toolCall.id);
-                    return <StructuredToolCard key={toolCall.id} toolCall={toolCall} toolResult={result} />;
+                    // Only pass narration to the first tool card if it exists
+                    const narration = idx === 0 ? message.content : undefined;
+                    return <StructuredToolCard key={toolCall.id} toolCall={toolCall} toolResult={result} narration={narration} />;
                   })}
                 </div>
               )}
 
-              {/* 2. Text Content (Narration or Answer) with Markdown */}
-              {hasStructuredTools && message.content && message.content.trim() && (
-                <div className="prose prose-sm max-w-none text-foreground leading-relaxed text-left dark:prose-invert">
+              {/* 2. Text Content (Narration or Answer) - Hidden if tools are present as it is now inside the first tool accordion */}
+              {!hasStructuredTools && message.content && message.content.trim() && (
+                <div className="prose prose-sm max-w-none w-full text-foreground leading-relaxed text-left dark:prose-invert break-words">
                   <ReactMarkdown
                     components={{
                       p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
@@ -422,8 +466,8 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                       ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ol>,
                       li: ({ children }) => <li className="pl-1">{withTags(children)}</li>,
                       strong: ({ children }) => <strong className="font-semibold text-foreground">{withTags(children)}</strong>,
-                      code: ({ children }) => <code className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono text-primary border border-border">{withTags(children)}</code>,
-                      pre: ({ children }) => <pre className="bg-muted p-3 rounded-lg border border-border overflow-x-auto my-3 text-xs font-mono shadow-inner">{children}</pre>,
+                      code: ({ children }) => <code className="bg-muted/50 px-1.5 py-0.5 rounded-md text-[13px] font-mono text-primary border border-border/30">{withTags(children)}</code>,
+                      pre: ({ children }) => <pre className="bg-muted/30 p-4 rounded-xl border border-border/30 overflow-x-auto my-3 text-xs font-mono shadow-inner custom-scrollbar">{children}</pre>,
                       a: ({ href, children }) => <a href={href} className="text-primary hover:text-primary/80 hover:underline decoration-primary/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
                       blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/50 pl-4 py-1 my-3 italic text-muted-foreground">{withTags(children)}</blockquote>,
                     }}
@@ -478,7 +522,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                   if (!cleanContent) return null;
 
                   return (
-                    <div key={idx} className="prose prose-sm max-w-none text-foreground leading-relaxed text-left dark:prose-invert">
+                    <div key={idx} className="prose prose-sm max-w-none w-full text-foreground leading-relaxed text-left dark:prose-invert break-words">
                       <ReactMarkdown
                         components={{
                           p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
@@ -560,7 +604,7 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
           }
         </div>
 
-        <div className="flex items-center gap-2 min-w-0 flex-1">
+        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
           <span className={cn(
             "font-medium text-[13px] truncate",
             isSuccess ? "text-foreground/80" :

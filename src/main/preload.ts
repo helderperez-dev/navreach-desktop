@@ -45,6 +45,16 @@ const windowAPI = {
   minimize: () => ipcRenderer.invoke('window:minimize'),
   maximize: () => ipcRenderer.invoke('window:maximize'),
   close: () => ipcRenderer.invoke('window:close'),
+  onMenuAction: (callback: (action: string) => void) => {
+    const handler = (_event: unknown, action: string) => callback(action);
+    ipcRenderer.on('menu:action', handler);
+    return () => ipcRenderer.removeListener('menu:action', handler);
+  },
+  onFullScreenChange: (callback: (isFullScreen: boolean) => void) => {
+    const handler = (_event: unknown, isFullScreen: boolean) => callback(isFullScreen);
+    ipcRenderer.on('window:fullscreen-change', handler);
+    return () => ipcRenderer.removeListener('window:fullscreen-change', handler);
+  }
 };
 
 const aiAPI = {
@@ -58,6 +68,7 @@ const aiAPI = {
   },
   listWorkflows: () => ipcRenderer.invoke('ai:list-workflows'),
   suggest: (request: unknown) => ipcRenderer.invoke('ai:suggest', request),
+  testConnection: (provider: any, modelId?: string) => ipcRenderer.invoke('ai:test-connection', { provider, modelId }),
 };
 
 const debugAPI = {

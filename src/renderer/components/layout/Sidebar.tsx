@@ -28,7 +28,7 @@ export function Sidebar() {
         initial={false}
         animate={{ width: sidebarCollapsed ? 56 : 200 }}
         transition={{ duration: 0.2, ease: 'easeInOut' }}
-        className="flex flex-col h-full bg-sidebar border-r border-border transition-colors duration-200"
+        className="flex flex-col h-full bg-sidebar border-r border-border/30 transition-colors duration-200"
       >
         <nav className={cn("flex-1 py-2 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
           {navItems.map((item) => (
@@ -38,9 +38,9 @@ export function Sidebar() {
                   variant={activeView === item.view ? 'secondary' : 'ghost'}
                   size={sidebarCollapsed ? "icon" : "default"}
                   className={cn(
-                    'w-full justify-start gap-3 transition-colors',
+                    'w-full justify-start gap-3 transition-all duration-200',
                     sidebarCollapsed && 'justify-center h-10 w-full',
-                    activeView === item.view && 'bg-primary/10 text-primary hover:bg-primary/15'
+                    activeView === item.view ? 'bg-primary/10 text-primary hover:bg-primary/15 shadow-[0_0_15px_rgba(var(--primary),0.05)]' : 'hover:bg-muted/50'
                   )}
                   onClick={() => setActiveView(item.view)}
                 >
@@ -50,7 +50,7 @@ export function Sidebar() {
                       initial={{ opacity: 0, width: 0 }}
                       animate={{ opacity: 1, width: 'auto' }}
                       exit={{ opacity: 0, width: 0 }}
-                      className="text-sm"
+                      className="text-sm font-medium"
                     >
                       {item.label}
                     </motion.span>
@@ -72,7 +72,7 @@ export function Sidebar() {
                   variant="ghost"
                   size={sidebarCollapsed ? "icon" : "default"}
                   className={cn(
-                    'w-full justify-start gap-3',
+                    'w-full justify-start gap-3 hover:bg-muted/50 transition-all duration-200',
                     sidebarCollapsed && 'justify-center h-10 w-full'
                   )}
                   onClick={toggleChatPanel}
@@ -83,7 +83,7 @@ export function Sidebar() {
                       initial={{ opacity: 0, width: 0 }}
                       animate={{ opacity: 1, width: 'auto' }}
                       exit={{ opacity: 0, width: 0 }}
-                      className="text-sm"
+                      className="text-sm font-medium"
                     >
                       AI Chat
                     </motion.span>
@@ -99,7 +99,7 @@ export function Sidebar() {
           )}
         </nav>
 
-        <div className={cn("py-2 border-t border-border", sidebarCollapsed ? "px-2" : "px-3")}>
+        <div className={cn("py-2 border-t border-border/30", sidebarCollapsed ? "px-2" : "px-3")}>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

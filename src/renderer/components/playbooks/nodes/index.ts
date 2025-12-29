@@ -53,4 +53,6 @@ export const nodeTypes: Record<string, any> = {
     browser_highlight: BaseNode,
     browser_accessibility_tree: BaseNode,
     browser_console_logs: BaseNode,
+    browser_grid: BaseNode,
+    x_scan_posts: BaseNode,
 };

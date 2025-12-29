@@ -24,18 +24,26 @@ function createSimpleChatModel(provider: ModelProvider, model?: ModelConfig) {
 
     switch (provider.type) {
         case 'openai':
+            return new ChatOpenAI({
+                ...baseConfig,
+                apiKey: provider.apiKey,
+                configuration: {
+                    baseURL: baseUrl,
+                },
+            });
         case 'custom':
-            if (provider.type === 'custom' && !baseUrl) {
-                console.warn('[Utility Tools] Custom provider has no Base URL! This will default to OpenAI and likely fail.');
+            if (!baseUrl) {
+                console.warn('[Utility Tools] Custom provider has no Base URL!');
             }
             return new ChatOpenAI({
                 ...baseConfig,
                 apiKey: provider.apiKey,
-                openAIApiKey: provider.apiKey,
                 configuration: {
                     baseURL: baseUrl,
-                    apiKey: provider.apiKey,
                 },
+                modelKwargs: {
+                    parallel_tool_calls: false
+                }
             });
         case 'anthropic':
             return new ChatAnthropic({
@@ -45,7 +53,7 @@ function createSimpleChatModel(provider: ModelProvider, model?: ModelConfig) {
         case 'openrouter':
             return new ChatOpenAI({
                 ...baseConfig,
-                openAIApiKey: provider.apiKey,
+                apiKey: provider.apiKey,
                 configuration: {
                     baseURL: 'https://openrouter.ai/api/v1',
                     defaultHeaders: {
@@ -53,6 +61,7 @@ function createSimpleChatModel(provider: ModelProvider, model?: ModelConfig) {
                         'X-Title': 'Reavion Desktop',
                     },
                 },
+                // Removed parallel_tool_calls: false as it causes 400 errors for some OpenRouter models
             });
         default:
             throw new Error(`Unsupported provider type: ${provider.type}`);
@@ -69,11 +78,10 @@ export function createUtilityTools(context?: { provider?: ModelProvider; model?:
         }),
         func: async ({ text, tone }) => {
             const finalTone = tone || 'casual professional';
-            try {
-                // 1. Pick a provider
-                let selectedProvider = context?.provider;
-                let selectedModel = context?.model;
+            let selectedProvider = context?.provider;
+            let selectedModel = context?.model;
 
+            try {
                 console.log(`[Utility Tools] executing humanize_text. Context present: ${!!context}. Provider Type: ${selectedProvider?.type}. Model: ${selectedModel?.id}`);
 
                 if (!selectedProvider) {
@@ -119,10 +127,18 @@ export function createUtilityTools(context?: { provider?: ModelProvider; model?:
         - DO NOT change the core meaning or facts.
         - RETURN ONLY THE REWRITTEN TEXT. NO PREAMBLE.`;
 
-                const response = await chat.invoke([
-                    new SystemMessage(systemPrompt),
-                    new HumanMessage(text)
-                ]);
+                // Add 60s timeout - increased to handle high-quality humanization which can be slow
+                const timeoutPromise = new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Humanization model call timed out after 60s')), 60000)
+                );
+
+                const response = await Promise.race([
+                    chat.invoke([
+                        new SystemMessage(systemPrompt),
+                        new HumanMessage(text)
+                    ]),
+                    timeoutPromise
+                ]) as any;
 
                 const content = typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
 
@@ -134,7 +150,7 @@ export function createUtilityTools(context?: { provider?: ModelProvider; model?:
 
             } catch (error: any) {
                 console.error('Humanize Error:', error);
-                const debugInfo = `Provider: ${context?.provider?.type || 'fallback'}; Model: ${context?.model?.id || 'fallback'}; BaseURL: ${context?.provider?.baseUrl || 'undefined'}`;
+                const debugInfo = `Provider: ${selectedProvider?.type || 'unknown'}; Model: ${selectedModel?.id || 'unknown'}; BaseURL: ${selectedProvider?.baseUrl || 'default'}`;
                 return JSON.stringify({ success: false, error: `${error.message || String(error)} (${debugInfo})` });
             }
         },

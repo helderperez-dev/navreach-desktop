@@ -43,6 +43,12 @@ interface WelcomeScreenProps {
   onSubmit: () => void;
 }
 
+const STATIC_STARTERS: Suggestion[] = [
+  { label: 'X Growth', prompt: 'Search X for people talking about "SaaS marketing", scan their recent posts, and engage with helpful replies.' },
+  { label: 'Lead Sourcing', prompt: 'Search LinkedIn for Founders in the AI niche, scrape their profile details and save them to a new list.' },
+  { label: 'Competitor Intel', prompt: 'Go to a competitor website, extract their pricing and main features, and summarize how I can beat them.' }
+];
+
 export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
   const [input, setInput] = useState('');
   const [showHistory, setShowHistory] = useState(false);
@@ -124,12 +130,14 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     return groups;
   }, [playbooks, lists, mcpServers, apiTools]);
 
-  const debouncedInput = useDebounce(input, 600);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const debouncedInput = useDebounce(input, 1000);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>(STATIC_STARTERS);
   const [isSuggesting, setIsSuggesting] = useState(false);
 
   useEffect(() => {
+    let active = true;
     const fetchSuggestions = async () => {
+      if (!active) return;
       setIsSuggesting(true);
       try {
         // Resolve current model
@@ -149,6 +157,12 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
           return;
         }
 
+        // Optimization: Don't fetch if input is just whitespace (but allowed if empty for discovery)
+        if (debouncedInput.length > 0 && !debouncedInput.trim()) {
+          if (active) setIsSuggesting(false);
+          return;
+        }
+
         const result = await (window.api.ai as any).suggest({
           messages: [],
           model: model,
@@ -156,17 +170,18 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
           initialUserPrompt: debouncedInput
         });
 
-        if (result.success && result.suggestions && result.suggestions.length > 0) {
+        if (active && result.success && result.suggestions && result.suggestions.length > 0) {
           setSuggestions(result.suggestions);
         }
       } catch (error) {
-        console.error('Failed to fetch suggestions:', error);
+        if (active) console.error('Failed to fetch suggestions:', error);
       } finally {
-        setIsSuggesting(false);
+        if (active) setIsSuggesting(false);
       }
     };
 
     fetchSuggestions();
+    return () => { active = false; };
   }, [debouncedInput, modelProviders, selectedModel]);
   // ... (lines in between) ...
 

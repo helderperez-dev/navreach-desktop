@@ -43,6 +43,8 @@ const BASE_SCRIPT_HELPERS = `
   }
 
   function wait(ms) {
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
+    const adjustedMs = Math.round(ms * multiplier);
     return new Promise((resolve, reject) => {
       const start = Date.now();
       const checking = () => {
@@ -50,7 +52,7 @@ const BASE_SCRIPT_HELPERS = `
           reject(new Error('Stopped by user'));
           return;
         }
-        if (Date.now() - start >= ms) {
+        if (Date.now() - start >= adjustedMs) {
           resolve();
         } else {
           setTimeout(checking, 100);

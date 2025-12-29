@@ -128,6 +128,7 @@ export function ChatPanel() {
     setActiveConversation,
     addMessage,
     updateMessage,
+    mergeMessage,
     deleteConversation,
     isStreaming,
     setIsStreaming,
@@ -248,11 +249,11 @@ export function ChatPanel() {
     if (savedMessagesRef.current.has(key)) return;
     savedMessagesRef.current.add(key);
 
-    addMessage(activeConversationId, {
+    mergeMessage(activeConversationId, {
       role: 'assistant',
       content: content.trim(),
     });
-  }, [activeConversationId, addMessage]);
+  }, [activeConversationId, mergeMessage]);
 
   useEffect(() => {
     const unsubscribe = window.api.ai.onStreamChunk((data) => {
@@ -284,7 +285,7 @@ export function ChatPanel() {
           } else {
             // It is a final response part
             if (activeConversationId) {
-              addMessage(activeConversationId, {
+              mergeMessage(activeConversationId, {
                 role: 'assistant',
                 content: content.trim(),
               });
@@ -365,7 +366,7 @@ export function ChatPanel() {
               error: result.error
             } as any;
 
-            addMessage(activeConversationId, {
+            mergeMessage(activeConversationId, {
               role: 'assistant',
               content: '',
               toolCalls: [toolCallObj],
@@ -706,7 +707,7 @@ export function ChatPanel() {
             <p className="text-sm">Start a conversation to see agent activity here.</p>
           </div>
         ) : (
-          <div className="space-y-1">
+          <div className="space-y-1 w-full overflow-x-hidden min-w-0">
             {activeConversation.messages.map((message, i) => (
               <ChatMessage
                 key={message.id || i}
@@ -738,22 +739,33 @@ export function ChatPanel() {
                       const isFailed = tool.status === 'failed';
                       const isRunning = tool.status === 'running';
 
-                      const toolLabels: Record<string, string> = {
-                        'browser_navigate': 'Navigating',
-                        'browser_click': 'Clicking Element',
-                        'browser_type': 'Typing',
-                        'browser_scroll': 'Scrolling',
-                        'browser_snapshot': 'Snapshot',
-                        'browser_wait': 'Waiting',
-                        'x_search': 'Searching X',
-                        'x_like': 'Liking Post',
-                        'x_reply': 'Replying',
-                        'x_post': 'Posting',
-                        'x_engage': 'Engaging',
-                        'browser_get_visible_text': 'Read text',
+                      const getLiveToolLabel = (name: string) => {
+                        const labels: Record<string, string> = {
+                          'browser_navigate': 'Navigating',
+                          'browser_click': 'Clicking Element',
+                          'browser_type': 'Typing',
+                          'browser_scroll': 'Scrolling',
+                          'browser_snapshot': 'Snapshot',
+                          'browser_wait': 'Waiting',
+                          'x_search': 'Searching X',
+                          'x_like': 'Liking Post',
+                          'x_reply': 'Replying',
+                          'x_post': 'Posting',
+                          'x_engage': 'Engaging',
+                          'x_scan_posts': 'Scanning Posts',
+                          'browser_move_to_element': 'Focusing',
+                          'browser_get_visible_text': 'Read text',
+                        };
+                        if (labels[name]) return labels[name];
+                        return name
+                          .replace(/^browser_/, '')
+                          .replace(/^x_/, '')
+                          .split('_')
+                          .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+                          .join(' ');
                       };
 
-                      const label = toolLabels[tool.name] || tool.name;
+                      const label = getLiveToolLabel(tool.name);
 
                       return (
                         <div key={idx} className={cn(
@@ -872,11 +884,12 @@ export function ChatPanel() {
               placeholder="Message Reavion... (Use @ for variables)"
               className="w-full min-h-[44px] max-h-[200px] px-4 pt-3 pb-2 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0 scrollbar-thin scrollbar-thumb-muted-foreground/20"
             />
-            <div className="px-3 py-2 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">
-                <ModelSelector />
-                <MaxStepsSelector />
-                {/* TimerDisplay moved to header */}
+            <div className="px-3 py-2.5 flex items-end justify-between gap-2 border-t border-border/5">
+              <div className="flex flex-col gap-1.5 min-w-0 flex-1 overflow-hidden">
+                <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground/60">
+                  <ModelSelector />
+                  <MaxStepsSelector />
+                </div>
               </div>
               <div className="flex items-center">
                 {isStreaming ? (

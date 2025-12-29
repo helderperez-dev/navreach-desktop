@@ -1,14 +1,19 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, nativeImage } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupBrowserHandlers } from './ipc/browser';
 import { setupSettingsHandlers } from './ipc/settings';
 import { setupMCPHandlers } from './ipc/mcp';
 import { setupAIHandlers } from './services/ai';
+import { setupMenu } from './menu';
 import { config } from 'dotenv';
 
 // Load environment variables for Main process
 config();
+
+// Force app name for dev and production
+app.name = 'Reavion';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -29,6 +34,10 @@ function handleAuthRedirect(url: string): void {
 }
 
 function createWindow(): void {
+  const iconPath = is.dev
+    ? join(__dirname, '../../src/assets/icon.png')
+    : join(__dirname, '../renderer/assets/icon.png'); // Fallback for production
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -36,6 +45,7 @@ function createWindow(): void {
     minHeight: 700,
     show: false,
     frame: false,
+    icon: nativeImage.createFromPath(iconPath),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 16 },
     backgroundColor: '#0A0A0B',
@@ -48,13 +58,25 @@ function createWindow(): void {
     },
   });
 
+  // Setup application menu
+  setupMenu(mainWindow);
+
   mainWindow.on('ready-to-show', () => {
+    mainWindow?.maximize();
     mainWindow?.show();
   });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
     return { action: 'deny' };
+  });
+
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreen-change', true);
+  });
+
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow?.webContents.send('window:fullscreen-change', false);
   });
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -81,6 +103,9 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.reavion.app');
 
+    // Auto-updater
+    autoUpdater.checkForUpdatesAndNotify();
+
     app.on('browser-window-created', (_, window) => {
       optimizer.watchWindowShortcuts(window);
     });
@@ -103,7 +128,7 @@ if (!gotTheLock) {
     });
 
     ipcMain.handle('window:close', () => {
-      mainWindow?.close();
+      app.quit();
     });
 
     createWindow();
@@ -123,7 +148,6 @@ app.on('open-url', (event, url) => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  app.quit();
 });
+

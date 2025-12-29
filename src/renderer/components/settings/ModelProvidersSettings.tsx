@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Check, X, ChevronDown, ChevronRight, Sparkles, RefreshCw, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, X, ChevronDown, ChevronRight, Sparkles, RefreshCw, Loader2, Wifi } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -144,7 +144,10 @@ export function ModelProvidersSettings() {
   const [modelStates, setModelStates] = useState<Record<string, boolean>>({});
   const [availableModels, setAvailableModels] = useState<Record<string, ModelConfig[]>>(allModels);
   const [isFetchingModels, setIsFetchingModels] = useState(false);
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string; response?: string } | null>(null);
 
   useEffect(() => {
     loadSettings();
@@ -202,6 +205,34 @@ export function ModelProvidersSettings() {
       alert(error instanceof Error ? error.message : 'Failed to fetch models');
     } finally {
       setIsFetchingModels(false);
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!formData.apiKey) {
+      alert('API Key is required');
+      return;
+    }
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      // Construct a temporary provider object from form data
+      const tempProvider: ModelProvider = {
+        id: editingId || 'temp',
+        name: formData.name || 'Temp',
+        type: formData.type as any,
+        apiKey: formData.apiKey,
+        baseUrl: formData.baseUrl,
+        enabled: true,
+        models: formData.models || []
+      };
+
+      const result = await window.api.ai.testConnection(tempProvider);
+      setTestResult(result);
+    } catch (e: any) {
+      setTestResult({ success: false, message: e.message || String(e) });
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -511,10 +542,36 @@ export function ModelProvidersSettings() {
             </div>
           )}
 
+          {testResult && (
+            <div className={cn(
+              "p-3 rounded-lg text-sm flex items-start gap-2",
+              testResult.success ? "bg-green-500/10 text-green-500 border border-green-500/20" : "bg-destructive/10 text-destructive border border-destructive/20"
+            )}>
+              {testResult.success ? <Check className="h-4 w-4 mt-0.5" /> : <X className="h-4 w-4 mt-0.5" />}
+              <div>
+                <p className="font-medium">{testResult.success ? 'Connection Verified' : 'Connection Failed'}</p>
+                <p className="text-xs opacity-90 mt-1">{testResult.message}</p>
+                {testResult.response && (
+                  <p className="text-xs font-mono mt-1 opacity-75">Response: "{testResult.response}"</p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="ghost" size="sm" onClick={handleCancel}>
               <X className="h-4 w-4 mr-1" />
               Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleTestConnection}
+              disabled={isTesting || !formData.apiKey}
+            >
+              {isTesting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wifi className="h-4 w-4 mr-2" />}
+              Test Connection
             </Button>
             <Button size="sm" onClick={handleSave} disabled={enabledCount === 0 && formData.type !== 'custom'}>
               <Check className="h-4 w-4 mr-1" />

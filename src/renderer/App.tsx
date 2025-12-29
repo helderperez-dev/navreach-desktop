@@ -49,9 +49,34 @@ export function App() {
       }
     });
 
+    // Handle menu actions
+    const unsubscribeMenu = (window as any).api?.window?.onMenuAction((action: string) => {
+      console.log('[App] Menu action:', action);
+      switch (action) {
+        case 'new-chat':
+          // Reset chat or navigate to browser with fresh state
+          useAppStore.getState().setHasStarted(false);
+          useAppStore.getState().setActiveView('browser');
+          break;
+        case 'go-browser':
+          useAppStore.getState().setActiveView('browser');
+          break;
+        case 'go-playbooks':
+          useAppStore.getState().setActiveView('playbooks');
+          break;
+        case 'go-targets':
+          useAppStore.getState().setActiveView('targets');
+          break;
+        case 'go-settings':
+          useAppStore.getState().setActiveView('settings');
+          break;
+      }
+    });
+
     return () => {
       subscription.unsubscribe();
       unsubscribeAuth?.();
+      unsubscribeMenu?.();
     };
   }, []);
 

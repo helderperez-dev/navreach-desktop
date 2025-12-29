@@ -17,7 +17,9 @@ const BASE_SCRIPT_HELPERS = `
   }
 
   function wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
+    const adjustedMs = Math.round(ms * multiplier);
+    return new Promise((resolve) => setTimeout(resolve, adjustedMs));
   }
   
   async function safeClick(el, label) {

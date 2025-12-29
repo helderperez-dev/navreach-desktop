@@ -1,12 +1,13 @@
 
 import { useEffect, useState } from 'react';
 import { useReactFlow } from 'reactflow';
-import { Settings, Save, X, Play } from 'lucide-react';
+import { Settings, Save, X, Play, Layout as LayoutIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Field } from '@/components/ui/field';
 import { Playbook, PlaybookCapabilities, PlaybookExecutionDefaults } from '@/types/playbook';
 
@@ -17,17 +18,17 @@ interface PlaybookToolbarProps {
     onMetadataChange: (meta: Partial<Playbook>) => void;
     onSave: () => void;
     onBack: () => void;
-    onLayout?: () => void;
+    onLayout?: (direction: 'TB' | 'LR') => void;
     saving?: boolean;
 }
 
-import { Layout as LayoutIcon } from 'lucide-react';
+
 
 export function PlaybookToolbar({
     playbookName, onNameChange, playbook, onMetadataChange, onSave, onBack, onLayout, saving
 }: PlaybookToolbarProps) {
     const [localCapabilities, setLocalCapabilities] = useState<PlaybookCapabilities>({ browser: true, mcp: [], external_api: [] });
-    const [localDefaults, setLocalDefaults] = useState<PlaybookExecutionDefaults>({ mode: 'observe', require_approval: true });
+    const [localDefaults, setLocalDefaults] = useState<PlaybookExecutionDefaults>({ mode: 'observe', require_approval: true, speed: 'normal' });
 
     useEffect(() => {
         if (playbook.capabilities) setLocalCapabilities(playbook.capabilities);
@@ -86,6 +87,19 @@ export function PlaybookToolbar({
                                         </SelectContent>
                                     </Select>
                                 </Field>
+                                <Field label="Execution Speed">
+                                    <Select
+                                        value={localDefaults.speed || 'normal'}
+                                        onValueChange={(v: any) => setLocalDefaults(p => ({ ...p, speed: v }))}
+                                    >
+                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="slow">Slow (Steady)</SelectItem>
+                                            <SelectItem value="normal">Normal</SelectItem>
+                                            <SelectItem value="fast">Fast (Turbo)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </Field>
                                 <div className="flex items-center justify-between">
                                     <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">Require Approval</label>
                                     <Switch
@@ -116,10 +130,24 @@ export function PlaybookToolbar({
                 </Sheet>
 
                 {onLayout && (
-                    <Button variant="outline" size="sm" onClick={onLayout} title="Auto-organize graph">
-                        <LayoutIcon className="h-4 w-4 mr-2" />
-                        Auto Layout
-                    </Button>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="outline" size="sm" title="Auto-organize graph">
+                                <LayoutIcon className="h-4 w-4 mr-2" />
+                                Auto Layout
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuItem onClick={() => onLayout('TB')}>
+                                <LayoutIcon className="h-4 w-4 mr-2 rotate-180" />
+                                Vertical Layout
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => onLayout('LR')}>
+                                <LayoutIcon className="h-4 w-4 mr-2 -rotate-90" />
+                                Horizontal Layout
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 )}
 
                 <Button onClick={onSave} disabled={saving} size="sm">

@@ -77,6 +77,7 @@ declare global {
         stop: () => Promise<void>;
         onStreamChunk: (callback: (data: { content: string; done: boolean; toolCall?: any; toolResult?: any }) => void) => () => void;
         listWorkflows: () => Promise<{ name: string; path: string }[]>;
+        testConnection: (provider: import('@shared/types').ModelProvider, modelId?: string) => Promise<{ success: boolean; message: string; response?: string }>;
       };
       debug: {
         onLog: (callback: (data: { type: string; message: string; data?: any }) => void) => () => void;

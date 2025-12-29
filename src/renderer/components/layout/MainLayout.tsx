@@ -108,7 +108,7 @@ export function MainLayout() {
               {!chatPanelCollapsed && activeView === 'browser' && (
                 <div
                   onMouseDown={handleMouseDown}
-                  className="group relative w-px h-full cursor-col-resize flex-shrink-0 z-20 bg-border"
+                  className="group relative w-px h-full cursor-col-resize flex-shrink-0 z-20 bg-border/20"
                 >
                   {/* Expanded invisible hit area for easier grabbing */}
                   <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize z-30" />

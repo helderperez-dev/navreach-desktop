@@ -36,7 +36,7 @@ const initialCapabilities: PlaybookCapabilities = {
     mcp: [],
     external_api: []
 };
-const initialDefaults: PlaybookExecutionDefaults = { mode: 'observe', require_approval: true };
+const initialDefaults: PlaybookExecutionDefaults = { mode: 'observe', require_approval: true, speed: 'normal' };
 
 function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
@@ -73,7 +73,10 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                 setPlaybookName(data.name);
                 setDescription(data.description);
                 setCapabilities(data.capabilities);
-                setDefaults(data.execution_defaults);
+                setDefaults({
+                    ...data.execution_defaults,
+                    speed: data.execution_defaults?.speed || 'normal'
+                });
                 if (data.graph) {
                     setNodes(data.graph.nodes || []);
                     setEdges(data.graph.edges || []);
@@ -304,19 +307,25 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         };
     }, [onPaste, onCopy]);
 
-    const onLayout = useCallback(() => {
+    const onLayout = useCallback((direction: 'TB' | 'LR' = 'TB') => {
         const dagreGraph = new dagre.graphlib.Graph();
         dagreGraph.setDefaultEdgeLabel(() => ({}));
 
-        // Direction: 'TB' (Top-to-Bottom) is standard for logic flows
-        // Increased nodesep prevents crowding of parallel branches
-        dagreGraph.setGraph({ rankdir: 'TB', nodesep: 150, ranksep: 100 });
+        // Direction: 'TB' (Top-to-Bottom) or 'LR' (Left-to-Right)
+        // Increased separation to prevent overlapping
+        dagreGraph.setGraph({
+            rankdir: direction,
+            nodesep: 200,
+            ranksep: 150
+        });
 
         const nodeWidth = 240;
         const nodeHeight = 120;
 
         nodes.forEach((node) => {
-            dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+            const width = node.width || nodeWidth;
+            const height = node.height || nodeHeight;
+            dagreGraph.setNode(node.id, { width, height });
         });
 
         edges.forEach((edge) => {
@@ -328,40 +337,42 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         // 1. Apply new positions calculated by Dagre
         const layoutedNodes = nodes.map((node) => {
             const nodeWithPosition = dagreGraph.node(node.id);
+            const width = node.width || nodeWidth;
+            const height = node.height || nodeHeight;
             return {
                 ...node,
                 position: {
-                    x: nodeWithPosition.x - nodeWidth / 2,
-                    y: nodeWithPosition.y - nodeHeight / 2,
+                    x: nodeWithPosition.x - width / 2,
+                    y: nodeWithPosition.y - height / 2,
                 },
             };
         });
 
         setNodes(layoutedNodes);
 
-        // 2. Optimize connections for vertical flow
-        // Standardizing on 'bottom-source' -> 'top-target' creates clean vertical lines
+        // 2. Optimize connections based on direction
+        // We preserve specialized logic handles (like loop backs) to let ReactFlow find the path
         const layoutedEdges = edges.map(edge => {
-            // Check if this is a specialized handle from a Logic node (Loop, Condition)
             const isSpecializedHandle = edge.sourceHandle &&
                 ['true', 'false', 'loop', 'done', 'item'].includes(edge.sourceHandle);
 
-            if (isSpecializedHandle) {
-                return edge; // Preserve logic branch connections
-            }
+            // If it's a specialized Logic handle, we KEEP it as is. 
+            // The node component logic will render it on the Right usually.
+            if (isSpecializedHandle) return edge;
 
-            // For standard flow, enforce vertical connection points
+            // Otherwise, standardize for clean flow
+            const sourceHandle = direction === 'TB' ? 'bottom-source' : 'right-source';
+            const targetHandle = direction === 'TB' ? 'top-target' : 'left-target';
+
             return {
                 ...edge,
-                sourceHandle: 'bottom-source',
-                targetHandle: 'top-target',
-                type: 'smoothstep' // Ensure orthogonal routing
+                sourceHandle,
+                targetHandle,
+                type: 'smoothstep'
             };
         });
 
         setEdges(layoutedEdges);
-
-        // Fit view after layout
         setTimeout(() => reactFlowInstance?.fitView({ duration: 800 }), 50);
     }, [nodes, edges, reactFlowInstance, setNodes, setEdges]);
 

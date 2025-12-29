@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import reavionLogoWhite from '@assets/reavion-white.png';
 import reavionLogoBlack from '@assets/reavion-black.png';
 import { useAuthStore } from '@/stores/auth.store';
@@ -16,6 +17,14 @@ import { LogOut, Settings, User } from 'lucide-react';
 export function TitleBar() {
   const { user, signOut } = useAuthStore();
   const { setActiveView } = useAppStore();
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = (window as any).api?.window?.onFullScreenChange?.((fs: boolean) => {
+      setIsFullScreen(fs);
+    });
+    return () => unsubscribe?.();
+  }, []);
 
   const userInitials = user?.email
     ? user.email.split('@')[0].substring(0, 2).toUpperCase()
@@ -24,18 +33,18 @@ export function TitleBar() {
   const avatarUrl = user?.user_metadata?.avatar_url;
 
   return (
-    <div className="h-12 min-h-[48px] flex items-center justify-between bg-sidebar border-b border-border drag-region transition-colors duration-200">
+    <div className="h-12 min-h-[48px] flex items-center justify-between bg-sidebar border-b border-border/30 drag-region transition-colors duration-200">
       <div className="flex items-center gap-2 pl-6">
         <img
           src={reavionLogoWhite}
           alt="Reavion"
-          className="h-3 w-auto select-none ml-14 hidden dark:block"
+          className={`h-3 w-auto select-none transition-all duration-300 ease-in-out hidden dark:block ${isFullScreen ? 'ml-0' : 'ml-14'}`}
           draggable={false}
         />
         <img
           src={reavionLogoBlack}
           alt="Reavion"
-          className="h-3 w-auto select-none ml-14 block dark:hidden"
+          className={`h-3 w-auto select-none transition-all duration-300 ease-in-out block dark:hidden ${isFullScreen ? 'ml-0' : 'ml-14'}`}
           draggable={false}
         />
       </div>

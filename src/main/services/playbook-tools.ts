@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { supabase } from '../lib/supabase';
 
-export function createPlaybookTools(context?: { playbooks?: any[], supabaseClient?: any }): DynamicStructuredTool[] {
+export interface PlaybookToolsContext {
+    playbooks?: any[];
+    supabaseClient?: any;
+    onPlaybookLoaded?: (playbook: any) => void;
+}
+
+export function createPlaybookTools(context?: PlaybookToolsContext): DynamicStructuredTool[] {
     const supabaseClient = context?.supabaseClient || supabase;
 
     const getPlaybooksTool = new DynamicStructuredTool({
@@ -64,6 +70,7 @@ export function createPlaybookTools(context?: { playbooks?: any[], supabaseClien
                     const playbook = context.playbooks.find(p => p.id === id);
                     if (playbook) {
                         console.log('[Tool: db_get_playbook_details] Found in context');
+                        if (context?.onPlaybookLoaded) context.onPlaybookLoaded(playbook);
                         return JSON.stringify({ success: true, playbook });
                     }
                 }
@@ -83,6 +90,9 @@ export function createPlaybookTools(context?: { playbooks?: any[], supabaseClien
                     return JSON.stringify({ success: false, error: 'Playbook not found' });
                 }
 
+                if (data && context?.onPlaybookLoaded) {
+                    context.onPlaybookLoaded(data);
+                }
                 return JSON.stringify({ success: true, playbook: data });
             } catch (error: any) {
                 return JSON.stringify({ success: false, error: error.message || String(error) });

@@ -80,12 +80,13 @@ export const MentionInput = React.forwardRef<MentionInputRef, MentionInputProps>
         // Replace variables with tags
         const regex = /({{[a-zA-Z0-9_.-]+}})/g;
         return html.replace(regex, (match) => {
-            const innerMatch = match.match(/{{([a-z]+)\.([a-zA-Z0-9-]+)}}/);
+            // Match {{group.property}} where group can be a UUID or name, and property can have dots
+            const innerMatch = match.match(/{{([a-zA-Z0-9_-]+)\.([a-zA-Z0-9_.-]+)}}/);
             if (innerMatch) {
-                const [full, service, id] = innerMatch;
+                const [full, source, property] = innerMatch;
                 const variable = allVariables.find(v => v.value === full);
-                const label = variable ? variable.label : id;
-                const groupName = variable ? variable.groupName : service;
+                const label = variable ? variable.label : property;
+                const groupName = variable ? variable.groupName : source;
 
                 // We utilize data attributes to reconstruct the value later
                 return `<span data-variable="${full}" contenteditable="false" class="inline-flex items-center px-1.5 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-medium text-[0.9em] align-middle select-none"><span class="opacity-50 text-[9px] uppercase font-bold mr-1 pointer-events-none">${groupName}</span><span class="pointer-events-none">${label}</span></span>`;

@@ -77,12 +77,12 @@ export function TargetListSidebar() {
     return (
         <div
             className={cn(
-                "relative border-r border-border bg-card/30 flex flex-col h-full group/sidebar overflow-hidden shrink-0 transition-colors duration-300",
+                "relative border-r border-border/30 bg-card/10 flex flex-col h-full group/sidebar overflow-hidden shrink-0 transition-colors duration-300",
                 isResizingActive && "border-primary/50 bg-primary/5"
             )}
             style={{ width: `${width}px` }}
         >
-            <div className="p-4 border-b border-border flex items-center justify-between">
+            <div className="p-4 border-b border-border/30 flex items-center justify-between">
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground truncate">Lists</h2>
                 <Button
                     variant="ghost"
@@ -146,7 +146,7 @@ export function TargetListSidebar() {
                                     <div className="relative flex items-center justify-end w-14 h-7 flex-shrink-0 overflow-visible">
                                         {list.target_count !== undefined && (
                                             <span className={cn(
-                                                "px-2 py-0.5 text-[10px] font-bold bg-muted/60 border border-border rounded-md text-muted-foreground transition-all duration-300 whitespace-nowrap",
+                                                "px-2 py-0.5 text-[10px] font-bold bg-muted/40 border border-border/20 rounded-md text-muted-foreground transition-all duration-300 whitespace-nowrap",
                                                 "group-hover:bg-muted group-hover:text-foreground group-hover:-translate-x-8"
                                             )}>
                                                 {list.target_count}
