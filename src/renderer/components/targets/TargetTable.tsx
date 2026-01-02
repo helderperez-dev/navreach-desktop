@@ -273,7 +273,7 @@ export function TargetTable({
                             >
                                 {visibleColumns.name && (
                                     <td className="px-6 py-4 overflow-hidden">
-                                        <div className="font-medium text-sm text-foreground group-hover:text-primary transition-colors truncate">
+                                        <div className="font-medium text-sm text-foreground group-hover:text-foreground/80 transition-colors truncate">
                                             {target.name}
                                         </div>
                                     </td>
@@ -287,7 +287,7 @@ export function TargetTable({
                                     <td className="px-6 py-4 overflow-hidden">
                                         <span className={cn(
                                             "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider shrink-0",
-                                            target.type === 'profile' && "bg-primary/10 text-primary border border-primary/20",
+                                            target.type === 'profile' && "bg-muted text-foreground/80 border border-border",
                                             target.type === 'company' && "bg-purple-500/10 dark:text-purple-400 text-purple-600 border border-purple-500/20",
                                             target.type === 'post' && "bg-green-500/10 dark:text-green-400 text-green-600 border border-green-500/20",
                                             target.type === 'lead' && "bg-orange-500/10 dark:text-orange-400 text-orange-600 border border-orange-500/20",
@@ -304,12 +304,12 @@ export function TargetTable({
                                                 href={target.url}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-xs text-muted-foreground hover:text-primary transition-colors truncate min-w-0 flex-1"
+                                                className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate min-w-0 flex-1"
                                                 onClick={(e) => e.stopPropagation()}
                                             >
                                                 {target.url}
                                             </a>
-                                            <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity text-primary" />
+                                            <ExternalLink className="h-3 w-3 shrink-0 opacity-0 group-hover/link:opacity-100 transition-opacity text-foreground/70" />
                                         </div>
                                     </td>
                                 )}

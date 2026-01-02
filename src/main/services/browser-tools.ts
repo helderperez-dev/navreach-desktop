@@ -1,5 +1,6 @@
 import { webContents, BrowserWindow } from 'electron';
 import { z } from 'zod';
+import * as cheerio from 'cheerio';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { createSiteTools } from './site-tools';
 
@@ -27,10 +28,131 @@ export function isNavigationBlocked(): boolean {
   return false; // Never blocked
 }
 
+// Recording State
+const recordingTabs = new Set<string>();
+
+const RECORDING_SCRIPT = `
+(function() {
+  if (window.__REAVION_RECORDER_ACTIVE__) return;
+  window.__REAVION_RECORDER_ACTIVE__ = true;
+
+  function generateSelector(element) {
+    const testId = element.getAttribute('data-testid');
+    if (testId) return '[data-testid="' + testId + '"]';
+    if (element.id) return '#' + element.id;
+    const ariaLabel = element.getAttribute('aria-label');
+    if (ariaLabel) return '[aria-label="' + ariaLabel + '"]';
+    
+    if (element.tagName.toLowerCase() === 'input') {
+        const placeholder = element.getAttribute('placeholder');
+        if (placeholder) return 'input[placeholder="' + placeholder + '"]';
+        const name = element.getAttribute('name');
+        if (name) return 'input[name="' + name + '"]';
+    }
+    
+    if (element.tagName.toLowerCase() === 'button') {
+        const text = element.textContent?.trim();
+        // Safe check for text content to be used in :contains
+        if (text && text.length < 50 && !text.includes('"')) return 'button:contains("' + text + '")';
+    }
+
+    // Simple path fallback
+    let path = [];
+    let current = element;
+    while (current && current.nodeType === 1) {
+      let selector = current.tagName.toLowerCase();
+      if (current.id) {
+        selector += '#' + current.id;
+        path.unshift(selector);
+        break;
+      }
+      if (current.currentStyle && current.className) {
+        // clean class name
+      }
+      path.unshift(selector);
+      current = current.parentElement;
+    }
+    return path.join(' > ');
+  }
+
+  function handleEvent(event) {
+    const target = event.target;
+    // skip our own overlay elements
+    if (target.id && (target.id.startsWith('reavion-') || target.closest('#reavion-marks-container') || target.closest('#reavion-grid-overlay'))) return;
+
+    const selector = generateSelector(target);
+    const timestamp = Date.now();
+
+    const data = {
+        type: event.type === 'input' || event.type === 'change' ? 'type' : 'click',
+        selector: selector,
+        url: window.location.href,
+        tagName: target.tagName,
+        text: target.textContent ? target.textContent.slice(0, 50) : '',
+        value: target.value,
+        timestamp: timestamp
+    };
+    
+    // Log with prefix for main process detection
+    console.log('REAVION_RECORDING:' + JSON.stringify(data));
+  }
+
+  document.addEventListener('click', handleEvent, true);
+  document.addEventListener('change', handleEvent, true);
+  
+  // Navigation tracking
+  // We can't easily capture "will navigate" from here for SPA, but popstate/hashchange helps
+  window.addEventListener('popstate', () => {
+    console.log('REAVION_RECORDING:' + JSON.stringify({ type: 'navigation', url: window.location.href, timestamp: Date.now() }));
+  });
+  
+  // Initial nav
+  console.log('REAVION_RECORDING:' + JSON.stringify({ type: 'navigation', url: window.location.href, timestamp: Date.now() }));
+  
+  console.log('Reavion Recorder Active');
+})();
+`;
+
+export async function startRecording(tabId: string) {
+  recordingTabs.add(tabId);
+  const contents = getWebviewContents(tabId);
+  if (contents) {
+    try {
+      await contents.executeJavaScript(RECORDING_SCRIPT);
+    } catch (e) {
+      console.error('Failed to inject recorder script:', e);
+    }
+  }
+}
+
+export function stopRecording(tabId: string) {
+  recordingTabs.delete(tabId);
+  const contents = getWebviewContents(tabId);
+  if (contents) {
+    // We can't easily remove event listeners without storing refs in the page context.
+    // For now, checking the Set in the main process is enough to stop forwarding events, 
+    // even if the script continues running (it's lightweight).
+    // Or we could inject a cleanup script if we stored the listener functions globally.
+    contents.executeJavaScript('window.__REAVION_RECORDER_ACTIVE__ = false;').catch(() => { });
+  }
+}
+
 const consoleLogs = new Map<string, string[]>();
 
 export function registerWebviewContents(tabId: string, contents: Electron.WebContents) {
   webviewContents.set(tabId, contents);
+
+  // Inject black and white border cursor styles
+  contents.on('did-finish-load', () => {
+    contents.insertCSS(`
+      * {
+        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='black' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E") 0 0, auto !important;
+      }
+      a, button, [role="button"], input[type="button"], input[type="submit"] {
+        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='black' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E") 0 0, pointer !important;
+      }
+    `);
+  });
 
   // Initialize logs
   if (!consoleLogs.has(tabId)) {
@@ -39,6 +161,24 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
 
   // Capture console logs
   contents.on('console-message', (event, level, message, line, sourceId) => {
+    // Check for recording events
+    if (message.startsWith('REAVION_RECORDING:')) {
+      if (recordingTabs.has(tabId)) {
+        try {
+          const jsonStr = message.replace('REAVION_RECORDING:', '');
+          const eventData = JSON.parse(jsonStr);
+          // Send to renderer (Playbook Editor)
+          const windows = BrowserWindow.getAllWindows();
+          if (windows.length > 0) {
+            windows[0].webContents.send('recorder:action', eventData);
+          }
+        } catch (e) {
+          console.error('Failed to parse recording event:', e);
+        }
+      }
+      return; // Don't log internal recording messages to the generic console log
+    }
+
     const logs = consoleLogs.get(tabId) || [];
     const logEntry = `[${level === 0 ? 'LOG' : level === 1 ? 'WARN' : level === 2 ? 'ERROR' : 'INFO'}] ${message}`; // Simplified for token efficiency
     logs.push(logEntry);
@@ -50,6 +190,12 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
   // Just log for debugging purposes
   contents.on('will-navigate', (_event, url) => {
     console.log('Navigation to:', url);
+    if (recordingTabs.has(tabId)) {
+      const windows = BrowserWindow.getAllWindows();
+      if (windows.length > 0) {
+        windows[0].webContents.send('recorder:action', { type: 'navigation', url, timestamp: Date.now() });
+      }
+    }
   });
 }
 
@@ -68,7 +214,15 @@ export function getWebviewContents(tabId: string): Electron.WebContents | undefi
 const TAB_ID = 'main-tab';
 
 const SCRIPT_HELPERS = `
-  const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms * (window.__REAVION_SPEED_MULTIPLIER__ || 1.0)));
+  const wait = (ms) => {
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
+    const isFast = multiplier < 1.0;
+    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter, but scale down for FAST mode
+    const randomFactor = isFast ? (0.9 + Math.random() * 0.2) : (0.75 + (Math.random() * 0.5)); 
+    const jitter = Math.random() * (isFast ? 30 : 100);
+    const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
+    return new Promise(resolve => setTimeout(resolve, adjustedMs));
+  };
 `;
 
 function getContents(): Electron.WebContents {
@@ -146,34 +300,6 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         const result = await contents.executeJavaScript(`
           (async function() {
             ${SCRIPT_HELPERS}
-            const host = window.location.hostname || '';
-            const xDomain = host.includes('x.com') || host.includes('twitter.com');
-            let element = null;
-            const selectorStr = '${selector.replace(/'/g, "\\'")}';
-            const targetIndex = ${targetIndex};
-            
-            // Helper function to handle :contains() pseudo-selector (jQuery-style)
-            function querySelectorWithContains(root, sel) {
-              if (!sel) return null;
-              const selStr = String(sel).trim();
-              
-              // Handle numeric IDs from browser_mark_page
-              if (/^\\d+$/.test(selStr)) {
-                return root.querySelector('[data-reavion-id="' + selStr + '"]');
-              }
-
-              const containsMatch = selStr.match(/^(.+?):contains\\("([^"]+)"\\)$/);
-              if (containsMatch) {
-                const baseSelector = containsMatch[1];
-                const textToFind = containsMatch[2];
-                const candidates = root.querySelectorAll(baseSelector);
-                for (const el of candidates) {
-                  if (el.textContent && el.textContent.includes(textToFind)) {
-                    return el;
-                  }
-                }
-                return null;
-              }
               // Standard selector
               try {
                 return root.querySelector(selStr);
@@ -188,12 +314,12 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
               const selStr = String(sel).trim();
 
               // Handle numeric IDs from browser_mark_page
-              if (/^\\d+$/.test(selStr)) {
+              if (/^\d+$/.test(selStr)) {
                 const el = root.querySelector('[data-reavion-id="' + selStr + '"]');
                 return el ? [el] : [];
               }
 
-              const containsMatch = selStr.match(/^(.+?):contains\\("([^"]+)"\\)$/);
+              const containsMatch = selStr.match(/^(.+?):contains\("([^"]+)"\)$/);
               if (containsMatch) {
                 const baseSelector = containsMatch[1];
                 const textToFind = containsMatch[2];
@@ -238,11 +364,19 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             
             if (!element) return { success: false, error: 'Element not found: ${selector}' + (targetIndex > 0 ? ' at index ' + targetIndex : '') };
             
-            // Scroll element into view so user can see the interaction
-            element.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
+            // Human-like scroll
+            const rectBefore = element.getBoundingClientRect();
+            if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+              await wait(600);
+            } else {
+              // already visible, maybe micro scroll
+              element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+              await wait(300);
+            }
             
             // Brief wait for scroll to settle
-            await wait(100);
+            await wait(200);
             
             // Get element position after scroll
             const rect = element.getBoundingClientRect();
@@ -303,7 +437,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             
             // Create ripple effect
             const ripple = document.createElement('div');
-            ripple.style.cssText = 'position:fixed;z-index:999998;pointer-events:none;width:40px;height:40px;border-radius:50%;background:rgba(139,92,246,0.3);animation:reavionRipple 0.8s ease-out forwards;';
+            ripple.style.cssText = 'position:fixed;z-index:999998;pointer-events:none;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,0.2);border: 1px solid rgba(255,255,255,0.4);animation:reavionRipple 0.8s ease-out forwards;';
             ripple.style.left = x + 'px';
             ripple.style.top = y + 'px';
             document.body.appendChild(ripple);
@@ -318,7 +452,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             indicator.id = 'reavion-pointer';
             indicator.innerHTML = \`
               <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="rgba(80, 80, 80, 0.95)" stroke="white" stroke-width="1.5"/>
+                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="black" stroke="white" stroke-width="2"/>
               </svg>
             \`;
             
@@ -380,8 +514,15 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
             if (!element) return { success: false, error: 'Element not found: ' + selStr };
             
-            element.scrollIntoView({ behavior: 'instant', block: 'center' });
-            element.scrollIntoView({ behavior: 'instant', block: 'center' });
+            // Human-like scroll
+            const rectBefore = element.getBoundingClientRect();
+            if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
+                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                 await wait(600);
+            } else {
+                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                 await wait(300);
+            }
             // contenteditable requires focus for execCommand to work on the right element
             
             let editableEl = element;
@@ -417,68 +558,57 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     schema: z.object({
       direction: z.enum(['up', 'down']).describe('Direction to scroll'),
       amount: z.number().describe('Amount to scroll in pixels (e.g., 500)'),
+      behavior: z.enum(['auto', 'smooth']).optional().describe('Scroll behavior. Smooth is recommended for user feedback.'),
     }),
-    func: async ({ direction, amount }) => {
+    func: async ({ direction, amount, behavior = 'smooth' }) => {
       try {
         const contents = getContents();
         const scrollAmount = direction === 'down' ? amount : -amount;
 
         const result = await contents.executeJavaScript(`
-          (function() {
+          (async function() {
             const amount = ${scrollAmount};
+            const behavior = '${behavior}';
             
-            // Helper to get scroll definition
-            function isScrollable(el) {
-                const style = window.getComputedStyle(el);
-                const isScrollable = (style.overflowY === 'auto' || style.overflowY === 'scroll');
-                const hasScrollSpace = el.scrollHeight > el.clientHeight;
-                return isScrollable && hasScrollSpace;
-            }
+            // Try window and document root (Nuclear Option: one of these usually works)
+            window.scrollBy({ top: amount, behavior });
+            if (document.documentElement) document.documentElement.scrollBy({ top: amount, behavior });
+            if (document.body) document.body.scrollBy({ top: amount, behavior });
 
-            // 1. Try Window Scroll first
-            const startY = window.scrollY;
-            window.scrollBy(0, amount);
-            const endY = window.scrollY;
-            
-            if (Math.abs(endY - startY) > 0) {
-                return { success: true, message: 'Scrolled window by ' + amount + 'px' };
-            }
-            
-            // 2. Window didn't scroll. Find the best scrollable container.
-            // Heuristic: Largest visible scrollable element is usually the main feed.
-            const allElements = document.querySelectorAll('*');
-            let bestContainer = null;
-            let maxArea = 0;
-            
-            for (const el of allElements) {
-                if (isScrollable(el)) {
-                    const rect = el.getBoundingClientRect();
-                    // Must be visible
-                    if (rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth) {
-                        const area = rect.width * rect.height;
-                        if (area > maxArea) {
-                            maxArea = area;
-                            bestContainer = el;
-                        }
-                    }
+            // Find scrollable containers (Common in complex SPAs like X.com)
+            const elements = Array.from(document.querySelectorAll('div, section, main, [role="main"], article'));
+            const containers = elements.filter(el => {
+                const style = window.getComputedStyle(el);
+                const overflow = style.overflowY || style.overflow || '';
+                // Check if it's explicitly scrollable or has obvious scroll space
+                const isScrollable = (overflow === 'auto' || overflow === 'scroll');
+                const hasSpace = el.scrollHeight > el.clientHeight + 20;
+                const isVisible = el.offsetWidth > 0 && el.offsetHeight > 0;
+                return isVisible && hasSpace && (isScrollable || el.tagName === 'MAIN');
+            });
+
+            // Scroll the largest detected container as well
+            if (containers.length > 0) {
+                containers.sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight));
+                const best = containers[0];
+                best.scrollBy({ top: amount, behavior });
+                
+                // If it's still not moving and behavior is auto, try manual offset
+                if (behavior === 'auto') {
+                  const prev = best.scrollTop;
+                  setTimeout(() => {
+                    if (best.scrollTop === prev) best.scrollTop += amount;
+                  }, 50);
                 }
             }
             
-            if (bestContainer) {
-                bestContainer.scrollBy({ top: amount, behavior: 'smooth' }); // Smooth for visual feedback
-                return { success: true, message: 'Scrolled container ' + (bestContainer.className || bestContainer.tagName) + ' by ' + amount + 'px' };
-            }
-            
-            // 3. Fallback: Try specific known containers for common sites if general heuristic fails
-            // X.com usually uses [data-testid="primaryColumn"] or section
-            // But usually the loop above catches it.
-            
-            return { success: false, error: 'No scrollable element found.' };
+            return { success: true, message: 'Scroll command sent to all targets' };
           })()
         `);
 
-        // Wait a bit if we did smooth scrolling
-        await new Promise(resolve => setTimeout(resolve, 500));
+        // Wait significantly for the animation to be visible
+        const waitTime = behavior === 'smooth' ? 1200 : 400;
+        await new Promise(resolve => setTimeout(resolve, waitTime));
 
         return JSON.stringify(result);
       } catch (error) {
@@ -486,6 +616,9 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       }
     },
   });
+
+
+
 
   const snapshotTool = new DynamicStructuredTool({
     name: 'browser_dom_snapshot',
@@ -572,12 +705,6 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                         if (node.disabled) state.push('disabled');
                         if (node.required) state.push('required');
                         if (node.checked) state.push('checked');
-
-                        // X-specific engagement detection
-                        if (window.location.hostname.includes('x.com')) {
-                           if (testId === 'unlike') state.push('engaged', 'liked');
-                           if (testId === 'unretweet') state.push('engaged', 'retweeted');
-                        }
 
                         const elData = {
                             id: i,
@@ -811,21 +938,15 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             if (!pointer) {
               pointer = document.createElement('div');
               pointer.id = 'reavion-pointer';
-              const uniqueId = 'mouse-' + Date.now();
-              pointer.innerHTML = \`
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#\${uniqueId})" stroke="white" stroke-width="1.5"/>
-                  <defs>
-                    <linearGradient id="\${uniqueId}" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse">
-                      <stop offset="0%" stop-color="#8b5cf6"/>
-                      <stop offset="100%" stop-color="#7c3aed"/>
-                    </linearGradient>
-                  </defs>
-                </svg>
-              \`;
               pointer.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);';
               document.body.appendChild(pointer);
             }
+            // Always update visual style to clear any cached purple versions
+            pointer.innerHTML = \`
+              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="black" stroke="white" stroke-width="2"/>
+              </svg>
+            \`;
 
             pointer.style.left = x + 'px';
             pointer.style.top = y + 'px';
@@ -834,7 +955,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
             // Brief Highlight
             const originalOutline = element.style.outline;
-            element.style.outline = '2px dashed rgba(139, 92, 246, 0.5)';
+            element.style.outline = '2px dashed rgba(255, 255, 255, 0.8)';
             element.style.outlineOffset = '2px';
             setTimeout(() => { element.style.outline = originalOutline; }, 1000);
 
@@ -1154,6 +1275,47 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             })()
           `);
           return JSON.stringify({ success: true, message: 'Grid overlay drawn. Use coordinates to click.' });
+        } catch (e) {
+          return JSON.stringify({ success: false, error: String(e) });
+        }
+      }
+    }),
+
+
+
+    new DynamicStructuredTool({
+      name: 'browser_scrape_html',
+      description: 'Scrape the current page HTML using Cheerio. Use this for rigorous data extraction, analyzing the full DOM structure, or finding specific information that might be hidden or complex.',
+      schema: z.object({
+        selector: z.string().describe('CSS selector to target specific elements. Default is "body".').default('body'),
+        attribute: z.string().optional().describe('Attribute to extract (e.g. "href", "src"). If omitted, extracts text content.')
+      }),
+      func: async ({ selector, attribute }) => {
+        const contents = getContents();
+        try {
+          // Get full HTML
+          const html = await contents.executeJavaScript('document.documentElement.outerHTML');
+          const $ = cheerio.load(html);
+
+          const results: string[] = [];
+          const sel = selector || 'body';
+
+          $(sel).each((_, el) => {
+            if (attribute) {
+              const val = $(el).attr(attribute);
+              if (val) results.push(val.trim());
+            } else {
+              // Get text, collapse whitespace
+              const text = $(el).text().replace(/\s+/g, ' ').trim();
+              if (text) results.push(text);
+            }
+          });
+
+          return JSON.stringify({
+            success: true,
+            count: results.length,
+            results: results.slice(0, 50) // Limit results
+          });
         } catch (e) {
           return JSON.stringify({ success: false, error: String(e) });
         }

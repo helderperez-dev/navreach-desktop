@@ -13,6 +13,7 @@ interface ChatState {
   agentStartTime: number | null;
   agentRunLimit: number | null; // in minutes
   currentSessionTime: number; // in seconds
+  pendingPrompt: string | { content: string, isIsolated?: boolean, playbookId?: string } | null;
   createConversation: () => string;
   setActiveConversation: (id: string | null) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => void;
@@ -28,6 +29,7 @@ interface ChatState {
   setAgentStartTime: (time: number | null) => void;
   setAgentRunLimit: (min: number | null) => void;
   setCurrentSessionTime: (sec: number) => void;
+  setPendingPrompt: (prompt: string | { content: string, isIsolated?: boolean, playbookId?: string } | null) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -37,11 +39,12 @@ export const useChatStore = create<ChatState>()(
       activeConversationId: null,
       selectedModel: null,
       isStreaming: false,
-      maxIterations: 10,
+      maxIterations: 30,
       infiniteMode: false,
       agentStartTime: null,
       agentRunLimit: null,
       currentSessionTime: 0,
+      pendingPrompt: null,
 
       createConversation: () => {
         const id = uuidv4();
@@ -112,18 +115,45 @@ export const useChatStore = create<ChatState>()(
               const newContent = messageUpdate.content !== undefined ? messageUpdate.content : '';
               const existingContent = lastMsg.content || '';
 
-              // To prevent duplication while allowing normal streaming:
-              // For assistant messages, we check if the new content is already a suffix or repeating
-              const isChunk = newContent.length < 15;
-              const isAssistant = lastMsg.role === 'assistant';
-              const isDuplicate = !isChunk && (existingContent.endsWith(newContent) || existingContent.includes(newContent));
-              const shouldAppend = newContent && !isDuplicate;
+              // Robust De-duplication Logic
+              const normalizedNew = newContent.trim();
+              const normalizedExisting = existingContent.trim();
+
+              // 1. Skip empty updates if they aren't tool calls
+              const isTextUpdate = newContent.length > 0;
+              const hasTools = (messageUpdate.toolCalls?.length || 0) > 0 || (messageUpdate.toolResults?.length || 0) > 0;
+
+              let shouldAppend = true;
+
+              if (isTextUpdate && lastMsg.role === 'assistant') {
+                // A. Exact suffix check (fastest)
+                if (existingContent.endsWith(newContent)) {
+                  shouldAppend = false;
+                }
+                // B. Trimmed suffix check (ignores trailing whitespace differences)
+                else if (normalizedNew.length > 5 && normalizedExisting.endsWith(normalizedNew)) {
+                  shouldAppend = false;
+                }
+                // C. Large block repetition check (prevents paragraph duplication)
+                // Only apply if the new content is substantial (>20 chars) to avoid blocking common words
+                else if (normalizedNew.length > 20 && normalizedExisting.includes(normalizedNew)) {
+                  shouldAppend = false;
+                }
+              }
+
+              // Calculate separator (add space if joining words, but not if starts/ends with whitespace)
+              const needsSpace = shouldAppend && isTextUpdate &&
+                existingContent.length > 0 &&
+                !existingContent.match(/\s$/) &&
+                !newContent.match(/^\s/);
+
+              const finalContent = shouldAppend
+                ? (existingContent + (needsSpace ? ' ' : '') + newContent)
+                : existingContent;
 
               const updatedLastMsg = {
                 ...lastMsg,
-                content: shouldAppend
-                  ? (existingContent + (isChunk || existingContent.endsWith(' ') || existingContent.endsWith('\t') || existingContent.endsWith('\n') ? '' : ' ') + newContent)
-                  : existingContent,
+                content: finalContent,
                 toolCalls: [
                   ...(lastMsg.toolCalls || []),
                   ...(messageUpdate.toolCalls || [])
@@ -180,13 +210,14 @@ export const useChatStore = create<ChatState>()(
       },
 
       setMaxIterations: (value) =>
-        set({ maxIterations: Math.min(Math.max(Math.round(value) || 1, 1), 50) }),
+        set({ maxIterations: Math.min(Math.max(Math.round(value) || 1, 1), 100) }),
 
       setInfiniteMode: (value) => set({ infiniteMode: value }),
 
       setAgentStartTime: (time) => set({ agentStartTime: time }),
       setAgentRunLimit: (min) => set({ agentRunLimit: min }),
       setCurrentSessionTime: (sec) => set({ currentSessionTime: sec }),
+      setPendingPrompt: (prompt) => set({ pendingPrompt: prompt }),
     }),
     {
       name: 'reavion-chat-store',

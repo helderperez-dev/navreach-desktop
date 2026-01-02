@@ -1,5 +1,10 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { cn } from '@/lib/utils';
+import { motion, AnimatePresence } from 'framer-motion';
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import ReactFlow, {
     Background,
     Controls,
@@ -17,6 +22,10 @@ import { toast } from 'sonner';
 
 import { Playbook, PlaybookCapabilities, PlaybookExecutionDefaults } from '@/types/playbook';
 import { playbookService } from '@/services/playbookService';
+import { useAppStore } from '@/stores/app.store';
+import { useChatStore } from '@/stores/chat.store';
+import { useBrowserStore } from '@/stores/browser.store';
+import { useSettingsStore } from '@/stores/settings.store';
 import { NodePalette } from './NodePalette';
 import { PlaybookToolbar } from './PlaybookToolbar';
 import { NodeConfigPanel } from './NodeConfigPanel';
@@ -51,6 +60,15 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
     const [selectedNode, setSelectedNode] = useState<any>(null);
     const [saving, setSaving] = useState(false);
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+    const [executionLogs, setExecutionLogs] = useState<{ id: string, msg: string, type: 'info' | 'success' | 'error' | 'running', time: string, timestamp: number }[]>([]);
+    const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB');
+    const isRunning = useChatStore(s => s.isStreaming);
+    const nodesRef = useRef(nodes);
+    useEffect(() => {
+        nodesRef.current = nodes;
+    }, [nodes]);
+
 
     useEffect(() => {
         if (playbookId) {
@@ -66,6 +84,262 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         }
     }, [playbookId]);
 
+    const edgesRef = useRef(edges);
+    useEffect(() => {
+        edgesRef.current = edges;
+    }, [edges]);
+
+    const lastActiveNodeRef = useRef<string | null>(null);
+
+    // Playbook Execution Status Listener
+    useEffect(() => {
+        if (!window.api.ai.onPlaybookStatus) return;
+
+        const cleanup = window.api.ai.onPlaybookStatus((data) => {
+            // CRITICAL: Ignore updates if we are not actively streaming/running
+            if (!useChatStore.getState().isStreaming) {
+                console.warn('[PlaybookEditor] Ignoring status update after stop:', data);
+                return;
+            }
+
+            // Helper to get all descendant node IDs (to reset them when a parent re-runs)
+            const getDescendants = (nodeId: string, currentEdges: Edge[]): string[] => {
+                const descendants: string[] = [];
+                const queue = [nodeId];
+                const visited = new Set<string>();
+
+                while (queue.length > 0) {
+                    const currentId = queue.shift()!;
+                    if (visited.has(currentId)) continue;
+                    visited.add(currentId);
+
+                    const children = currentEdges
+                        .filter(e => e.source === currentId)
+                        .map(e => e.target);
+
+                    for (const childId of children) {
+                        if (!visited.has(childId)) {
+                            // Don't include the starting node itself in descendants 
+                            if (childId !== nodeId) {
+                                descendants.push(childId);
+                            }
+                            queue.push(childId);
+                        }
+                    }
+                }
+                return descendants;
+            };
+
+            // 1. Update Nodes visually
+            setNodes((nds) => {
+                // Use ref for edges to avoid stale closure without effect re-run
+                const currentEdges = edgesRef.current;
+                const descendantIds = data.status === 'running' ? getDescendants(data.nodeId, currentEdges) : [];
+
+                return nds.map((node) => {
+                    // Update the target node
+                    if (node.id === data.nodeId) {
+                        const isLoop = node.type === 'loop';
+                        const currentCount = node.data?.loopCount || 0;
+                        const newCount = (isLoop && data.status === 'running') ? currentCount + 1 : currentCount;
+
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                executionStatus: data.status,
+                                executionMessage: data.message,
+                                loopCount: newCount
+                            }
+                        };
+                    }
+
+                    // Reset descendants if parent is starting over
+                    if (descendantIds.includes(node.id)) {
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                executionStatus: undefined,
+                                executionMessage: undefined
+                                // We purposefully DON'T reset loopCount here 
+                            }
+                        };
+                    }
+
+                    return node;
+                });
+            });
+
+            // 2. Update Edges to show active path
+            // We use lastActiveNodeRef to know where we came from, resolving ambiguity in loops.
+            const sourceNodeId = lastActiveNodeRef.current;
+
+            // If this node is "running", highlight the path TO it.
+            if (data.status === 'running') {
+                setEdges((eds) => eds.map((edge) => {
+                    // Logic: Highlight if this edge connects Previous -> Current
+                    const isTraversedPath = edge.target === data.nodeId && edge.source === sourceNodeId;
+
+                    // FALLBACK: If sourceNodeId is null, this is the first node of the run.
+                    // We highlight ANY incoming edge to this node since we're just starting.
+                    const isFirstPath = sourceNodeId === null && edge.target === data.nodeId;
+
+                    const isActive = isTraversedPath || isFirstPath;
+
+                    if (isActive) {
+                        return {
+                            ...edge,
+                            animated: true,
+                            style: { ...edge.style, strokeDasharray: '5,5', strokeWidth: 3, stroke: '#3b82f6' } // Blue active
+                        };
+                    }
+
+                    // Reset others for clarity as requested
+                    return {
+                        ...edge,
+                        animated: false,
+                        style: { ...edge.style, strokeDasharray: undefined, strokeWidth: 2, stroke: undefined }
+                    };
+                }));
+
+                // Update the ref for next step
+                lastActiveNodeRef.current = data.nodeId;
+            }
+
+            // 3. Add to Logs
+            if (data.message || data.status) {
+                const type = data.status;
+                const nodeLabel = nodesRef.current.find(n => n.id === data.nodeId)?.data?.label || data.nodeId;
+                const logMsg = data.message || (data.status === 'running' ? `Starting ${nodeLabel}...` : `${nodeLabel}: ${data.status}`);
+
+                setExecutionLogs(prev => [
+                    { id: uuidv4(), msg: logMsg, type, time: '', timestamp: Date.now() },
+                    ...prev.slice(0, 99)
+                ]);
+            }
+        });
+
+        return cleanup;
+    }, [setNodes, setEdges, nodesRef]); // Removed 'edges' to prevent re-subscribe on every animation frame
+
+
+    // Narration stream listener for isolated playbook runs
+    useEffect(() => {
+        if (!isRunning) return;
+
+        let currentNarration = '';
+        const cleanup = window.api.ai.onStreamChunk((data) => {
+            if (data.content) {
+                currentNarration += data.content;
+            }
+            if (data.done || data.toolCall) {
+                if (currentNarration.trim()) {
+                    setExecutionLogs(prev => [
+                        {
+                            id: uuidv4(),
+                            msg: `Agent: ${currentNarration.trim()}`,
+                            type: 'info',
+                            time: '',
+                            timestamp: Date.now()
+                        },
+                        ...prev.slice(0, 99)
+                    ]);
+                    currentNarration = '';
+                }
+            }
+        });
+        return cleanup;
+    }, [isRunning]);
+
+    // Recording Listener
+    useEffect(() => {
+        const removeListener = window.api.browser.onRecordingAction((action: any) => {
+            if (!capabilities.browser) return; // Ignore if browser capability disabled? Or maybe just allow it.
+
+            // Only handle if we have a valid action
+            if (!action || !action.type) return;
+
+            // Determine node type
+            let nodeType: PlaybookNodeType | null = null;
+            let nodeLabel = '';
+            let config: any = {};
+
+            if (action.type === 'click') {
+                nodeType = 'browser_click';
+                nodeLabel = `Click ${action.tagName.toLowerCase()}`;
+                config = { selector: action.selector };
+                if (action.text) nodeLabel += ` "${action.text}"`;
+            } else if (action.type === 'type') {
+                nodeType = 'browser_type';
+                nodeLabel = `Type "${action.value}"`;
+                config = { selector: action.selector, text: action.value };
+            } else if (action.type === 'navigation') {
+                // Optional: Don't record every nav, maybe just the first one or explicit ones?
+                // For now, let's record it.
+                nodeType = 'browser_navigate';
+                nodeLabel = `Navigate`;
+                config = { url: action.url };
+            }
+
+            if (!nodeType) return;
+
+            setNodes((currentNodes) => {
+                // Find insertion point: 
+                // 1. Selected node?
+                // 2. Last added node?
+                // 3. End node (insert before it)?
+
+                // Simple strategy: Append to the "last" node that isn't 'end', or the selected node.
+                // For a straight line recording, we want to chain them.
+
+                const lastNode = currentNodes.length > 0 ? currentNodes[currentNodes.length - 2] : null; // Assumes End is last? No, order varies.
+
+                // Better: Use selectedNode if present, else find the node with no outgoing edges (excluding End).
+                // But we don't have edges in this callback scope easily without prop drilling or state ref.
+                // "nodes" in useNodesState is fresh here thanks to setNodes callback.
+
+                // Let's create the new node first
+                const newNodeId = uuidv4();
+
+                // Position? Just offset from the last one or default. Auto-layout will fix it.
+                // Or try to place it sensibly.
+                const lastPos = currentNodes[currentNodes.length - 1]?.position || { x: 0, y: 0 };
+
+                const newNode = {
+                    id: newNodeId,
+                    type: nodeType,
+                    position: { x: lastPos.x + 50, y: lastPos.y + 50 },
+                    data: { label: nodeLabel, config },
+                    selected: true
+                };
+
+                // Deselect others
+                const updatedNodes = currentNodes.map(n => ({ ...n, selected: false }));
+                return [...updatedNodes, newNode];
+            });
+
+            setEdges((currentEdges) => {
+                const currentNodes = nodes; // CAUTION: stale closure potentially? No, logic above uses callback. 
+                // But here we need "the node we just appended to".
+                // This is tricky with separate setNodes/setEdges.
+
+                // Let's rely on a helper or Ref to track "lastAddedNodeId" for recording session?
+                // Or just scan the graph.
+                return currentEdges; // Placeholder: Edges need logic
+            });
+
+            // Re-think: We need atomic update or access to latest state.
+            // Using a func inside is safe but we need to coordinate.
+            // Let's do it in one effect with access to current state ref?
+            // Or use the "nodes" dependency but that triggers re-sub.
+        });
+
+        return () => {
+            if (removeListener) removeListener();
+        };
+    }, [capabilities, nodes]); // Logic needs refining for edge creation
+
     const loadPlaybook = async (id: string) => {
         try {
             const data = await playbookService.getPlaybookById(id);
@@ -78,8 +352,23 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                     speed: data.execution_defaults?.speed || 'normal'
                 });
                 if (data.graph) {
-                    setNodes(data.graph.nodes || []);
-                    setEdges(data.graph.edges || []);
+                    // Always clear execution status when loading to ensure it starts fresh
+                    const sanitizedNodes = (data.graph.nodes || []).map((node: any) => ({
+                        ...node,
+                        data: {
+                            ...node.data,
+                            executionStatus: undefined,
+                            executionMessage: undefined,
+                            loopCount: 0
+                        }
+                    }));
+                    setNodes(sanitizedNodes);
+                    const sanitizedEdges = (data.graph.edges || []).map((edge: any) => ({
+                        ...edge,
+                        animated: false,
+                        style: { ...edge.style, strokeDasharray: undefined, strokeWidth: 2 }
+                    }));
+                    setEdges(sanitizedEdges);
                     // Viewport restore handled by RF if we saved it, but we can iterate later
                 }
             }
@@ -218,15 +507,28 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         try {
             const data = JSON.parse(text);
 
-            // Normalize data: Some JSONs might have nodes/edges at root, others inside 'graph'
-            const nodesToImport = data.graph?.nodes || data.nodes;
-            const edgesToImport = data.graph?.edges || data.edges;
+            let nodesToImport = [];
+            let edgesToImport = [];
 
-            if (!Array.isArray(nodesToImport)) return;
+            // Detect format
+            if (Array.isArray(data)) {
+                // Determine if it's an array of nodes
+                if (data.every(i => i.id && i.type && i.position)) {
+                    nodesToImport = data;
+                }
+            } else if (data.nodes || data.graph?.nodes) {
+                // Standard export format
+                nodesToImport = data.graph?.nodes || data.nodes;
+                edgesToImport = data.graph?.edges || data.edges || [];
+            } else if (data.id && data.type && data.position) {
+                // Single node object
+                nodesToImport = [data];
+            }
 
-            // Determine if this is a "Full Playbook" (Replacement) or "Partial Nodes" (Merge)
-            // It's a full replacement if it has playbook metadata OR we are clicking on an empty/new canvas
-            const isFullPlaybook = !!(data.graph || data.capabilities || data.name || (nodes.length <= 2 && nodes.every(n => n.type === 'start' || n.type === 'end')));
+            if (!nodesToImport || nodesToImport.length === 0) return;
+
+            // Determine if this is a "Full Playbook" (Replacement)
+            const isFullPlaybook = !!(data.graph || data.capabilities || (data.name && data.description));
 
             if (isFullPlaybook) {
                 if (nodes.length > 2 && !window.confirm('You are pasting a full playbook. Replace current contents?')) {
@@ -241,14 +543,14 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                 if (data.execution_defaults) setDefaults(data.execution_defaults);
 
                 toast.success('Full playbook imported');
-
-                // Auto-fit view after state registers
                 setTimeout(() => reactFlowInstance?.fitView({ duration: 800 }), 100);
                 return;
             }
 
             // Scenario 2: Partial Paste (Merge with existing)
             let filteredNodes = nodesToImport;
+
+            // Check for duplicate Start/End only if we already have them
             const hasStart = nodes.some(n => n.type === 'start');
             const hasEnd = nodes.some(n => n.type === 'end');
 
@@ -258,13 +560,18 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                 return true;
             });
 
-            if (filteredNodes.length === 0) {
-                toast.error('Could not paste: Start/End nodes already exist');
-                return;
+            if (filteredNodes.length === 0 && nodesToImport.length > 0) {
+                toast.warning('Skipped Start/End nodes (already exist).');
+                return; // Or just return if nothing left
             }
 
             // Generate new IDs and offset position
             const idMap: Record<string, string> = {};
+            const mousePos = { x: 100, y: 100 }; // Ideally use real mouse pos if possible, but hard here.
+
+            // Calculate center of pasted group to offset relative to view center? 
+            // Simple offset: +50px
+
             const newNodes = filteredNodes.map((node: any) => {
                 const newId = uuidv4();
                 idMap[node.id] = newId;
@@ -289,14 +596,16 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                     selected: true,
                 }));
 
+            // Deselect visible nodes
             setNodes((nds) => nds.map((n) => ({ ...n, selected: false })).concat(newNodes));
             setEdges((eds) => eds.map((e) => ({ ...e, selected: false })).concat(newEdges));
 
             toast.success(`Pasted ${newNodes.length} nodes`);
         } catch (e) {
             console.error('Paste error:', e);
+            // Don't toast error on every random paste (could be text)
         }
-    }, [nodes, reactFlowInstance, setNodes, setEdges, setPlaybookName, setDescription, setCapabilities, setDefaults]);
+    }, [nodes, reactFlowInstance, setNodes, setEdges]);
 
     useEffect(() => {
         window.addEventListener('paste', onPaste);
@@ -315,11 +624,12 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         // Increased separation to prevent overlapping
         dagreGraph.setGraph({
             rankdir: direction,
-            nodesep: 200,
-            ranksep: 150
+            nodesep: 250, // Increased from 200
+            ranksep: 300,  // Increased significantly from 150 to handle loops better
+            acyclicer: 'greedy'
         });
 
-        const nodeWidth = 240;
+        const nodeWidth = 250;
         const nodeHeight = 120;
 
         nodes.forEach((node) => {
@@ -348,13 +658,18 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
             };
         });
 
-        setNodes(layoutedNodes);
+        setLayoutDirection(direction);
+        const nodesWithDirection = layoutedNodes.map(n => ({
+            ...n,
+            data: { ...n.data, layoutDirection: direction }
+        }));
+        setNodes(nodesWithDirection);
 
         // 2. Optimize connections based on direction
         // We preserve specialized logic handles (like loop backs) to let ReactFlow find the path
         const layoutedEdges = edges.map(edge => {
             const isSpecializedHandle = edge.sourceHandle &&
-                ['true', 'false', 'loop', 'done', 'item'].includes(edge.sourceHandle);
+                ['true', 'false', 'done', 'item'].includes(edge.sourceHandle);
 
             // If it's a specialized Logic handle, we KEEP it as is. 
             // The node component logic will render it on the Right usually.
@@ -376,13 +691,13 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         setTimeout(() => reactFlowInstance?.fitView({ duration: 800 }), 50);
     }, [nodes, edges, reactFlowInstance, setNodes, setEdges]);
 
-    const handleSave = async () => {
+    const savePlaybook = async (): Promise<string | null> => {
         // Validate
         const startNode = nodes.find(n => n.type === 'start');
         const endNode = nodes.find(n => n.type === 'end');
         if (!startNode || !endNode) {
             toast.error('Playbook must have a Start and End node.');
-            return;
+            return null;
         }
 
         setSaving(true);
@@ -398,47 +713,193 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
             if (playbookId) {
                 await playbookService.updatePlaybook(playbookId, payload);
                 toast.success('Playbook updated');
+                return playbookId;
             } else {
                 const created = await playbookService.createPlaybook({
                     ...payload,
-                    name: playbookName, // ensure name is passed
+                    name: playbookName,
                     description: description || '',
                 } as any);
-                // In a real app we might redirect or update ID
                 toast.success('Playbook created');
-                if (created?.id) {
-                    // Might handle ID update if we stay on page
-                }
-                onBack(); // Return to list for now
+                return created?.id || null;
             }
         } catch (error) {
             toast.error('Failed to save playbook');
             console.error(error);
+            return null;
         } finally {
             setSaving(false);
         }
     };
+
+    const handleSaveClick = async () => {
+        const id = await savePlaybook();
+        if (id && !playbookId) {
+            onBack();
+        }
+    };
+
+    const handleRun = async () => {
+        // 1. Immediately show the split browser view
+        useAppStore.getState().setShowPlaybookBrowser(true);
+        // Reset browser state to show loading screen
+        useBrowserStore.getState().resetBrowserState();
+
+        // Stop any existing execution first to avoid conflicts
+        if (useChatStore.getState().isStreaming) {
+            toast.info('Stopping previous session...');
+            await window.api.ai.stop();
+            useChatStore.getState().setIsStreaming(false);
+            // Small delay to ensure stop propagates
+            await new Promise(r => setTimeout(r, 500));
+        }
+
+        const id = await savePlaybook();
+        if (id) {
+            resetNodeStatuses();
+            setExecutionLogs([{ id: 'start', msg: 'System: Starting Playbook execution...', type: 'info', time: '', timestamp: Date.now() }]);
+
+            // Set the selected model if configured in defaults
+            if (defaults.model) {
+                const { modelProviders } = useSettingsStore.getState();
+                let foundModel = null;
+                for (const provider of modelProviders) {
+                    const m = provider.models.find(mod => mod.id === defaults.model);
+                    if (m) {
+                        foundModel = { ...m, providerId: provider.id };
+                        break;
+                    }
+                }
+                if (foundModel) {
+                    useChatStore.getState().setSelectedModel(foundModel);
+                }
+            }
+
+            // Run playbook in an isolated instance
+            useChatStore.getState().setPendingPrompt({
+                content: `Run playbook {{playbooks.${id}}}`,
+                isIsolated: true,
+                playbookId: id
+            });
+
+            // 2. Collapse Chat (User wants logs, not chat)
+            useAppStore.setState({ chatPanelCollapsed: true });
+
+            // 3. Clear selected node (Hide config panel)
+            setSelectedNode(null);
+        }
+    };
+
+    const resetNodeStatuses = useCallback(() => {
+        lastActiveNodeRef.current = null;
+        setNodes((nds) => nds.map((node) => ({
+            ...node,
+            data: {
+                ...node.data,
+                executionStatus: undefined,
+                executionMessage: undefined,
+                loopCount: 0
+            }
+        })));
+        setEdges((eds) => eds.map((edge) => ({
+            ...edge,
+            animated: false,
+            style: { ...edge.style, stroke: undefined, strokeWidth: 2, strokeDasharray: undefined }
+        })));
+    }, [setNodes, setEdges]);
+
+    const handleStop = () => {
+        window.api.ai.stop();
+        useChatStore.getState().setIsStreaming(false);
+
+        // Prevent auto-restart loops
+        useChatStore.getState().setPendingPrompt(null);
+
+        // FULL RESET: highlights, lines, browser
+        resetNodeStatuses();
+        useBrowserStore.getState().resetBrowserState();
+        useAppStore.getState().setShowPlaybookBrowser(false);
+
+        setExecutionLogs(prev => [
+            { id: uuidv4(), msg: 'System: Execution stopped by user.', type: 'error', time: '', timestamp: Date.now() },
+            ...prev
+        ]);
+        toast.info('Execution stopped');
+    };
+
+
+
+    // Final safety: Stop agent on unmount
+    useEffect(() => {
+        return () => {
+            const { isStreaming, setIsStreaming } = useChatStore.getState();
+            if (isStreaming) {
+                console.log('[PlaybookEditor] Component unmounting. Ensuring agent is stopped.');
+                window.api.ai.stop();
+                setIsStreaming(false);
+            }
+        };
+    }, []);
+
+    // Auto-reset statuses after execution finishes
+    useEffect(() => {
+        if (!isRunning && executionLogs.length > 1) {
+            // Reset immediately when stopped/finished as per user request
+            resetNodeStatuses();
+        }
+    }, [isRunning, resetNodeStatuses]);
+
+    const playbookMeta = useMemo(() => ({
+        capabilities,
+        execution_defaults: defaults
+    }), [capabilities, defaults]);
 
     return (
         <div className="flex flex-col h-full bg-background no-drag">
             <PlaybookToolbar
                 playbookName={playbookName}
                 onNameChange={setPlaybookName}
-                playbook={{ capabilities, execution_defaults: defaults }}
+                playbook={playbookMeta}
                 onMetadataChange={(meta) => {
                     if (meta.capabilities) setCapabilities(meta.capabilities);
                     if (meta.execution_defaults) setDefaults(meta.execution_defaults);
                 }}
-                onSave={handleSave}
+                onSave={handleSaveClick}
+                onRun={handleRun}
+                onStop={handleStop}
+                isRunning={isRunning}
                 onBack={onBack}
                 onLayout={onLayout}
+                layoutDirection={layoutDirection}
                 saving={saving}
             />
 
             <div className="flex-1 flex overflow-hidden">
-                <NodePalette />
+                <AnimatePresence initial={false}>
+                    {!isRunning && !isSidebarCollapsed && (
+                        <motion.div
+                            initial={{ width: 0, opacity: 0 }}
+                            animate={{ width: 280, opacity: 1 }}
+                            exit={{ width: 0, opacity: 0 }}
+                            transition={{ duration: 0.2, ease: 'easeInOut' }}
+                            className="h-full flex-shrink-0 overflow-hidden border-r border-border/40 bg-card/30 backdrop-blur-sm"
+                        >
+                            <NodePalette />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
                 <div className="flex-1 h-full relative" ref={reactFlowWrapper}>
+                    {!isRunning && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="absolute top-4 left-4 z-[60] h-8 w-8 bg-card/80 backdrop-blur-md border border-border/50 shadow-sm hover:bg-muted"
+                            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+                        >
+                            {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+                        </Button>
+                    )}
                     <ReactFlow
                         nodes={nodes}
                         edges={edges}
@@ -452,37 +913,93 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                         onPaneClick={onPaneClick}
                         nodeTypes={nodeTypes}
                         isValidConnection={(connection) => connection.source !== connection.target}
+                        // Lock interactivity during execution
+                        nodesDraggable={!isRunning}
+                        nodesConnectable={!isRunning}
+                        elementsSelectable={!isRunning}
+                        edgesFocusable={!isRunning}
+                        nodesFocusable={!isRunning}
+                        panOnDrag={true} // Allow panning with any button or touch
+                        zoomOnScroll={true}
+                        zoomOnDoubleClick={true}
                         defaultEdgeOptions={{
                             type: 'smoothstep',
                             animated: false,
-                            reconnectable: true,
-                            deletable: true,
-                            style: { strokeWidth: 2 }
+                            reconnectable: !isRunning,
+                            deletable: !isRunning,
+                            style: { strokeWidth: 2, stroke: '#52525b' }, // Darker zinc-600 line
+                            labelStyle: { fill: '#a1a1aa', fontWeight: 500, fontSize: 11 }, // Lighter text
+                            labelBgStyle: { fill: '#18181b', stroke: '#27272a', strokeWidth: 1 }, // Dark bg (zinc-950) with border
+                            labelBgPadding: [8, 4],
+                            labelBgBorderRadius: 6,
                         }}
-                        deleteKeyCode={['Backspace', 'Delete']}
+                        deleteKeyCode={isRunning ? null : ['Backspace', 'Delete']}
                         fitView
                         snapToGrid
-                        selectionOnDrag
+                        selectionOnDrag={!isRunning}
                         selectionMode={SelectionMode.Partial}
-                        panOnDrag={[1, 2]}
                         className="bg-muted/5"
                         proOptions={{ hideAttribution: true }}
                     >
-                        <Background color="#555" gap={16} />
+
+                        <Background color="currentColor" className="opacity-[0.03] dark:opacity-[0.07]" gap={16} />
                         <Controls />
                     </ReactFlow>
+
+                    {/* Simple Log Overlay */}
+                    {executionLogs.length > 0 && (
+                        <div className="absolute bottom-4 right-4 w-80 max-h-48 glass-panel z-50 overflow-hidden flex flex-col shadow-2xl border border-white/10 rounded-xl">
+                            <div className="px-3 py-2 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Execution Logs</span>
+                                <button
+                                    onClick={() => setExecutionLogs([])}
+                                    className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                            <div className="p-3 overflow-y-auto space-y-2 font-mono text-[11px] scrollbar-thin">
+                                {executionLogs.map(log => (
+                                    <div key={log.id} className="flex gap-2 leading-tight">
+                                        <span className="text-muted-foreground/40 shrink-0">
+                                            {new Date(log.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                        </span>
+                                        <span className={cn(
+                                            "break-words",
+                                            log.type === 'error' && "text-destructive",
+                                            log.type === 'success' && "text-emerald-400",
+                                            log.type === 'running' && "text-amber-400 animate-pulse",
+                                            log.type === 'info' && "text-blue-400"
+                                        )}>
+                                            {log.msg}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                {selectedNode && (
-                    <NodeConfigPanel
-                        selectedNode={selectedNode}
-                        nodes={nodes}
-                        edges={edges}
-                        onUpdate={updateNodeData}
-                        onClose={() => setSelectedNode(null)}
-                        onDelete={deleteNode}
-                    />
-                )}
+                <AnimatePresence>
+                    {selectedNode && (
+                        <motion.div
+                            initial={{ x: 320, opacity: 0 }}
+                            animate={{ x: 0, opacity: 1 }}
+                            exit={{ x: 320, opacity: 0 }}
+                            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                            className="z-[100] h-full shadow-2xl relative"
+                        >
+                            <NodeConfigPanel
+                                selectedNode={selectedNode}
+                                nodes={nodes}
+                                edges={edges}
+                                onUpdate={updateNodeData}
+                                onClose={() => setSelectedNode(null)}
+                                onDelete={deleteNode}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );
@@ -491,7 +1008,9 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 export function PlaybookEditor(props: PlaybookEditorProps) {
     return (
         <ReactFlowProvider>
-            <PlaybookEditorContent {...props} />
+            <TooltipProvider delayDuration={400}>
+                <PlaybookEditorContent {...props} />
+            </TooltipProvider>
         </ReactFlowProvider>
     );
 }

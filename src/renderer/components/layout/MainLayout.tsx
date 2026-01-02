@@ -14,7 +14,7 @@ import { TargetListView } from '@/components/targets/TargetListView';
 import { PlaybooksView } from '@/components/playbooks/PlaybooksView';
 
 export function MainLayout() {
-  const { activeView, chatPanelCollapsed, chatPanelWidth, setChatPanelWidth, hasStarted } = useAppStore();
+  const { activeView, chatPanelCollapsed, chatPanelWidth, setChatPanelWidth, hasStarted, showPlaybookBrowser, playbookBrowserMaximized } = useAppStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -88,24 +88,28 @@ export function MainLayout() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
             >
-              <AnimatePresence initial={false}>
-                {!chatPanelCollapsed && activeView === 'browser' && (
-                  <motion.div
-                    ref={containerRef}
-                    initial={{ width: 0, opacity: 0 }}
-                    animate={{ width: chatPanelWidth, opacity: 1 }}
-                    exit={{ width: 0, opacity: 0 }}
-                    transition={isResizing ? { duration: 0 } : { duration: 0.2, ease: 'easeInOut' }}
-                    className="h-full flex-shrink-0 overflow-hidden relative"
-                  >
-                    <div className="h-full overflow-hidden">
-                      <ChatPanel />
-                    </div>
-                  </motion.div>
+              <motion.div
+                ref={containerRef}
+                initial={false}
+                animate={{
+                  width: (!chatPanelCollapsed && activeView === 'browser' && hasStarted) ? chatPanelWidth : 0,
+                  opacity: (!chatPanelCollapsed && activeView === 'browser' && hasStarted) ? 1 : 0
+                }}
+                transition={isResizing ? { duration: 0 } : { duration: 0.2, ease: 'easeInOut' }}
+                className={cn(
+                  "h-full flex-shrink-0 overflow-hidden relative border-border transition-colors duration-200",
+                  (!chatPanelCollapsed && activeView === 'browser' && hasStarted) ? "border-r" : "border-r-0"
                 )}
-              </AnimatePresence>
+                style={{
+                  display: 'block' // Always render to keep Agent logic alive
+                }}
+              >
+                <div className="h-full overflow-hidden w-screen max-w-[500px]" style={{ width: chatPanelWidth }}>
+                  <ChatPanel />
+                </div>
+              </motion.div>
 
-              {!chatPanelCollapsed && activeView === 'browser' && (
+              {!chatPanelCollapsed && activeView === 'browser' && hasStarted && (
                 <div
                   onMouseDown={handleMouseDown}
                   className="group relative w-px h-full cursor-col-resize flex-shrink-0 z-20 bg-border/20"
@@ -121,8 +125,15 @@ export function MainLayout() {
                 {/* Persistent Browser View - Keeps webview alive in background */}
                 <div
                   className={cn(
-                    "absolute inset-0 w-full h-full bg-background",
-                    activeView === 'browser' ? "z-0" : "opacity-0 pointer-events-none z-[-1]"
+                    "absolute transition-all duration-300 ease-in-out bg-background",
+                    // Normal Browser View
+                    activeView === 'browser' && "inset-0 z-0",
+                    // Playbook Split View (Right Side)
+                    activeView === 'playbooks' && showPlaybookBrowser
+                      ? (playbookBrowserMaximized
+                        ? "inset-0 z-20 border-none" // Maximized on top of playbooks
+                        : "top-0 bottom-0 right-0 w-1/2 border-l border-border z-0")
+                      : (activeView !== 'browser' && "inset-0 opacity-0 pointer-events-none z-[-1]")
                   )}
                 >
                   <BrowserView />
@@ -160,7 +171,10 @@ export function MainLayout() {
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.15 }}
-                      className="h-full bg-background relative z-10"
+                      className={cn(
+                        "h-full bg-background relative z-10 transition-all duration-300",
+                        showPlaybookBrowser ? "w-1/2" : "w-full"
+                      )}
                     >
                       <PlaybooksView />
                     </motion.div>

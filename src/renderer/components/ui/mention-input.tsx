@@ -343,42 +343,44 @@ export const MentionInput = React.forwardRef<MentionInputRef, MentionInputProps>
                 align="start"
                 onOpenAutoFocus={(e) => e.preventDefault()} // Keep focus on input
             >
-                <div className="max-h-[300px] overflow-y-auto p-1">
-                    <div className="px-2 py-1.5 text-[10px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border/40 mb-1 bg-background/80 sticky top-0 backdrop-blur-sm z-10">
+                <div className="max-h-[300px] overflow-y-auto">
+                    <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest border-b border-border/40 bg-popover sticky top-0 z-10">
                         {query ? `Searching "${query}"...` : 'Select Variable'}
                     </div>
-                    {filtered.length === 0 ? (
-                        <div className="p-2 text-xs text-muted-foreground text-center">No matches found</div>
-                    ) : (
-                        filtered.map((v, i) => (
-                            <button
-                                key={i + v.value}
-                                className={cn(
-                                    "w-full text-left px-2 py-2 rounded-md text-xs flex flex-col gap-0.5 transition-colors",
-                                    i === activeIndex
-                                        ? "bg-primary/10 text-primary"
-                                        : "hover:bg-muted text-muted-foreground hover:text-foreground"
-                                )}
-                                onClick={() => insertVariable(v)}
-                                onMouseEnter={() => setActiveIndex(i)}
-                            >
-                                <div className="flex items-center justify-between w-full">
-                                    <span className={cn(
-                                        "font-medium",
-                                        i === activeIndex ? "text-primary" : "text-foreground"
-                                    )}>{v.label}</span>
-                                    <span className={cn(
-                                        "text-[9px] opacity-70 px-1.5 py-0.5 rounded",
-                                        i === activeIndex ? "bg-primary/20" : "bg-muted"
-                                    )}>{v.groupName}</span>
-                                </div>
-                                <div className="flex items-center gap-2 font-mono text-[10px] opacity-80">
-                                    {/* Value hidden as per user request */}
-                                    {v.example && <span className="truncate max-w-[200px] border-l border-border pl-2 opacity-70">{v.example}</span>}
-                                </div>
-                            </button>
-                        ))
-                    )}
+                    <div className="p-1">
+                        {filtered.length === 0 ? (
+                            <div className="p-2 text-xs text-muted-foreground text-center">No matches found</div>
+                        ) : (
+                            filtered.map((v, i) => (
+                                <button
+                                    key={i + v.value}
+                                    className={cn(
+                                        "w-full text-left px-2 py-2 rounded-md text-xs flex flex-col gap-0.5 transition-colors",
+                                        i === activeIndex
+                                            ? "bg-primary/10 text-primary"
+                                            : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                                    )}
+                                    onClick={() => insertVariable(v)}
+                                    onMouseEnter={() => setActiveIndex(i)}
+                                >
+                                    <div className="flex items-center justify-between w-full">
+                                        <span className={cn(
+                                            "font-medium",
+                                            i === activeIndex ? "text-primary" : "text-foreground"
+                                        )}>{v.label}</span>
+                                        <span className={cn(
+                                            "text-[9px] opacity-70 px-1.5 py-0.5 rounded",
+                                            i === activeIndex ? "bg-primary/20" : "bg-muted"
+                                        )}>{v.groupName}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 font-mono text-[10px] opacity-80">
+                                        {/* Value hidden as per user request */}
+                                        {v.example && <span className="truncate max-w-[200px] border-l border-border pl-2 opacity-70">{v.example}</span>}
+                                    </div>
+                                </button>
+                            ))
+                        )}
+                    </div>
                 </div>
             </PopoverContent>
         </Popover>

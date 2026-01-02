@@ -1,7 +1,6 @@
 
 import { useEffect, useState, useRef } from 'react';
-import { Plus, Search, MoreVertical, Play, Edit, Trash, X, Zap } from 'lucide-react';
-import { format } from 'date-fns';
+import { Plus, Search, MoreVertical, Play, Edit, Trash, X, Zap, Workflow, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -116,10 +115,10 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
             {/* Header Section */}
             <div className="h-16 border-b border-border flex items-center justify-between px-6 bg-card/80 backdrop-blur-md sticky top-0 z-30">
                 <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                        <Play className="h-5 w-5 text-primary" />
+                    <div className="w-9 h-9 rounded-xl bg-muted/40 flex items-center justify-center border border-border/40 shadow-sm transition-all">
+                        <Workflow className="h-4 w-4 text-muted-foreground/70" />
                     </div>
-                    <h1 className="text-lg font-semibold text-foreground tracking-tight">
+                    <h1 className="text-lg font-semibold text-foreground/90 tracking-tight">
                         Playbooks
                     </h1>
                 </div>
@@ -138,7 +137,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                                 size="sm"
                                 className={cn(
                                     "h-10 w-10 p-0 shrink-0 transition-colors rounded-xl focus-visible:ring-0 focus-visible:outline-none",
-                                    (isSearchExpanded || search) ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                                    (isSearchExpanded || search) ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                                 )}
                                 onClick={() => setIsSearchExpanded(!isSearchExpanded)}
                             >
@@ -182,7 +181,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                                 onClick={() => document.getElementById('import-playbook')?.click()}
                                 title="Import Playbook"
                             >
-                                <Zap className="h-4 w-4" />
+                                <Upload className="h-4 w-4" />
                             </Button>
                         </div>
                     </div>
@@ -191,10 +190,10 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
 
                     <Button
                         size="sm"
-                        className="h-10 gap-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl px-5 transition-all active:scale-95 border border-border/50 font-semibold"
+                        className="h-9 gap-2 bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-lg px-4 transition-all active:scale-95 border border-border/50 font-medium shadow-sm"
                         onClick={onCreate}
                     >
-                        <Plus className="h-4 w-4" />
+                        <Plus className="h-3.5 w-3.5" />
                         <span className="text-sm">New Playbook</span>
                     </Button>
                 </div >
@@ -203,7 +202,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
             <div className="flex-1 overflow-auto p-6">
                 {loading ? (
                     <div className="flex items-center justify-center h-full">
-                        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        <div className="w-6 h-6 border-2 border-muted-foreground/20 border-t-muted-foreground/60 rounded-full animate-spin" />
                     </div>
                 ) : filteredPlaybooks.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
@@ -223,20 +222,23 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                         {filteredPlaybooks.map((playbook) => (
                             <div
                                 key={playbook.id}
-                                className="group relative flex flex-col p-4 rounded-xl border border-border bg-card/60 backdrop-blur-sm hover:border-primary/50 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
+                                className="group relative flex flex-col p-4 rounded-xl border border-border bg-card/60 backdrop-blur-sm hover:border-muted-foreground/30 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
                                 onClick={() => onSelect(playbook.id)}
                             >
-                                <div className="flex items-start justify-between mb-2">
-                                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                                        <Play className="h-4 w-4" />
-                                    </div>
+                                <div className="flex items-start justify-between gap-4">
+                                    <h3 className="font-semibold truncate flex-1">{playbook.name}</h3>
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <MoreVertical className="h-4 w-4" />
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-7 w-7 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <MoreVertical className="h-4 w-4 text-muted-foreground" />
                                             </Button>
                                         </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
+                                        <DropdownMenuContent align="end" className="w-40">
                                             <DropdownMenuItem onClick={(e) => handleExport(e, playbook)}>Export JSON</DropdownMenuItem>
                                             <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={(e) => handleDelete(e, playbook.id)}>
                                                 <Trash className="h-4 w-4 mr-2" />
@@ -246,15 +248,9 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                                     </DropdownMenu>
                                 </div>
 
-                                <h3 className="font-semibold truncate">{playbook.name}</h3>
-                                <p className="text-sm text-muted-foreground line-clamp-2 mt-1 flex-1">
+                                <p className="text-sm text-muted-foreground line-clamp-2 mt-1 px-0.5">
                                     {playbook.description || 'No description provided'}
                                 </p>
-
-                                <div className="flex items-center justify-between mt-4 text-xs text-muted-foreground border-t border-border/50 pt-3">
-                                    <span>v{playbook.version}</span>
-                                    <span>{format(new Date(playbook.updated_at), 'MMM d, yyyy')}</span>
-                                </div>
                             </div>
                         ))}
                     </div>

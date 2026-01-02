@@ -337,36 +337,38 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
                 {conversations.length === 0 ? (
                   <p className="text-center py-8 text-muted-foreground text-sm">No conversations yet</p>
                 ) : (
-                  conversations.map((conv) => (
-                    <div
-                      key={conv.id}
-                      className="group flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer"
-                      onClick={() => {
-                        setActiveConversation(conv.id);
-                        setHasStarted(true);
-                        setShowHistory(false);
-                      }}
-                    >
-                      <MessageSquare className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      <div className="flex-1 min-w-0 max-w-[200px]">
-                        <p className="text-sm truncate">{conv.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {conv.messages.length} messages · {new Date(conv.updatedAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive flex-shrink-0"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteConversation(conv.id);
+                  conversations
+                    .filter(conv => !conv.id.startsWith('playbook-'))
+                    .map((conv) => (
+                      <div
+                        key={conv.id}
+                        className="group flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer"
+                        onClick={() => {
+                          setActiveConversation(conv.id);
+                          setHasStarted(true);
+                          setShowHistory(false);
                         }}
                       >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))
+                        <MessageSquare className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                        <div className="flex-1 min-w-0 max-w-[200px]">
+                          <p className="text-sm truncate">{conv.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {conv.messages.length} messages · {new Date(conv.updatedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteConversation(conv.id);
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ))
                 )}
               </div>
             </ScrollArea>

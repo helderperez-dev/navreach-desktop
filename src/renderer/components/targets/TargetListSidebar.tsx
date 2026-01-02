@@ -78,7 +78,7 @@ export function TargetListSidebar() {
         <div
             className={cn(
                 "relative border-r border-border/30 bg-card/10 flex flex-col h-full group/sidebar overflow-hidden shrink-0 transition-colors duration-300",
-                isResizingActive && "border-primary/50 bg-primary/5"
+                isResizingActive && "border-border/50 bg-muted/5"
             )}
             style={{ width: `${width}px` }}
         >
@@ -100,7 +100,7 @@ export function TargetListSidebar() {
                         <form onSubmit={handleAddList} className="px-2 py-2">
                             <Input
                                 autoFocus
-                                className="bg-muted/50 border-border text-foreground h-10 outline-none focus:border-primary/50 hover:border-primary/30 focus:bg-muted/80 focus-visible:ring-0 focus-visible:ring-offset-0 transition-all duration-300 ease-in-out px-3 rounded-lg text-sm"
+                                className="bg-muted/50 border-border text-foreground h-10 outline-none focus:border-border hover:border-muted-foreground/30 focus:bg-muted/80 focus-visible:ring-0 focus-visible:ring-offset-0 transition-all duration-300 ease-in-out px-3 rounded-lg text-sm"
                                 placeholder="List name..."
                                 value={newListName}
                                 onChange={(e) => setNewListName(e.target.value)}
@@ -115,7 +115,7 @@ export function TargetListSidebar() {
                                 <form onSubmit={handleRename} className="px-2 py-1">
                                     <Input
                                         autoFocus
-                                        className="bg-muted/50 border-border text-foreground h-9 outline-none focus:border-primary/50 hover:border-primary/30 focus:bg-muted/80 focus-visible:ring-0 focus-visible:ring-offset-0 transition-all duration-300 ease-in-out px-3 rounded-lg text-sm"
+                                        className="bg-muted/50 border-border text-foreground h-9 outline-none focus:border-border hover:border-muted-foreground/30 focus:bg-muted/80 focus-visible:ring-0 focus-visible:ring-offset-0 transition-all duration-300 ease-in-out px-3 rounded-lg text-sm"
                                         value={renameValue}
                                         onChange={(e) => setRenameValue(e.target.value)}
                                         onBlur={() => setRenamingId(null)}
@@ -126,12 +126,11 @@ export function TargetListSidebar() {
                                     className={cn(
                                         "group flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors cursor-pointer min-w-0",
                                         selectedListId === list.id
-                                            ? "bg-primary/10 text-primary"
+                                            ? "bg-muted text-foreground"
                                             : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
                                     )}
                                     onClick={() => setSelectedListId(list.id)}
                                 >
-                                    <List className="h-4 w-4 flex-shrink-0 text-muted-foreground/50" />
                                     <div className="flex-1 min-w-0">
                                         <div className="text-sm font-medium pr-2" title={list.name}>
                                             {(() => {

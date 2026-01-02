@@ -1,15 +1,19 @@
 
 import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
 import { useReactFlow } from 'reactflow';
-import { Settings, Save, X, Play, Layout as LayoutIcon } from 'lucide-react';
+import { Settings, Save, X, Play, Layout as LayoutIcon, Columns } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Switch } from '@/components/ui/switch';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, SelectGroup, SelectLabel } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Field } from '@/components/ui/field';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Playbook, PlaybookCapabilities, PlaybookExecutionDefaults } from '@/types/playbook';
+import { useAppStore } from '@/stores/app.store';
+import { useSettingsStore } from '@/stores/settings.store';
 
 interface PlaybookToolbarProps {
     playbookName: string;
@@ -19,27 +23,44 @@ interface PlaybookToolbarProps {
     onSave: () => void;
     onBack: () => void;
     onLayout?: (direction: 'TB' | 'LR') => void;
+    layoutDirection?: 'TB' | 'LR';
+    onRun?: () => void;
+    onStop?: () => void;
     saving?: boolean;
+    isRunning?: boolean;
 }
 
-
-
 export function PlaybookToolbar({
-    playbookName, onNameChange, playbook, onMetadataChange, onSave, onBack, onLayout, saving
+    playbookName, onNameChange, playbook, onMetadataChange, onSave, onRun, onStop, onBack, onLayout, layoutDirection, saving, isRunning
 }: PlaybookToolbarProps) {
     const [localCapabilities, setLocalCapabilities] = useState<PlaybookCapabilities>({ browser: true, mcp: [], external_api: [] });
-    const [localDefaults, setLocalDefaults] = useState<PlaybookExecutionDefaults>({ mode: 'observe', require_approval: true, speed: 'normal' });
+    const [localDefaults, setLocalDefaults] = useState<PlaybookExecutionDefaults>({ mode: 'observe', require_approval: true, speed: 'normal', model: '' });
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const { showPlaybookBrowser, togglePlaybookBrowser } = useAppStore();
+    const { modelProviders } = useSettingsStore();
+
+    const enabledProviders = modelProviders.filter((p) => p.enabled);
 
     useEffect(() => {
+        // Skip syncing from props if the user is currently editing settings
+        if (isSettingsOpen) return;
+
         if (playbook.capabilities) setLocalCapabilities(playbook.capabilities);
-        if (playbook.execution_defaults) setLocalDefaults(playbook.execution_defaults);
-    }, [playbook]);
+        if (playbook.execution_defaults) {
+            setLocalDefaults({
+                ...playbook.execution_defaults,
+                speed: playbook.execution_defaults.speed || 'normal',
+                model: playbook.execution_defaults.model || ''
+            });
+        }
+    }, [playbook, isSettingsOpen]);
 
     const handleSettingsSave = () => {
         onMetadataChange({
             capabilities: localCapabilities,
             execution_defaults: localDefaults
         });
+        setIsSettingsOpen(false);
     };
 
     return (
@@ -58,14 +79,19 @@ export function PlaybookToolbar({
                 </div>
             </div>
 
-            <div className="flex items-center gap-2">
-                <Sheet>
-                    <SheetTrigger asChild>
-                        <Button variant="outline" size="sm">
-                            <Settings className="h-4 w-4 mr-2" />
-                            Settings
-                        </Button>
-                    </SheetTrigger>
+            <div className="flex items-center gap-2 border-l border-border pl-4 ml-2">
+                <Sheet open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+                    <Tooltip>
+                        <SheetTrigger asChild>
+                            <TooltipTrigger asChild>
+                                <Button variant="outline" size="sm">
+                                    <Settings className={showPlaybookBrowser ? "h-4 w-4" : "h-4 w-4 mr-2"} />
+                                    {!showPlaybookBrowser && `Settings (${localDefaults.speed || 'normal'})`}
+                                </Button>
+                            </TooltipTrigger>
+                        </SheetTrigger>
+                        <TooltipContent>Playbook Settings</TooltipContent>
+                    </Tooltip>
                     <SheetContent className="w-[400px]">
                         <SheetHeader>
                             <SheetTitle>Playbook Settings</SheetTitle>
@@ -74,12 +100,38 @@ export function PlaybookToolbar({
                             {/* Execution Defaults */}
                             <div className="space-y-4">
                                 <h3 className="text-sm font-medium">Execution Defaults</h3>
+                                <Field label="Model">
+                                    <Select
+                                        value={localDefaults.model || ''}
+                                        onValueChange={(v) => setLocalDefaults(p => ({ ...p, model: v }))}
+                                    >
+                                        <SelectTrigger className="text-xs text-left h-9 overflow-hidden">
+                                            <SelectValue placeholder="Select model..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {enabledProviders.map(provider => (
+                                                <SelectGroup key={provider.id}>
+                                                    <SelectLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground bg-muted/30 px-2 py-1 mb-1">
+                                                        {provider.name}
+                                                    </SelectLabel>
+                                                    {provider.models.map(model => (
+                                                        <SelectItem key={model.id} value={model.id} className="text-xs">
+                                                            {model.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectGroup>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </Field>
                                 <Field label="Mode">
                                     <Select
                                         value={localDefaults.mode}
                                         onValueChange={(v: any) => setLocalDefaults(p => ({ ...p, mode: v }))}
                                     >
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectTrigger className="h-9 text-left">
+                                            <SelectValue />
+                                        </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="observe">Observe (Safe)</SelectItem>
                                             <SelectItem value="assist">Assist</SelectItem>
@@ -92,7 +144,9 @@ export function PlaybookToolbar({
                                         value={localDefaults.speed || 'normal'}
                                         onValueChange={(v: any) => setLocalDefaults(p => ({ ...p, speed: v }))}
                                     >
-                                        <SelectTrigger><SelectValue /></SelectTrigger>
+                                        <SelectTrigger className="h-9 text-left">
+                                            <SelectValue />
+                                        </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="slow">Slow (Steady)</SelectItem>
                                             <SelectItem value="normal">Normal</SelectItem>
@@ -121,7 +175,6 @@ export function PlaybookToolbar({
                                         onCheckedChange={(c) => setLocalCapabilities(p => ({ ...p, browser: c }))}
                                     />
                                 </div>
-                                {/* MCP and API would be multiselects in future */}
                             </div>
 
                             <Button className="w-full" onClick={handleSettingsSave}>Apply Settings</Button>
@@ -129,31 +182,73 @@ export function PlaybookToolbar({
                     </SheetContent>
                 </Sheet>
 
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant={showPlaybookBrowser ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={togglePlaybookBrowser}
+                        >
+                            <Columns className={showPlaybookBrowser ? "h-4 w-4" : "h-4 w-4 mr-2"} />
+                            {!showPlaybookBrowser && "Split View"}
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                        {showPlaybookBrowser ? "Hide Browser" : "Show Side-by-Side Browser View"}
+                    </TooltipContent>
+                </Tooltip>
+
                 {onLayout && (
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="outline" size="sm" title="Auto-organize graph">
-                                <LayoutIcon className="h-4 w-4 mr-2" />
-                                Auto Layout
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button variant="outline" size="sm" onClick={() => onLayout('TB')}>
+                                <LayoutIcon className={showPlaybookBrowser ? "h-4 w-4" : "h-4 w-4 mr-2"} />
+                                {!showPlaybookBrowser && "Auto Layout"}
                             </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuItem onClick={() => onLayout('TB')}>
-                                <LayoutIcon className="h-4 w-4 mr-2 rotate-180" />
-                                Vertical Layout
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => onLayout('LR')}>
-                                <LayoutIcon className="h-4 w-4 mr-2 -rotate-90" />
-                                Horizontal Layout
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                        </TooltipTrigger>
+                        <TooltipContent>Auto-organize graph (Vertical)</TooltipContent>
+                    </Tooltip>
                 )}
 
-                <Button onClick={onSave} disabled={saving} size="sm">
-                    <Save className="h-4 w-4 mr-2" />
-                    {saving ? 'Saving...' : 'Save Playbook'}
-                </Button>
+                {isRunning ? (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                onClick={onStop}
+                                size="sm"
+                                className="bg-destructive hover:bg-destructive/90 text-white animate-pulse"
+                            >
+                                <div className="h-3 w-3 bg-white rounded-[2px]" />
+                                <span className="ml-2">Stop</span>
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Stop Execution</TooltipContent>
+                    </Tooltip>
+                ) : (
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                onClick={onRun}
+                                size="sm"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600/20"
+                            >
+                                <Play className="h-4 w-4 mr-2" fill="currentColor" />
+                                {showPlaybookBrowser ? "Run" : "Run Playbook"}
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Run this Playbook</TooltipContent>
+                    </Tooltip>
+                )}
+
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button onClick={onSave} disabled={saving} size="sm">
+                            <Save className="h-4 w-4 mr-2" />
+                            {saving ? 'Saving...' : 'Save Playbook'}
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Save changes to Playbook</TooltipContent>
+                </Tooltip>
             </div>
         </div>
     );

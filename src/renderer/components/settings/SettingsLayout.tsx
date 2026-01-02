@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Server, Wrench, Key, ShieldCheck, Monitor } from 'lucide-react';
+import { Server, Wrench, Key, ShieldCheck, Monitor, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { GeneralSettings } from './GeneralSettings';
@@ -23,7 +23,10 @@ export function SettingsLayout() {
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
-      <div className="h-16 border-b border-border flex items-center px-6 bg-card/50 backdrop-blur-sm">
+      <div className="h-16 border-b border-border flex items-center px-6 bg-card/50 backdrop-blur-sm gap-3">
+        <div className="w-9 h-9 rounded-xl bg-muted/40 flex items-center justify-center border border-border/40 shadow-sm transition-all">
+          <Settings className="h-4 w-4 text-muted-foreground/70" />
+        </div>
         <h1 className="text-xl font-semibold bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent">
           Settings
         </h1>
@@ -39,8 +42,8 @@ export function SettingsLayout() {
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                 activeTab === tab.id
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "bg-muted text-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               )}
             >
               {tab.icon}

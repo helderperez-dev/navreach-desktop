@@ -9,31 +9,52 @@ const BASE_SCRIPT_HELPERS = `
   }
 
   function wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
+    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter
+    const randomFactor = 0.75 + (Math.random() * 0.5); 
+    const jitter = Math.random() * 200;
+    const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
+    return new Promise((resolve) => setTimeout(resolve, adjustedMs));
   }
   
   async function safeClick(el, label) {
     if(!el) throw new Error('Element not found: ' + label);
-    el.scrollIntoView({ behavior: 'instant', block: 'center' });
-    await wait(500);
-    el.click();
-    await wait(1000);
+    
+    const rectBefore = el.getBoundingClientRect();
+    if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await wait(600);
+    } else {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      await wait(300);
+    }
+    
+    try {
+         const common = { bubbles: true, cancelable: true, view: window };
+         el.dispatchEvent(new MouseEvent('mousedown', common));
+         el.dispatchEvent(new MouseEvent('mouseup', common));
+         el.click();
+    } catch (e) {
+      log('Native click failed on ' + label, { error: e.toString() });
+      throw e;
+    }
+    await wait(800);
   }
 `;
 
 export function createInstagramTools(ctx: SiteToolContext): DynamicStructuredTool[] {
-    const postTool = new DynamicStructuredTool({
-        name: 'instagram_post',
-        description: 'Post media to Instagram. Note: This requires the user to be logged in and on the creation flow or standard web layout that allows posting.',
-        schema: z.object({
-            caption: z.string().describe('Caption for the post'),
-            mediaUrl: z.string().nullable().describe('Local file path or URL to media (currently mainly text caption support implies manual media selection or advanced logic not fully implemented). For now, it stops after opening creation flow.').default(null)
-        }),
-        func: async ({ caption }) => {
-            // Web posting is tricky on desktop without emulation, but let's try standard flow
-            try {
-                const contents = ctx.getContents();
-                const result = await contents.executeJavaScript(`
+  const postTool = new DynamicStructuredTool({
+    name: 'instagram_post',
+    description: 'Post media to Instagram. Note: This requires the user to be logged in and on the creation flow or standard web layout that allows posting.',
+    schema: z.object({
+      caption: z.string().describe('Caption for the post'),
+      mediaUrl: z.string().nullable().describe('Local file path or URL to media (currently mainly text caption support implies manual media selection or advanced logic not fully implemented). For now, it stops after opening creation flow.').default(null)
+    }),
+    func: async ({ caption }) => {
+      // Web posting is tricky on desktop without emulation, but let's try standard flow
+      try {
+        const contents = ctx.getContents();
+        const result = await contents.executeJavaScript(`
           (async function() {
             ${BASE_SCRIPT_HELPERS}
             
@@ -52,24 +73,24 @@ export function createInstagramTools(ctx: SiteToolContext): DynamicStructuredToo
             return { success: true, message: 'Opened creation flow. Please select media manually. Agent will wait.' };
           })()
         `);
-                return JSON.stringify(result);
-            } catch (error) {
-                return JSON.stringify({ success: false, error: String(error) });
-            }
-        },
-    });
+        return JSON.stringify(result);
+      } catch (error) {
+        return JSON.stringify({ success: false, error: String(error) });
+      }
+    },
+  });
 
-    const engageTool = new DynamicStructuredTool({
-        name: 'instagram_engage',
-        description: 'Like or comment on the currently visible post modal or feed item.',
-        schema: z.object({
-            action: z.enum(['like', 'comment']),
-            commentText: z.string().nullable().default(null)
-        }),
-        func: async ({ action, commentText }) => {
-            try {
-                const contents = ctx.getContents();
-                const result = await contents.executeJavaScript(`
+  const engageTool = new DynamicStructuredTool({
+    name: 'instagram_engage',
+    description: 'Like or comment on the currently visible post modal or feed item.',
+    schema: z.object({
+      action: z.enum(['like', 'comment']),
+      commentText: z.string().nullable().default(null)
+    }),
+    func: async ({ action, commentText }) => {
+      try {
+        const contents = ctx.getContents();
+        const result = await contents.executeJavaScript(`
                 (async function() {
                   ${BASE_SCRIPT_HELPERS}
                   
@@ -109,12 +130,12 @@ export function createInstagramTools(ctx: SiteToolContext): DynamicStructuredToo
                   }
                 })()
               `);
-                return JSON.stringify(result);
-            } catch (error) {
-                return JSON.stringify({ success: false, error: String(error) });
-            }
-        }
-    });
+        return JSON.stringify(result);
+      } catch (error) {
+        return JSON.stringify({ success: false, error: String(error) });
+      }
+    }
+  });
 
-    return [postTool, engageTool];
+  return [postTool, engageTool];
 }

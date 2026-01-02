@@ -18,11 +18,11 @@ const POINTER_HELPERS = `
     if (!indicator) {
       indicator = document.createElement('div');
       indicator.id = 'reavion-pointer';
-      const uniqueId = 'glass-gradient-' + Date.now();
-      indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#' + uniqueId + ')" stroke="rgba(255,255,255,0.9)" stroke-width="1.5"/><defs><linearGradient id="' + uniqueId + '" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="50%" stop-color="#7c3aed"/><stop offset="100%" stop-color="#6d28d9"/></linearGradient></defs></svg>';
       indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);';
       document.body.appendChild(indicator);
     }
+    // Always update visual style to clear any cached purple versions
+    indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
     indicator.style.left = x + 'px';
     indicator.style.top = y + 'px';
     // Visual kick on movement
@@ -47,7 +47,12 @@ const BASE_SCRIPT_HELPERS = `
 
   function wait(ms) {
     const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
-    const adjustedMs = Math.round(ms * multiplier);
+    const isFast = multiplier < 1.0;
+    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter, but scale down for FAST mode
+    const randomFactor = isFast ? (0.9 + Math.random() * 0.2) : (0.75 + (Math.random() * 0.5)); 
+    const jitter = Math.random() * (isFast ? 50 : 200);
+    const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
+    
     return new Promise((resolve, reject) => {
       const start = Date.now();
       const checking = () => {
@@ -58,7 +63,7 @@ const BASE_SCRIPT_HELPERS = `
         if (Date.now() - start >= adjustedMs) {
           resolve();
         } else {
-          setTimeout(checking, 50); // Reduced check interval
+          setTimeout(checking, 20); // Faster check interval
         }
       };
       checking();
@@ -69,11 +74,10 @@ const BASE_SCRIPT_HELPERS = `
     const clickable = el.closest('button,[role="button"]') || el;
     log('Clicking ' + label, { tagName: clickable.tagName });
     
-    // Check if element is already largely in view to skip heavy scroll
     const rectBefore = clickable.getBoundingClientRect();
     if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
-      clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-      await wait(options.scrollWait || 250);
+      clickable.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' }); // changed to smooth
+      await wait(options.scrollWait || 600); // Increased default wait
     }
     
     const rect = clickable.getBoundingClientRect();
@@ -81,25 +85,72 @@ const BASE_SCRIPT_HELPERS = `
     const y = rect.top + rect.height / 2;
     if (typeof movePointer === 'function') movePointer(x, y);
     
-    // try { clickable.focus(); } catch (e) {} // Removed to prevent stealing focus
-    await wait(options.focusWait || 100);
+    await wait(options.focusWait || 300); // Increased default wait
     
     try {
-      clickable.click();
+      if (options.native) {
+         clickable.click();
+      } else {
+         // Dispatch realistic event chain
+         const common = { bubbles: true, cancelable: true, view: window };
+         clickable.dispatchEvent(new MouseEvent('mousedown', common));
+         clickable.dispatchEvent(new MouseEvent('mouseup', common));
+         clickable.click();
+      }
     } catch (e) {
       log('Native click failed on ' + label, { error: e.toString() });
       throw e;
     }
     
-    await wait(options.afterWait || 500);
+    await wait(options.afterWait || 800); // Increased default wait
   }
 
   function getTweetAuthor(tweet) {
     if (!tweet) return null;
-    const authorLink = tweet.querySelector('a[href*="/status/"]')?.getAttribute('href')?.split('/')[1];
+    // The author's handle is consistently found in the first link that doesn't contain /status/
+    // or specifically within the User-Name testid.
     const userNameNode = tweet.querySelector('[data-testid="User-Name"]');
-    const rawText = userNameNode ? userNameNode.innerText : (authorLink || '');
-    return (authorLink || rawText).toLowerCase().replace('@', '');
+    if (userNameNode) {
+      const handleEl = userNameNode.querySelector('div[dir="ltr"] span');
+      if (handleEl && handleEl.innerText.startsWith('@')) {
+        return handleEl.innerText.toLowerCase().replace('@', '');
+      }
+      // Fallback for User-Name
+      const links = Array.from(userNameNode.querySelectorAll('a'));
+      const handleLink = links.find(a => a.getAttribute('href')?.startsWith('/'));
+      if (handleLink) return handleLink.getAttribute('href').replace('/', '').toLowerCase();
+    }
+    
+    // Fallback: search for any link that looks like a username
+    const allLinks = Array.from(tweet.querySelectorAll('a'));
+    const authorLink = allLinks.find(a => {
+      const href = a.getAttribute('href') || '';
+      return href.startsWith('/') && !href.includes('/status/') && !href.includes('/home') && !['/explore', '/notifications', '/messages', '/search'].includes(href);
+    });
+    
+    return authorLink ? authorLink.getAttribute('href').replace('/', '').toLowerCase() : null;
+  }
+
+  function getMyHandle() {
+    // Method 1: Most stable - Profile link in sidebar
+    const profileLink = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
+    if (profileLink) {
+      const href = profileLink.getAttribute('href');
+      if (href && href !== '/profile') return href.replace('/', '').toLowerCase();
+    }
+
+    // Method 2: Account Switcher Button
+    const accountBtn = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+    if (accountBtn) {
+      const spans = Array.from(accountBtn.querySelectorAll('span'));
+      const handleSpan = spans.find(s => s.innerText.startsWith('@'));
+      if (handleSpan) return handleSpan.innerText.toLowerCase().replace('@', '');
+    }
+
+    // Method 3: Script-injected identity (if we ever add it)
+    if (window.__REAVION_MY_HANDLE__) return window.__REAVION_MY_HANDLE__;
+
+    return null;
   }
 
   async function findTweetRobustly(index, expectedAuthor) {
@@ -222,12 +273,18 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       try {
         const contents = ctx.getContents();
         const filterMap: Record<string, string> = { latest: 'live', people: 'user', photos: 'image', videos: 'video' };
-        const sanitizedQuery = query
-          .replace(/<arg_key>.*?<\/arg_key>/gi, '')
-          .replace(/<arg_value>|<\/arg_value>/gi, '')
-          .replace(/\{\{.*?\}\}/g, '')
-          .replace(/<\/?[^>]+(>|$)/g, '')
-          .trim();
+        const sanitizeQuery = (val: string): string => {
+          const str = val.trim();
+          if (str.toLowerCase() === 'null' || str.toLowerCase() === 'undefined' || str.toLowerCase() === 'none') return '';
+          return str
+            .replace(/<arg_key>.*?<\/arg_key>/gi, '')
+            .replace(/<arg_value>|<\/arg_value>/gi, '')
+            .replace(/\{\{.*?\}\}/g, '')
+            .replace(/<\/?[^>]+(>|$)/g, '')
+            .trim();
+        };
+
+        const sanitizedQuery = sanitizeQuery(query);
 
         if (!sanitizedQuery) return JSON.stringify({ success: false, error: 'No query provided' });
 
@@ -251,7 +308,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
         // Wait for results to actually load
         const result = await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
-        return JSON.stringify({ ...result, url });
+        return JSON.stringify({ ...result, url, searchSummary: sanitizedQuery });
       } catch (error) {
         return JSON.stringify({ success: false, error: String(error) });
       }
@@ -260,22 +317,39 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const advancedSearchTool = new DynamicStructuredTool({
     name: 'x_advanced_search',
-    description: 'On X.com (Twitter), perform a highly filtered search.',
+    description: 'On X.com (Twitter), perform a highly filtered search with advanced operators.',
     schema: z.object({
-      allWords: z.string().nullable().describe('All of these words.').default(null),
+      allWords: z.string().nullable().describe('All of these words (comma separated). STRICT: Follow node configuration exactly.').default(null),
       exactPhrase: z.string().nullable().describe('This exact phrase.').default(null),
-      anyWords: z.string().nullable().describe('Any of these words (OR).').default(null),
-      noneWords: z.string().nullable().describe('None of these words.').default(null),
-      hashtags: z.string().nullable().describe('These hashtags.').default(null),
+      anyWords: z.string().nullable().describe('Any of these words (comma separated, OR). STRICT: Do not expand or adjust these yourself.').default(null),
+      noneWords: z.string().nullable().describe('None of these words (comma separated).').default(null),
+      hashtags: z.string().nullable().describe('These hashtags (comma separated).').default(null),
+      cashtags: z.string().nullable().describe('Financial symbols (comma separated, e.g. BTC, TSLA).').default(null),
       fromAccount: z.string().nullable().describe('From these accounts.').default(null),
       toAccount: z.string().nullable().describe('To these accounts.').default(null),
-      minLikes: z.any().nullable().describe('Minimum likes (number).').default(null),
-      minRetweets: z.any().nullable().describe('Minimum retweets (number).').default(null),
-      minReplies: z.any().nullable().describe('Minimum replies (number).').default(null),
+      mentionsAccount: z.string().nullable().describe('Mentioning these accounts.').default(null),
+      retweetsOf: z.string().nullable().describe('Retweets of these accounts.').default(null),
+      listId: z.string().nullable().describe('From users in this List ID.').default(null),
+      isRetweet: z.boolean().nullable().describe('Show only retweets.').default(null),
+      isReply: z.boolean().nullable().describe('Show only replies.').default(null),
+      isQuote: z.boolean().nullable().describe('Show only quote tweets.').default(null),
+      isVerified: z.boolean().nullable().describe('Verified accounts only.').default(null),
+      hasLinks: z.boolean().nullable().describe('Has links.').default(null),
+      hasImages: z.boolean().nullable().describe('Has images.').default(null),
+      hasVideo: z.boolean().nullable().describe('Has video.').default(null),
+      hasMedia: z.boolean().nullable().describe('Has any media.').default(null),
+      urlContained: z.string().nullable().describe('Find tweets containing specific URLs.').default(null),
+      minLikes: z.any().nullable().describe('Minimum likes.').default(null),
+      minRetweets: z.any().nullable().describe('Minimum retweets.').default(null),
+      minReplies: z.any().nullable().describe('Minimum replies.').default(null),
       since: z.string().nullable().describe('Start date (YYYY-MM-DD).').default(null),
       until: z.string().nullable().describe('End date (YYYY-MM-DD).').default(null),
       filter: z.enum(['top', 'latest', 'people', 'photos', 'videos']).nullable().describe('Search filter tab.').default(null),
       lang: z.string().nullable().describe('Language code (e.g. "en").').default(null),
+      place: z.string().nullable().describe('Geo-tagged to a location.').default(null),
+      positiveSentiment: z.boolean().nullable().describe('Positive sentiment :)').default(null),
+      negativeSentiment: z.boolean().nullable().describe('Negative sentiment :(').default(null),
+      questionsOnly: z.boolean().nullable().describe('Questions only ?').default(null),
     }),
     func: async (args: {
       allWords?: string | null;
@@ -283,8 +357,21 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       anyWords?: string | null;
       noneWords?: string | null;
       hashtags?: string | null;
+      cashtags?: string | null;
       fromAccount?: string | null;
       toAccount?: string | null;
+      mentionsAccount?: string | null;
+      retweetsOf?: string | null;
+      listId?: string | null;
+      isRetweet?: boolean | null;
+      isReply?: boolean | null;
+      isQuote?: boolean | null;
+      isVerified?: boolean | null;
+      hasLinks?: boolean | null;
+      hasImages?: boolean | null;
+      hasVideo?: boolean | null;
+      hasMedia?: boolean | null;
+      urlContained?: string | null;
       minLikes?: number | null;
       minRetweets?: number | null;
       minReplies?: number | null;
@@ -292,18 +379,23 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       until?: string | null;
       filter?: string | null;
       lang?: string | null;
+      place?: string | null;
+      positiveSentiment?: boolean | null;
+      negativeSentiment?: boolean | null;
+      questionsOnly?: boolean | null;
     }) => {
       try {
         const contents = ctx.getContents();
         const queryParts: string[] = [];
+
         const sanitize = (val: any): string => {
-          if (!val) return '';
-          // Remove AI hallucinations like <arg_key> or {{placeholder}}
-          return String(val)
+          if (val === null || val === undefined) return '';
+          const str = String(val).trim();
+          if (str.toLowerCase() === 'null' || str.toLowerCase() === 'undefined' || str.toLowerCase() === 'none') return '';
+          return str
             .replace(/<arg_key>.*?<\/arg_key>/gi, '')
             .replace(/<arg_value>|<\/arg_value>/gi, '')
-            .replace(/\{\{.*?\}\}/g, '')
-            .replace(/<\/?[^>]+(>|$)/g, '') // Strip any other HTML tags
+            .replace(/<\/?[^>]+(>|$)/g, '')
             .trim();
         };
 
@@ -315,49 +407,108 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
           return isNaN(n) ? 0 : n;
         };
 
+        const parseAsTags = (val: any) => {
+          const s = sanitize(val);
+          if (!s) return [];
+
+          // Case 1: Comma-separated (Standard UI Mode)
+          if (s.includes(',')) {
+            return s.split(/,\s*/).filter(Boolean).map(t => t.trim());
+          }
+
+          // Case 2: No commas. Treat as a single item/phrase.
+          // Remove wrapper quotes if present to avoid double-quoting later
+          const trimmed = s.replace(/^"|"$/g, '').trim();
+          return [trimmed];
+        };
+
+        const wrapPhrase = (s: string) => {
+          // If it contains spaces and isn't already quoted, wrap it.
+          if (s.includes(' ') && !s.startsWith('"')) return `"${s}"`;
+          return s;
+        };
+
         if (args.allWords) {
-          const s = sanitize(args.allWords);
-          if (s) queryParts.push(s);
+          parseAsTags(args.allWords).forEach(w => {
+            queryParts.push(wrapPhrase(w));
+          });
         }
         if (args.exactPhrase) {
           const s = sanitize(args.exactPhrase);
           if (s) queryParts.push(`"${s}"`);
         }
         if (args.anyWords) {
-          const s = sanitize(args.anyWords);
-          const p = Array.from(new Set(s.split(/[\s,]+/).filter(Boolean)));
-          if (p.length) queryParts.push(`(${p.join(' OR ')})`);
+          const p = parseAsTags(args.anyWords).map(wrapPhrase);
+          if (p.length) queryParts.push(`(${Array.from(new Set(p)).join(' OR ')})`);
         }
         if (args.noneWords) {
-          const s = sanitize(args.noneWords);
-          Array.from(new Set(s.split(/[\s,]+/).filter(Boolean)))
-            .forEach(w => queryParts.push(`-${w}`));
+          parseAsTags(args.noneWords).forEach(w => {
+            queryParts.push(`-${wrapPhrase(w)}`);
+          });
         }
         if (args.hashtags) {
-          const s = sanitize(args.hashtags);
-          const validTags = new Set<string>();
-          s.split(/[\s,]+/).filter(Boolean).forEach(h => {
-            const t = h.startsWith('#') ? h.slice(1) : h;
-            validTags.add(`#${t}`);
+          parseAsTags(args.hashtags).forEach(h => {
+            const h2 = h.startsWith('#') ? h.slice(1) : h;
+            const tag = `#${h2}`;
+            queryParts.push(wrapPhrase(tag));
           });
-          validTags.forEach(tag => queryParts.push(tag));
         }
+        if (args.cashtags) {
+          parseAsTags(args.cashtags).forEach(c => {
+            const c2 = c.startsWith('$') ? c.slice(1) : c;
+            const tag = `$${c2}`;
+            queryParts.push(wrapPhrase(tag));
+          });
+        }
+
         if (args.fromAccount) {
-          const s = sanitize(args.fromAccount).replace('@', '');
-          if (s) queryParts.push(`from:${s}`);
+          parseAsTags(args.fromAccount).forEach(acc => {
+            queryParts.push(`from:${acc.replace('@', '')}`);
+          });
         }
         if (args.toAccount) {
-          const s = sanitize(args.toAccount).replace('@', '');
-          if (s) queryParts.push(`to:${s}`);
+          parseAsTags(args.toAccount).forEach(acc => {
+            queryParts.push(`to:${acc.replace('@', '')}`);
+          });
+        }
+        if (args.mentionsAccount) {
+          parseAsTags(args.mentionsAccount).forEach(acc => {
+            queryParts.push(`@${acc.replace('@', '')}`);
+          });
+        }
+        if (args.retweetsOf) {
+          parseAsTags(args.retweetsOf).forEach(acc => {
+            queryParts.push(`retweets_of:${acc.replace('@', '')}`);
+          });
+        }
+        if (args.listId) {
+          const s = sanitize(args.listId);
+          if (s) queryParts.push(`list:${s}`);
+        }
+
+        if (args.isRetweet === true) queryParts.push('is:retweet');
+        if (args.isReply === true) queryParts.push('is:reply');
+        if (args.isQuote === true) queryParts.push('is:quote');
+        if (args.isVerified === true) queryParts.push('is:verified');
+
+        if (args.hasLinks === true) queryParts.push('has:links');
+        if (args.hasImages === true) queryParts.push('has:images');
+        if (args.hasVideo === true) queryParts.push('has:video_link');
+        if (args.hasMedia === true) queryParts.push('has:media');
+
+        if (args.urlContained) {
+          const s = sanitize(args.urlContained);
+          if (s) queryParts.push(`url:${s}`);
         }
 
         const mL = safeInt(args.minLikes);
         const mRt = safeInt(args.minRetweets);
         const mRp = safeInt(args.minReplies);
 
-        if (mL > 0) queryParts.push(`min_faves:${mL}`);
+        if (mL > 0) queryParts.push(`min_likes:${mL}`);
         if (mRt > 0) queryParts.push(`min_retweets:${mRt}`);
         if (mRp > 0) queryParts.push(`min_replies:${mRp}`);
+
         if (args.since) {
           const s = sanitize(args.since);
           if (s) queryParts.push(`since:${s}`);
@@ -370,12 +521,19 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
           const s = sanitize(args.lang);
           if (s) queryParts.push(`lang:${s}`);
         }
+        if (args.place) {
+          const s = sanitize(args.place);
+          if (s) queryParts.push(`place:"${s}"`);
+        }
+
+        if (args.positiveSentiment === true) queryParts.push(':)');
+        if (args.negativeSentiment === true) queryParts.push(':(');
+        if (args.questionsOnly === true) queryParts.push('?');
 
         const q = queryParts.join(' ');
-        if (!q.trim()) return JSON.stringify({ success: false, error: 'No criteria' });
+        if (!q.trim()) return JSON.stringify({ success: false, error: 'No search criteria provided.' });
 
         const filterMap: Record<string, string> = { latest: 'live', people: 'user', photos: 'image', videos: 'video' };
-
         let effectiveFilter = args.filter;
 
         const params = new URLSearchParams();
@@ -388,16 +546,20 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const finalUrl = `https://x.com/search?${params.toString()}`;
         const currentUrl = contents.getURL();
 
-        // Skip reload if already on this search
-        if (currentUrl.includes(`q=${encodeURIComponent(q)}`) || (currentUrl.includes('search?') && currentUrl.includes(params.get('q') || ''))) {
-          console.log(`[X Tool] Already on advanced search page, skipping reload: ${q}`);
+        const urlObj = new URL(currentUrl.startsWith('http') ? currentUrl : 'https://x.com');
+        const currentQ = urlObj.searchParams.get('q') || '';
+        const currentF = urlObj.searchParams.get('f') || 'top';
+        const targetF = params.get('f') || 'top';
+
+        if (currentQ === q && currentF === targetF && currentUrl.includes('/search')) {
+          console.log(`[X Tool] Already on identical search, skipping reload: ${q}`);
         } else {
+          console.log(`[X Tool] Loading search: ${q}`);
           await contents.loadURL(finalUrl);
         }
 
-        // Wait for results to actually load
         const result = await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
-        return JSON.stringify({ ...result, url: finalUrl, query: q });
+        return JSON.stringify({ ...result, url: finalUrl, query: q, searchSummary: q });
       } catch (e) {
         return JSON.stringify({ success: false, error: String(e) });
       }
@@ -521,14 +683,15 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             const finalIndex = findResult.index;
             
             // 2. SKIP FILTERS
-            const myHandleEl = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"] [data-testid^="AppTabBar_User"] span, [data-testid="SideNav_AccountSwitcher_Button"] div > div:nth-child(2) span');
-            const myHandle = myHandleEl ? myHandleEl.innerText.toLowerCase().replace('@', '') : null;
+            const myHandle = getMyHandle();
             const authorHandle = getTweetAuthor(tweetNode);
             const authorName = tweetNode.querySelector('[data-testid="User-Name"]')?.innerText || '';
             const verifiedIcon = tweetNode.querySelector('[data-testid="icon-verified"], [aria-label*="Verified"]');
+            const socialContext = tweetNode.querySelector('[data-testid="socialContext"]')?.innerText.toLowerCase() || '';
+            const isMyRetweet = socialContext.includes('you retweeted') || socialContext.includes('tu retuiteaste');
             
-            if (${finalSkipSelf} && myHandle && authorHandle === myHandle) {
-              return { success: true, skipped: true, reason: 'self', message: 'Skipped: Logged-in user internal post' };
+            if (${finalSkipSelf} && (isMyRetweet || (myHandle && authorHandle === myHandle))) {
+              return { success: true, skipped: true, reason: 'self', message: 'Skipped: Logged-in user post or retweet' + (myHandle ? ' (Handle: @' + myHandle + ')' : '') };
             }
             if (${finalSkipVerified} && verifiedIcon) {
               return { success: true, skipped: true, reason: 'verified', message: 'Skipped: Verified profile' };
@@ -790,53 +953,134 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     }
   });
 
+  /* 
+   * CONSOLIDATED SCOUT TOOL 
+   * Modes: Niche, Community, Followers (Competitor)
+   */
   const scoutTool = new DynamicStructuredTool({
-    name: 'x_scout_topics',
-    description: 'Scout the current page or a specific niche for hashtags and accounts to find new growth opportunities.',
+    name: 'x_scout', // Renamed from x_scout_topics to generic x_scout
+    description: 'Scout for targets, trends, and accounts across Niches, Communities, or Competitor Audiences.',
     schema: z.object({
-      niche: z.string().nullable().describe('Optional niche to search for before scouting (e.g. "SaaS").').default(null),
+      mode: z.enum(['niche', 'community', 'followers']).describe('Scout mode: "niche" (keywords), "community" (specific group), or "followers" (competitor audience).'),
+      target: z.string().describe('The Niche keyword, Community ID/URL, or Username/Competitor Handle depending on the mode.'),
       limit: z.number().nullable().describe('Max number of items to return. Default is 10.'),
+      filter: z.enum(['top', 'latest']).nullable().describe('Filter for Niche/Community modes.').default('latest'),
     }),
-    func: async ({ niche, limit }: { niche: string | null; limit: number | null }) => {
+    func: async ({ mode, target, limit, filter }: { mode: 'niche' | 'community' | 'followers'; target: string; limit: number | null; filter?: string | null }) => {
       const contents = ctx.getContents();
       const lim = limit ?? 10;
+
       try {
-        if (niche) {
+        let url = '';
+        const cleanTarget = target.trim();
+
+        // 1. Navigation Strategy based on Mode
+        if (mode === 'niche') {
           const params = new URLSearchParams();
-          params.set('q', niche);
+          params.set('q', cleanTarget);
           params.set('src', 'typed_query');
-          params.set('f', 'live'); // Latest results are better for scouting trends
-          await contents.loadURL(`https://x.com/search?${params.toString()}`);
-          await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+          if (filter === 'latest') params.set('f', 'live');
+          url = `https://x.com/search?${params.toString()}`;
+        } else if (mode === 'community') {
+          const cleanId = cleanTarget.split('/').pop() || cleanTarget;
+          url = `https://x.com/communities/${cleanId}`;
+        } else if (mode === 'followers') {
+          // Target is a username, we want to see their followers (or verify if we want "following" later)
+          // Defaulting to "Followers" as that's usually the "Competitor Audience" use case.
+          const handle = cleanTarget.replace('@', '');
+          url = `https://x.com/${handle}/followers`;
+        }
+
+        if (url) {
+          await contents.loadURL(url);
+          // Wait logic differs slightly by page type
+          if (mode === 'niche') {
+            await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+          } else {
+            await contents.executeJavaScript(`
+                    (async () => { 
+                        await new Promise(r => setTimeout(r, 3000)); // Basic load wait
+                    })()
+                `);
+          }
         }
 
         const result = await contents.executeJavaScript(`
           (async function() {
             ${BASE_SCRIPT_HELPERS}
             try {
-              // Scroll a few times to get more data
-              for(let i=0; i<2; i++) {
-                  window.scrollBy(0, 1000);
-                  await wait(1000);
+              const mode = ${JSON.stringify(mode)};
+              
+              // Helper to scroll
+              const leadsSet = new Set();
+              const scrollAndCollect = async (targetCount) => {
+                 let attempts = 0;
+                 const maxAttempts = mode === 'followers' ? 10 : 8; // More for followers list
+                 const selector = mode === 'followers' ? '[data-testid="UserCell"]' : 'article[data-testid="tweet"]';
+                 
+                 while (leadsSet.size < targetCount && attempts < maxAttempts) {
+                    const elements = Array.from(document.querySelectorAll(selector));
+                    elements.forEach(el => {
+                       if (mode === 'followers') {
+                          const link = el.querySelector('a')?.getAttribute('href');
+                          if (link) leadsSet.add('@' + link.replace('/', ''));
+                       } else {
+                          const link = el.querySelector('[data-testid="User-Name"] a');
+                          const href = link ? link.getAttribute('href') : '';
+                          if (href) {
+                             const handle = '@' + href.replace('/', '');
+                             if (handle && handle !== '@Profile') leadsSet.add(handle);
+                          }
+                       }
+                    });
+                    
+                    window.scrollBy(0, 1500);
+                    await wait(2000); 
+                    attempts++;
+                 }
+              };
+
+              // --- MODE SPECIFIC LOGIC ---
+
+              if (mode === 'followers') {
+                  // For followers, we are looking for UserCells
+                  await scrollAndCollect(${lim});
+                  const accounts = [...leadsSet].slice(0, ${lim});
+
+                  return {
+                     success: true,
+                     accounts: accounts,
+                     message: 'Scouted ' + accounts.length + ' accounts from competitor audience.'
+                  };
               }
+
+              // --- NICHE & COMMUNITY (Feed based) ---
               
-              // Grab text from all visible tweets
-              const tweets = Array.from(document.querySelectorAll('[data-testid="tweetText"]'));
-              const text = tweets.map(t => t.innerText).join(' ');
+              if (mode === 'community') {
+                  const tabLabel = ${JSON.stringify(filter === 'top' ? 'Top' : 'Latest')};
+                  const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+                  const targetTab = tabs.find(t => t.innerText && t.innerText.includes(tabLabel));
+                  if (targetTab && targetTab.getAttribute('aria-selected') === 'false') {
+                    await safeClick(targetTab, tabLabel + ' Tab');
+                    await wait(2000);
+                  }
+              }
+
+              await scrollAndCollect(${lim});
               
-              // Regex for hashtags and mentions
-              const hashtagsList = (text.match(/#[\\w]+/g) || []).map(h => h.toLowerCase());
-              const mentionsList = (text.match(/@[\\w]+/g) || []).map(m => m.toLowerCase());
+              // Also collect text for hashtags from whatever is visible at the END
+              const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+              const tweetsText = articles.map(a => a.innerText).join(' ');
+              const hashtagsList = (tweetsText.match(/#[\\w]+/g) || []).map(h => h.toLowerCase());
               
-              // Frequency count and sort
               const count = (arr) => {
                   const map = {};
                   arr.forEach(i => map[i] = (map[i] || 0) + 1);
-                  return Object.entries(map).sort((a,b) => (b[1] as any) - (a[1] as any)).map(e => e[0]);
+                  return Object.entries(map).sort((a,b) => b[1] - a[1]).map(e => e[0]);
               };
               
               const scrapedHashtags = count(hashtagsList).slice(0, ${lim});
-              const scrapedAccounts = count(mentionsList).slice(0, ${lim});
+              const scrapedAccounts = [...leadsSet].slice(0, ${lim});
 
               return {
                   hashtags: scrapedHashtags,
@@ -845,8 +1089,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                   success: true,
                   message: (scrapedHashtags.length || scrapedAccounts.length) 
                             ? ('Scouted ' + scrapedHashtags.length + ' hashtags and ' + scrapedAccounts.length + ' accounts.')
-                            : 'Scouting complete, but no trends found on the current page.'
+                            : 'Scouting complete, but no clear trends found.'
               };
+
             } catch (err) {
               return { success: false, error: err.toString(), logs };
             }
@@ -859,45 +1104,140 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     }
   });
 
-  const communityScoutTool = new DynamicStructuredTool({
-    name: 'x_scout_community',
-    description: 'Scout a specific X Community by URL for new posts and targets. Alias: x_community.',
+  const profileTool = new DynamicStructuredTool({
+    name: 'x_profile',
+    description: 'Get profile details for the current user or a target account. Useful for qualification.',
     schema: z.object({
-      communityId: z.string().describe('The ID or URL-slug of the community'),
-      filter: z.enum(['top', 'latest']).nullable().default('latest'),
+      mode: z.enum(['me', 'target']).default('target'),
+      username: z.string().optional().describe('Handle of the target user (required if mode is target)'),
+      should_follow: z.boolean().default(false).describe('If true, will follow the user if not already followed.'),
     }),
-    func: async ({ communityId, filter }: { communityId: string; filter?: string | null }) => {
+    func: async ({ mode, username, should_follow }: { mode: 'me' | 'target'; username?: string; should_follow?: boolean }) => {
+      const contents = ctx.getContents();
+      const followRequested = should_follow ?? false;
       try {
-        const contents = ctx.getContents();
-        const cleanId = communityId.split('/').pop() || communityId;
-        const url = `https://x.com/communities/${cleanId}`;
-        await contents.loadURL(url);
-        const result = await contents.executeJavaScript(`
-          (async function() {
-            ${BASE_SCRIPT_HELPERS}
-            // Ensure we are on the right tab if needed
-            const tabLabel = ${JSON.stringify(filter === 'top' ? 'Top' : 'Latest')};
-            const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
-            const targetTab = tabs.find(t => t.innerText.includes(tabLabel));
-            if (targetTab && targetTab.getAttribute('aria-selected') === 'false') {
-              await safeClick(targetTab, tabLabel + ' Tab');
-              await wait(1500);
-            }
-            // Scroll to load a few more
-            window.scrollBy(0, 800);
-            await wait(1000);
+        if (mode === 'me') {
+          await contents.loadURL('https://x.com/home');
+          await contents.executeJavaScript(`
+                    (async () => {
+                        const profileLink = document.querySelector('[data-testid="AppTabBar_Profile_Link"]');
+                        if(profileLink) profileLink.click();
+                        await new Promise(r => setTimeout(r, 2000));
+                    })()
+                `);
+        } else {
+          const handle = (username || '').replace('@', '').trim();
+          if (!handle) throw new Error('Username is required for target mode');
+          await contents.loadURL(`https://x.com/${handle}`);
+          await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+        }
 
-            const tweetCount = document.querySelectorAll('[data-testid="tweet"]').length;
-            return { success: true, tweetCount };
-          })()
-        `);
-        const data = result as { success: boolean; tweetCount: number };
-        return JSON.stringify({
-          success: true,
-          url,
-          tweetCount: data.tweetCount,
-          message: `Community loaded. Found ${data.tweetCount} posts.`
-        });
+        const result = await contents.executeJavaScript(`
+                (async () => {
+                    ${BASE_SCRIPT_HELPERS}
+                    try {
+                        const handleEl = document.querySelector('[data-testid="UserName"] div[dir="ltr"] span');
+                        const bioEl = document.querySelector('[data-testid="UserDescription"]');
+                        const locationEl = document.querySelector('[data-testid="UserLocation"]');
+                        const urlEl = document.querySelector('[data-testid="UserUrl"]');
+                        
+                        // Wait for profile data to load
+                        await new Promise(r => setTimeout(r, 2000));
+
+                        // Wait for profile stats to load properly
+                        await new Promise(r => setTimeout(r, 2000));
+
+                        const allLinks = Array.from(document.querySelectorAll('a'));
+                        
+                        const findStatLink = (slug, exclude) => {
+                           return allLinks.find(a => {
+                              const href = a.getAttribute('href') || '';
+                              const text = (a.textContent || '').trim();
+                              if (!href.includes(slug)) return false;
+                              if (exclude && href.includes(exclude)) return false;
+                              // Match digit (must have some number to be the count link)
+                              return /\\d/.test(text);
+                           });
+                        };
+
+                        const followingLink = document.querySelector("#react-root > div > div > div.css-175oi2r.r-1f2l425.r-13qz1uu.r-417010.r-18u37iz > main > div > div > div > div > div > div:nth-child(3) > div > div > div:nth-child(1) > div > div.css-175oi2r.r-13awgt0.r-18u37iz.r-1w6e6rj > div.css-175oi2r.r-1rtiivn > a") || findStatLink('/following');
+                        let followersLink = document.querySelector("#react-root > div > div > div.css-175oi2r.r-1f2l425.r-13qz1uu.r-417010.r-18u37iz > main > div > div > div > div > div > div:nth-child(3) > div > div > div:nth-child(1) > div > div.css-175oi2r.r-13awgt0.r-18u37iz.r-1w6e6rj > div:nth-child(2) > a") || findStatLink('/followers', 'verified_followers');
+                        if (!followersLink) followersLink = findStatLink('/followers');
+
+                        const verifiedEl = document.querySelector('[data-testid="icon-verified"]');
+                        
+                        const parseCount = (str) => {
+                            if (!str) return 0;
+                            const s = str.toUpperCase().trim();
+                            const match = s.match(/([0-9,.]+)\\s*([KMB])?/);
+                            if (!match) return 0;
+                            
+                            const numStr = match[1].replace(/,/g, '');
+                            const suffix = match[2];
+                            const val = parseFloat(numStr);
+                            if (isNaN(val)) return 0;
+                            
+                            let multiplier = 1;
+                            if (suffix === 'K') multiplier = 1000;
+                            else if (suffix === 'M') multiplier = 1000000;
+                            else if (suffix === 'B') multiplier = 1000000000;
+                            
+                            return Math.floor(val * multiplier);
+                        };
+
+                        const getCleanText = (el) => {
+                            if (!el) return '';
+                            const inner = el.querySelector('span span') || el.querySelector('span');
+                            return (inner || el).textContent || '';
+                        };
+
+                        let follow_status = 'unknown';
+                        if (${followRequested}) {
+                           // User provided selector
+                           const followBtn = document.querySelector("#react-root > div > div > div.css-175oi2r.r-1f2l425.r-13qz1uu.r-417010.r-18u37iz > main > div > div > div > div > div > div:nth-child(3) > div > div > div:nth-child(1) > div > div.css-175oi2r.r-1habvwh.r-18u37iz.r-1w6e6rj.r-1wtj0ep > div.css-175oi2r.r-obd0qt.r-18u37iz.r-1w6e6rj.r-1h0z5md.r-dnmrzs > div > div.css-175oi2r.r-6gpygo > button") 
+                              || document.querySelector('[data-testid$="-follow"]');
+                           
+                           if (followBtn) {
+                              const text = (followBtn.textContent || '').toLowerCase();
+                              if (text.includes('following') || text.includes('unfollow')) {
+                                 follow_status = 'already_following';
+                              } else {
+                                 await safeClick(followBtn, 'Profile Follow Button');
+                                 await new Promise(r => setTimeout(r, 1000));
+                                 follow_status = 'followed';
+                              }
+                           } else {
+                              follow_status = 'button_not_found';
+                           }
+                        }
+
+                        const stats = {
+                            handle: handleEl ? (handleEl.textContent || '').trim() : '',
+                            bio: bioEl ? (bioEl.textContent || '').trim() : '',
+                            location: locationEl ? (locationEl.textContent || '').trim() : '',
+                            website: urlEl ? (urlEl.textContent || '').trim() : '',
+                            following: parseCount(getCleanText(followingLink)),
+                            followers: parseCount(getCleanText(followersLink)),
+                            is_verified: !!verifiedEl,
+                            follow_status,
+                            success: true
+                        };
+                        
+                        let msg = 'Profile scanned: ' + (stats.handle || 'unknown') + ' (' + stats.followers + ' followers)';
+                        if (follow_status === 'followed') msg += ' - Followed user.';
+                        else if (follow_status === 'already_following') msg += ' - Already following.';
+                        else if (follow_status === 'button_not_found') msg += ' - Follow button not found.';
+
+                        return { 
+                            ...stats, 
+                            message: msg
+                        };
+                    } catch (e) {
+                         return { success: false, error: e.toString() };
+                    }
+                })()
+            `);
+        return JSON.stringify(result);
       } catch (e) {
         return JSON.stringify({ success: false, error: String(e) });
       }
@@ -906,15 +1246,15 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const engageTool = new DynamicStructuredTool({
     name: 'x_engage',
-    description: 'Perform multiple actions (like, follow, retweet, reply) on a tweet.',
+    description: 'Perform multiple actions (like, follow, retweet, reply, dm) on a tweet or post.',
     schema: z.object({
-      targetIndex: z.union([z.number(), z.string()]).nullable().default(0),
-      actions: z.string().describe('Comma separated: like,follow,retweet,reply'),
-      replyText: z.string().nullable().default(null),
-      skip_self: z.boolean().nullable().describe('Whether to skip engagement for own posts. Default is true.'),
-      skip_verified: z.boolean().nullable().describe('Whether to skip verified users. Default is false.'),
-      skip_keywords: z.string().nullable().describe('Comma-separated keywords to skip. Default is empty string.'),
-      expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended.'),
+      targetIndex: z.preprocess((val) => (val === null ? 0 : Number(val)), z.number().default(0)).describe('The 0-based index of the tweet in the visible feed.'),
+      actions: z.string().describe('Comma-separated list of actions to take: like, follow, retweet, reply, dm.'),
+      replyText: z.string().optional().describe('Required if "reply" action is specified.'),
+      skip_self: z.boolean().default(true).describe('Skip if this is your own post.'),
+      skip_verified: z.boolean().default(false).describe('Skip if the author is verified.'),
+      skip_keywords: z.string().default('').describe('Comma-separated keywords to avoid.'),
+      expected_author: z.string().optional().describe('Optional handle (without @) to verify the correct tweet is targeted.'),
     }),
     func: async ({ targetIndex, actions, replyText, skip_self, skip_verified, skip_keywords, expected_author }: {
       targetIndex: number | string | null;
@@ -947,13 +1287,14 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               const authorHandle = getTweetAuthor(tweet);
               const authorName = tweet.querySelector('[data-testid="User-Name"]')?.innerText || '';
               const verifiedIcon = tweet.querySelector('[data-testid="icon-verified"], [aria-label*="Verified"]');
-
+              const socialContext = tweet.querySelector('[data-testid="socialContext"]')?.innerText.toLowerCase() || '';
+              const isMyRetweet = socialContext.includes('you retweeted') || socialContext.includes('tu retuiteaste');
+              
               // 2. SKIP FILTERS
-              const myHandleEl = document.querySelector('[data-testid^="SideNav_AccountSwitcher_Button"] [data-testid^="AppTabBar_User"] span, [data-testid="SideNav_AccountSwitcher_Button"] div > div:nth-child(2) span');
-              const myHandle = myHandleEl ? myHandleEl.innerText.toLowerCase().replace('@', '') : null;
+              const myHandle = getMyHandle();
 
-              if (${finalSkipSelf} && myHandle && authorHandle === myHandle) {
-                return { success: true, skipped: true, reason: 'self', message: 'Skipped: Logged-in user internal post' };
+              if (${finalSkipSelf} && (isMyRetweet || (myHandle && authorHandle === myHandle))) {
+                return { success: true, skipped: true, reason: 'self', message: 'Skipped: Logged-in user post or retweet' + (myHandle ? ' (Handle: @' + myHandle + ')' : '') };
               }
               if (${finalSkipVerified} && verifiedIcon) {
                 return { success: true, skipped: true, reason: 'verified', message: 'Skipped: Verified profile' };
@@ -1037,6 +1378,52 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                     results.push('Reply Composer Not Found');
                   }
                 }
+              }
+
+              if (actionsList.includes('dm') && replyText) {
+                 const userLink = tweet.querySelector('[data-testid="User-Name"] a');
+                 if (userLink) {
+                    // Hover to show card
+                    const rect = userLink.getBoundingClientRect();
+                    const mouseEvent = new MouseEvent('mouseover', {
+                        view: window, bubbles: true, cancelable: true,
+                        clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2
+                    });
+                    userLink.dispatchEvent(mouseEvent);
+                    await wait(2000); // Wait for card
+
+                    const hoverCard = document.querySelector('[data-testid="hoverCard"]');
+                    if (hoverCard && isVisible(hoverCard)) {
+                        const dmBtn = hoverCard.querySelector('[aria-label="Message"], [data-testid="sendDMFromProfile"]');
+                        if (dmBtn) {
+                             await safeClick(dmBtn, 'DM Button');
+                             await wait(1500);
+                             // DM Drawer
+                             const dmComposer = document.querySelector('[data-testid="dmComposerTextInput"], [data-testid="dmComposer"] div[role="textbox"]');
+                             if (dmComposer) {
+                                 await safeClick(dmComposer, 'DM Composer');
+                                 dmComposer.focus();
+                                 document.execCommand('insertText', false, replyText);
+                                 await wait(800);
+                                 const sendBtn = document.querySelector('[data-testid="dmComposerSendButton"]');
+                                 if (sendBtn) {
+                                     await safeClick(sendBtn, 'Send DM');
+                                     results.push('DM Sent');
+                                 } else {
+                                     results.push('DM Send Button Not Found');
+                                 }
+                             } else {
+                                 results.push('DM Composer Not Found');
+                             }
+                        } else {
+                            results.push('Message Button Not Found on Hover Card (User might have DMs closed)');
+                        }
+                    } else {
+                        results.push('Hover Card did not appear');
+                    }
+                 } else {
+                    results.push('User Link not found for DM');
+                 }
               }
 
               return { success: true, actions_performed: results, logs };
@@ -1147,5 +1534,5 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     func: engageTool.func,
   });
 
-  return [searchTool, advancedSearchTool, likeTool, replyTool, postTool, followTool, scoutTool, communityScoutTool, engageTool, checkEngagementTool, scanPostsTool, engagingTool];
+  return [advancedSearchTool, likeTool, replyTool, postTool, followTool, scoutTool, profileTool, engageTool, checkEngagementTool, scanPostsTool, engagingTool];
 }

@@ -11,10 +11,12 @@ import { supabase } from '@/lib/supabase';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Field } from '@/components/ui/field';
+import { TagsInput } from '@/components/ui/tags-input';
+
 import { MentionInput, Group } from '@/components/ui/mention-input';
 import { NODE_DEFINITIONS } from './nodeDefs';
 import { PlaybookNodeType } from '@/types/playbook';
-import { X, Sparkles, ChevronRight } from 'lucide-react';
+import { X, Sparkles, ChevronRight, Play, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Edge, Node } from 'reactflow';
 
@@ -216,6 +218,78 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
         const hasVariables = variableGroups.length > 0;
 
         switch (type) {
+            case 'start':
+                return (
+                    <div className="p-4 rounded-lg bg-muted/20 border border-border/50 text-center space-y-2">
+                        <Play className="w-8 h-8 text-primary mx-auto opacity-50" />
+                        <div className="text-sm font-medium text-foreground">Playbook Entry Point</div>
+                        <div className="text-xs text-muted-foreground mr-1">
+                            This node starts the execution flow. No configuration is required.
+                        </div>
+                    </div>
+                );
+            case 'end':
+                return (
+                    <div className="p-4 rounded-lg bg-muted/20 border border-border/50 text-center space-y-2">
+                        <Square className="w-8 h-8 text-muted-foreground mx-auto opacity-50" />
+                        <div className="text-sm font-medium text-foreground">Playbook End Point</div>
+                        <div className="text-xs text-muted-foreground mr-1">
+                            Execution stops here. Mark as successful completion.
+                        </div>
+                    </div>
+                );
+            case 'loop':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Loop Source">
+                            <Select
+                                value={config.source || 'list'}
+                                onValueChange={(v) => handleConfigChange('source', v)}
+                            >
+                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="list">List / Array</SelectItem>
+                                    <SelectItem value="number">Count (Range)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+
+                        {config.source === 'number' ? (
+                            <Field label="Iterations">
+                                <Input
+                                    type="number"
+                                    value={config.count || 1}
+                                    onChange={(e) => handleConfigChange('count', parseInt(e.target.value))}
+                                    placeholder="e.g. 5"
+                                    className="h-9 text-xs"
+                                />
+                            </Field>
+                        ) : (
+                            <Field label="Array Variable">
+                                <Select
+                                    value={config.items || ''}
+                                    onValueChange={(v) => handleConfigChange('items', v)}
+                                >
+                                    <SelectTrigger className="h-9 text-xs"><SelectValue placeholder="Select items..." /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="custom"> Custom Variable...</SelectItem>
+                                        {variableGroups.flatMap(g => g.variables).filter(v => v.value.includes('items') || v.value.includes('accounts') || v.value.includes('list')).map((v, i) => (
+                                            <SelectItem key={i} value={v.value}>{v.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </Field>
+                        )}
+                        <Field label="Max Iterations (Safe Limit)">
+                            <Input
+                                type="number"
+                                value={config.max_loops || 50}
+                                onChange={(e) => handleConfigChange('max_loops', parseInt(e.target.value))}
+                                className="h-9 text-xs"
+                            />
+                        </Field>
+                    </div>
+                );
             case 'navigate':
                 const vars = getUpstreamVariables().flatMap(g => g.variables);
                 const isManual = config.url_mode === 'manual' || (config.url && !config.url.startsWith('{{'));
@@ -254,7 +328,7 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                     value={config.url || ''}
                                     onValueChange={(v) => handleConfigChange('url', v)}
                                 >
-                                    <SelectTrigger className="w-full h-12 rounded-xl border border-border bg-muted/30 px-4 py-2 text-[13px] shadow-sm hover:border-primary/30 focus:ring-0 focus:ring-offset-0">
+                                    <SelectTrigger className="w-full h-12 rounded-xl border border-border bg-muted/30 px-4 py-2 text-[13px] shadow-sm hover:border-muted-foreground/30 focus:ring-0 focus:ring-offset-0">
                                         <SelectValue placeholder="Select target field..." />
                                     </SelectTrigger>
                                     <SelectContent className="bg-popover border-border/50 max-h-[300px] shadow-2xl rounded-xl">
@@ -451,45 +525,56 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                         </div>
                     </div>
                 );
-            case 'x_search':
+            case 'x_scout':
+                const scoutMode = config.mode || 'niche'; // default
                 return (
                     <div className="space-y-4">
-                        <Field label="Query">
-                            <MentionInput
-                                value={config.query || ''}
-                                onChange={(e) => handleConfigChange('query', e.target.value)}
-                                placeholder="Search query..."
-                                variableGroups={variableGroups}
-                            />
-                        </Field>
-                        <Field label="Filter">
+                        <Field label="Scout Mode">
                             <Select
-                                value={config.filter || 'latest'}
-                                onValueChange={(v) => handleConfigChange('filter', v)}
+                                value={scoutMode}
+                                onValueChange={(v) => handleConfigChange('mode', v)}
                             >
-                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="top">Top</SelectItem>
-                                    <SelectItem value="latest">Latest</SelectItem>
-                                    <SelectItem value="people">People</SelectItem>
-                                    <SelectItem value="photos">Photos</SelectItem>
-                                    <SelectItem value="videos">Videos</SelectItem>
+                                    <SelectItem value="niche">Niche / Topic</SelectItem>
+                                    <SelectItem value="community">X Community</SelectItem>
+                                    <SelectItem value="followers">Competitor Audience</SelectItem>
                                 </SelectContent>
                             </Select>
                         </Field>
-                    </div>
-                );
-            case 'x_scout_topics':
-                return (
-                    <div className="space-y-4">
-                        <Field label="Target Niche (Optional)">
-                            <MentionInput
-                                value={config.niche || ''}
-                                onChange={(e) => handleConfigChange('niche', e.target.value)}
-                                placeholder="e.g. SaaS growth, Indie Hackers..."
-                                variableGroups={variableGroups}
-                            />
+
+                        <Field label={scoutMode === 'niche' ? 'Target Niche' : scoutMode === 'community' ? 'Community URL/ID' : 'Competitor Username'}>
+                            {scoutMode === 'niche' ? (
+                                <TagsInput
+                                    value={config.target ? config.target.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                    onChange={(tags) => handleConfigChange('target', tags.join(', '))}
+                                    placeholder="e.g. SaaS, AI Marketing (Press Enter)"
+                                />
+                            ) : (
+                                <MentionInput
+                                    value={config.target || ''}
+                                    onChange={(e) => handleConfigChange('target', e.target.value)}
+                                    placeholder={scoutMode === 'community' ? 'Community URL or ID' : 'e.g. @competitor_handle'}
+                                    variableGroups={variableGroups}
+                                />
+                            )}
                         </Field>
+
+                        {scoutMode !== 'followers' && (
+                            <Field label="Filter">
+                                <Select
+                                    value={config.filter || 'latest'}
+                                    onValueChange={(v) => handleConfigChange('filter', v)}
+                                >
+                                    <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="top">Top</SelectItem>
+                                        <SelectItem value="latest">Latest</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </Field>
+                        )}
+
                         <Field label="Max Items">
                             <Input
                                 type="number"
@@ -498,203 +583,343 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 className="h-9 text-xs"
                             />
                         </Field>
+
                         <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
-                            Scouts visible tweets for trending hashtags and active accounts. If Niche is provided, it will search for it first.
+                            {scoutMode === 'niche' && 'Scouts search results for trending active accounts and hashtags.'}
+                            {scoutMode === 'community' && 'Scouts a specific X Community for high-intent members.'}
+                            {scoutMode === 'followers' && 'Scouts the followers of a competitor to find potential leads.'}
                         </div>
                     </div>
                 );
-            case 'x_scout_community':
+            case 'condition': {
+                const logicMode = config.logic_mode || 'simple';
                 return (
                     <div className="space-y-4">
-                        <Field label="Community ID / URL">
-                            <MentionInput
-                                value={config.communityId || ''}
-                                onChange={(e) => handleConfigChange('communityId', e.target.value)}
-                                placeholder="e.g. 1493446837214187523 or URL"
-                                variableGroups={variableGroups}
-                            />
-                        </Field>
-                        <Field label="Filter">
+                        <Field label="Logic Mode">
                             <Select
-                                value={config.filter || 'latest'}
-                                onValueChange={(v) => handleConfigChange('filter', v)}
+                                value={logicMode}
+                                onValueChange={(v) => handleConfigChange('logic_mode', v)}
                             >
                                 <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="top">Top</SelectItem>
-                                    <SelectItem value="latest">Latest</SelectItem>
+                                    <SelectItem value="simple">Simple Logic</SelectItem>
+                                    <SelectItem value="ai">AI Instruction</SelectItem>
                                 </SelectContent>
                             </Select>
                         </Field>
-                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
-                            Goes to the specific X Community to scout for high-intent targets.
+
+                        {logicMode === 'simple' && (
+                            <>
+                                <Field label="If Value">
+                                    <MentionInput
+                                        value={config.operand1 || ''}
+                                        onChange={(e) => handleConfigChange('operand1', e.target.value)}
+                                        placeholder="{{variable}} or value"
+                                        variableGroups={variableGroups}
+                                    />
+                                </Field>
+                                <Field label="Operator">
+                                    <Select
+                                        value={config.operator || 'equals'}
+                                        onValueChange={(v) => handleConfigChange('operator', v)}
+                                    >
+                                        <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="equals">Equals (==)</SelectItem>
+                                            <SelectItem value="not_equals">Not Equals (!=)</SelectItem>
+                                            <SelectItem value="contains">Contains</SelectItem>
+                                            <SelectItem value="greater_than">Greater Than (&gt;)</SelectItem>
+                                            <SelectItem value="less_than">Less Than (&lt;)</SelectItem>
+                                            <SelectItem value="is_empty">Is Empty</SelectItem>
+                                            <SelectItem value="is_not_empty">Is Not Empty</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </Field>
+                                {!['is_empty', 'is_not_empty'].includes(config.operator) && (
+                                    <Field label="Value to Compare">
+                                        <MentionInput
+                                            value={config.operand2 || ''}
+                                            onChange={(e) => handleConfigChange('operand2', e.target.value)}
+                                            placeholder="Value to check against"
+                                            variableGroups={variableGroups}
+                                        />
+                                    </Field>
+                                )}
+                            </>
+                        )}
+
+                        {logicMode === 'ai' && (
+                            <Field label="Condition Instruction">
+                                <Textarea
+                                    value={config.instruction || ''}
+                                    onChange={(e) => handleConfigChange('instruction', e.target.value)}
+                                    placeholder="e.g. Check if the user looks like a qualified lead based on their bio."
+                                    className="min-h-[100px] text-xs"
+                                />
+                            </Field>
+                        )}
+
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            Green output is triggered if True. Red output if False.
                         </div>
                     </div>
                 );
+            }
+            case 'x_profile': {
+                const profileMode = config.mode || 'target'; // default to target
+                return (
+                    <div className="space-y-4">
+                        <Field label="Profile Mode">
+                            <Select
+                                value={profileMode}
+                                onValueChange={(v) => handleConfigChange('mode', v)}
+                            >
+                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="target">Unseen Target (Scrape)</SelectItem>
+                                    <SelectItem value="me">Current User (Me)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        {profileMode === 'target' && (
+                            <Field label="Target Handle">
+                                <MentionInput
+                                    value={config.username || ''}
+                                    onChange={(e) => handleConfigChange('username', e.target.value)}
+                                    placeholder="e.g. @elonmusk"
+                                    variableGroups={variableGroups}
+                                />
+                            </Field>
+                        )}
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            {profileMode === 'target' ? 'Visits a profile to scrape bio, location, and verification status for qualification.' : 'Checks the currently logged-in user profile stats.'}
+                        </div>
+                    </div>
+                );
+            }
             case 'x_advanced_search':
                 return (
-                    <div className="space-y-4">
-                        <Field label="All Words">
-                            <MentionInput
-                                value={config.allWords || ''}
-                                onChange={(e) => handleConfigChange('allWords', e.target.value)}
-                                placeholder="e.g. openai chatgpt"
-                                variableGroups={variableGroups}
-                            />
-                        </Field>
-                        <Field label="Any Words (OR)">
-                            <MentionInput
-                                value={config.anyWords || ''}
-                                onChange={(e) => handleConfigChange('anyWords', e.target.value)}
-                                placeholder="e.g. ai ml dl"
-                                variableGroups={variableGroups}
-                            />
-                        </Field>
-                        <Field label="Exact Phrase">
-                            <MentionInput
-                                value={config.exactPhrase || ''}
-                                onChange={(e) => handleConfigChange('exactPhrase', e.target.value)}
-                                placeholder="e.g. artificial intelligence"
-                                variableGroups={variableGroups}
-                            />
-                        </Field>
-                        <Field label="Exclude Words">
-                            <Input
-                                value={config.noneWords || ''}
-                                onChange={(e) => handleConfigChange('noneWords', e.target.value)}
-                                placeholder="e.g. crypto"
-                                className="h-9 text-xs"
-                            />
-                        </Field>
-                        <Field label="Hashtags">
-                            <Input
-                                value={config.hashtags || ''}
-                                onChange={(e) => handleConfigChange('hashtags', e.target.value)}
-                                placeholder="e.g. #ai #saas"
-                                className="h-9 text-xs"
-                            />
-                        </Field>
-                        <div className="grid grid-cols-3 gap-2">
-                            <Field label="Min Likes">
-                                <Input
-                                    type="number"
-                                    value={config.minLikes || 0}
-                                    onChange={(e) => handleConfigChange('minLikes', parseInt(e.target.value))}
-                                    className="h-9 text-xs"
+                    <div className="space-y-6 pb-4">
+                        {/* Section: Keywords */}
+                        <div className="space-y-3">
+                            <Label className="text-[10px] font-bold uppercase tracking-widest text-primary/70 mb-2 block">Keywords & Content</Label>
+                            <Field label="All Words">
+                                <TagsInput
+                                    value={config.allWords ? config.allWords.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                    onChange={(tags) => handleConfigChange('allWords', tags.join(', '))}
+                                    placeholder="e.g. openai, chatgpt"
                                 />
                             </Field>
-                            <Field label="Min RTs">
-                                <Input
-                                    type="number"
-                                    value={config.minRetweets || 0}
-                                    onChange={(e) => handleConfigChange('minRetweets', parseInt(e.target.value))}
-                                    className="h-9 text-xs"
+                            <Field label="Any Words (OR)">
+                                <TagsInput
+                                    value={config.anyWords ? config.anyWords.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                    onChange={(tags) => handleConfigChange('anyWords', tags.join(', '))}
+                                    placeholder="e.g. ai, ml, dl"
                                 />
                             </Field>
-                            <Field label="Min Comms">
-                                <Input
-                                    type="number"
-                                    value={config.minReplies || 0}
-                                    onChange={(e) => handleConfigChange('minReplies', parseInt(e.target.value))}
-                                    className="h-9 text-xs"
+                            <Field label="Exact Phrase">
+                                <MentionInput
+                                    value={config.exactPhrase || ''}
+                                    onChange={(e) => handleConfigChange('exactPhrase', e.target.value)}
+                                    placeholder="e.g. artificial intelligence"
+                                    variableGroups={variableGroups}
+                                />
+                            </Field>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Exclude Words">
+                                    <TagsInput
+                                        value={config.noneWords ? config.noneWords.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                        onChange={(tags) => handleConfigChange('noneWords', tags.join(', '))}
+                                        placeholder="e.g. crypto, nft"
+                                    />
+                                </Field>
+                                <Field label="Hashtags">
+                                    <TagsInput
+                                        value={config.hashtags ? config.hashtags.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                        onChange={(tags) => handleConfigChange('hashtags', tags.join(', '))}
+                                        placeholder="#ai, #saas"
+                                    />
+                                </Field>
+                            </div>
+                            <Field label="Cashtags">
+                                <TagsInput
+                                    value={config.cashtags ? config.cashtags.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                    onChange={(tags) => handleConfigChange('cashtags', tags.join(', '))}
+                                    placeholder="$BTC, $TSLA"
                                 />
                             </Field>
                         </div>
-                        <Field label="Language">
-                            <Input
-                                value={config.lang || ''}
-                                onChange={(e) => handleConfigChange('lang', e.target.value)}
-                                placeholder="en, pt, es..."
-                                className="h-9 text-xs"
-                            />
-                        </Field>
-                        <Field label="Result Type">
-                            <Select
-                                value={config.filter || 'latest'}
-                                onValueChange={(v) => handleConfigChange('filter', v)}
-                            >
-                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="top">Top</SelectItem>
-                                    <SelectItem value="latest">Latest</SelectItem>
-                                    <SelectItem value="people">People</SelectItem>
-                                    <SelectItem value="photos">Photos</SelectItem>
-                                    <SelectItem value="videos">Videos</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </Field>
-                    </div>
-                );
-            case 'x_like':
-                return (
-                    <div className="space-y-4">
-                        <Field label="Tweet Index">
-                            <MentionInput
-                                value={config.index?.toString() || '0'}
-                                onChange={(e) => handleConfigChange('index', e.target.value)}
-                                variableGroups={variableGroups}
-                                placeholder="0, 1, 2... or {{loop.index}}"
-                            />
-                        </Field>
-                        <Field label="Action">
-                            <Select
-                                value={config.action || 'like'}
-                                onValueChange={(v) => handleConfigChange('action', v)}
-                            >
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="like">Like</SelectItem>
-                                    <SelectItem value="unlike">Unlike</SelectItem>
-                                    <SelectItem value="toggle">Toggle</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </Field>
-                    </div>
-                );
-            case 'x_reply':
-                return (
-                    <div className="space-y-4">
-                        <Field label="Tweet Index">
-                            <MentionInput
-                                value={config.index?.toString() || '0'}
-                                onChange={(e) => handleConfigChange('index', e.target.value)}
-                                variableGroups={variableGroups}
-                                placeholder="0, 1, 2... or {{loop.index}}"
-                            />
-                        </Field>
-                        <Field label="Reply Text">
-                            <MentionInput
-                                value={config.text || ''}
-                                onChange={(e) => handleConfigChange('text', e.target.value)}
-                                placeholder="Write your reply..."
-                                variableGroups={variableGroups}
-                            />
-                        </Field>
-                        <div className="pt-4 pb-2 border-t border-border">
-                            <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">Skip Filters</Label>
+
+                        {/* Section: Accounts */}
+                        <div className="space-y-3 pt-2 border-t border-border/40">
+                            <Label className="text-[10px] font-bold uppercase tracking-widest text-primary/70 mb-2 block">Accounts & Lists</Label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="From Accounts">
+                                    <TagsInput
+                                        value={config.fromAccount ? config.fromAccount.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                        onChange={(tags) => handleConfigChange('fromAccount', tags.join(', '))}
+                                        placeholder="@elonmusk"
+                                    />
+                                </Field>
+                                <Field label="To Accounts">
+                                    <TagsInput
+                                        value={config.toAccount ? config.toAccount.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                        onChange={(tags) => handleConfigChange('toAccount', tags.join(', '))}
+                                        placeholder="@reavion"
+                                    />
+                                </Field>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Mentions Accounts">
+                                    <TagsInput
+                                        value={config.mentionsAccount ? config.mentionsAccount.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                        onChange={(tags) => handleConfigChange('mentionsAccount', tags.join(', '))}
+                                        placeholder="@google"
+                                    />
+                                </Field>
+                                <Field label="Retweets Of">
+                                    <TagsInput
+                                        value={config.retweetsOf ? config.retweetsOf.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                        onChange={(tags) => handleConfigChange('retweetsOf', tags.join(', '))}
+                                        placeholder="@openai"
+                                    />
+                                </Field>
+                            </div>
+                            <Field label="From List ID">
+                                <Input
+                                    value={config.listId || ''}
+                                    onChange={(e) => handleConfigChange('listId', e.target.value)}
+                                    placeholder="e.g. 1234567890"
+                                    className="h-9 text-xs"
+                                />
+                            </Field>
                         </div>
-                        <div className="flex items-center justify-between px-1">
-                            <Label className="text-[12px] text-muted-foreground">Skip logged-in user</Label>
-                            <Switch
-                                checked={config.skip_self !== false}
-                                onCheckedChange={(v) => handleConfigChange('skip_self', v)}
-                            />
+
+                        {/* Section: Filtering & Types */}
+                        <div className="space-y-3 pt-2 border-t border-border/40">
+                            <Label className="text-[10px] font-bold uppercase tracking-widest text-primary/70 mb-2 block">Filtering & Media</Label>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { id: 'isRetweet', label: 'Retweets Only' },
+                                    { id: 'isReply', label: 'Replies Only' },
+                                    { id: 'isQuote', label: 'Quotes Only' },
+                                    { id: 'isVerified', label: 'Verified Only' },
+                                    { id: 'hasLinks', label: 'Has Links' },
+                                    { id: 'hasImages', label: 'Has Images' },
+                                    { id: 'hasVideo', label: 'Has Video' },
+                                    { id: 'hasMedia', label: 'Any Media' },
+                                    { id: 'positiveSentiment', label: 'Positive :)' },
+                                    { id: 'negativeSentiment', label: 'Negative :(' },
+                                    { id: 'questionsOnly', label: 'Questions ?' }
+                                ].map((filter) => (
+                                    <div key={filter.id} className="flex items-center justify-between p-2 rounded bg-muted/30 border border-border/40">
+                                        <Label className="text-[10px]">{filter.label}</Label>
+                                        <Switch
+                                            checked={!!config[filter.id]}
+                                            onCheckedChange={(c) => handleConfigChange(filter.id, c)}
+                                            className="scale-75"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            <Field label="Containing URL">
+                                <Input
+                                    value={config.urlContained || ''}
+                                    onChange={(e) => handleConfigChange('urlContained', e.target.value)}
+                                    placeholder="e.g. github.com"
+                                    className="h-9 text-xs"
+                                />
+                            </Field>
                         </div>
-                        <div className="flex items-center justify-between px-1">
-                            <Label className="text-[12px] text-muted-foreground">Skip verified/business profiles</Label>
-                            <Switch
-                                checked={config.skip_verified === true}
-                                onCheckedChange={(v) => handleConfigChange('skip_verified', v)}
-                            />
+
+                        {/* Section: Engagement */}
+                        <div className="space-y-3 pt-2 border-t border-border/40">
+                            <Label className="text-[10px] font-bold uppercase tracking-widest text-primary/70 mb-2 block">Engagement Thresholds</Label>
+                            <div className="grid grid-cols-3 gap-2">
+                                <Field label="Min Likes">
+                                    <Input
+                                        type="number"
+                                        value={config.minLikes || 0}
+                                        onChange={(e) => handleConfigChange('minLikes', parseInt(e.target.value))}
+                                        className="h-9 text-xs"
+                                    />
+                                </Field>
+                                <Field label="Min RTs">
+                                    <Input
+                                        type="number"
+                                        value={config.minRetweets || 0}
+                                        onChange={(e) => handleConfigChange('minRetweets', parseInt(e.target.value))}
+                                        className="h-9 text-xs"
+                                    />
+                                </Field>
+                                <Field label="Min Replies">
+                                    <Input
+                                        type="number"
+                                        value={config.minReplies || 0}
+                                        onChange={(e) => handleConfigChange('minReplies', parseInt(e.target.value))}
+                                        className="h-9 text-xs"
+                                    />
+                                </Field>
+                            </div>
                         </div>
-                        <Field label="Skip Keywords (comma separated)">
-                            <Input
-                                value={config.skip_keywords || ''}
-                                onChange={(e) => handleConfigChange('skip_keywords', e.target.value)}
-                                placeholder="promotional, official, bot..."
-                                className="h-9 text-[12px]"
-                            />
-                        </Field>
+
+                        {/* Section: Date & Lang */}
+                        <div className="space-y-3 pt-2 border-t border-border/40">
+                            <Label className="text-[10px] font-bold uppercase tracking-widest text-primary/70 mb-2 block">Date, Language & Place</Label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Since (YYYY-MM-DD)">
+                                    <Input
+                                        value={config.since || ''}
+                                        onChange={(e) => handleConfigChange('since', e.target.value)}
+                                        placeholder="2024-01-01"
+                                        className="h-9 text-xs"
+                                    />
+                                </Field>
+                                <Field label="Until (YYYY-MM-DD)">
+                                    <Input
+                                        value={config.until || ''}
+                                        onChange={(e) => handleConfigChange('until', e.target.value)}
+                                        placeholder="2024-12-31"
+                                        className="h-9 text-xs"
+                                    />
+                                </Field>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Field label="Language">
+                                    <Input
+                                        value={config.lang || ''}
+                                        onChange={(e) => handleConfigChange('lang', e.target.value)}
+                                        placeholder="en, es, pt..."
+                                        className="h-9 text-xs"
+                                    />
+                                </Field>
+                                <Field label="Place/Location">
+                                    <Input
+                                        value={config.place || ''}
+                                        onChange={(e) => handleConfigChange('place', e.target.value)}
+                                        placeholder="New York City"
+                                        className="h-9 text-xs"
+                                    />
+                                </Field>
+                            </div>
+                            <Field label="Result Type">
+                                <Select
+                                    value={config.filter || 'latest'}
+                                    onValueChange={(v) => handleConfigChange('filter', v)}
+                                >
+                                    <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="top">Top</SelectItem>
+                                        <SelectItem value="latest">Latest</SelectItem>
+                                        <SelectItem value="people">People</SelectItem>
+                                        <SelectItem value="photos">Photos</SelectItem>
+                                        <SelectItem value="videos">Videos</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </Field>
+                        </div>
                     </div>
                 );
             case 'x_post':
@@ -710,33 +935,16 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                         </Field>
                     </div>
                 );
-            case 'x_follow':
-                return (
-                    <div className="space-y-4">
-                        <Field label="Target Index">
-                            <MentionInput
-                                value={config.index?.toString() || '0'}
-                                onChange={(e) => handleConfigChange('index', e.target.value)}
-                                variableGroups={variableGroups}
-                                placeholder="0, 1, 2... or {{loop.index}}"
-                            />
-                        </Field>
-                        <Field label="Action">
-                            <Select
-                                value={config.action || 'follow'}
-                                onValueChange={(v) => handleConfigChange('action', v)}
-                            >
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="follow">Follow</SelectItem>
-                                    <SelectItem value="unfollow">Unfollow</SelectItem>
-                                    <SelectItem value="toggle">Toggle</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </Field>
-                    </div>
-                );
             case 'x_engage':
+                const currentActions = (config.actions || '').split(',').map((a: string) => a.trim().toLowerCase()).filter(Boolean);
+
+                const toggleAction = (action: string, enabled: boolean) => {
+                    const newActions = enabled
+                        ? [...currentActions, action]
+                        : currentActions.filter((a: string) => a !== action);
+                    handleConfigChange('actions', newActions.join(','));
+                };
+
                 return (
                     <div className="space-y-4">
                         <Field label="Target Index">
@@ -747,21 +955,42 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 placeholder="0, 1, 2... or {{loop.index}}"
                             />
                         </Field>
-                        <Field label="Actions (comma separated)">
-                            <Input
-                                value={config.actions || 'like,follow'}
-                                onChange={(e) => handleConfigChange('actions', e.target.value)}
-                                placeholder="like,follow,retweet,reply"
-                            />
-                        </Field>
-                        <Field label="Reply Text (if reply enabled)">
-                            <MentionInput
-                                value={config.replyText || ''}
-                                onChange={(e) => handleConfigChange('replyText', e.target.value)}
-                                placeholder="Reply text..."
-                                variableGroups={variableGroups}
-                            />
-                        </Field>
+
+                        <div className="space-y-2">
+                            <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/80">Actions</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { id: 'like', label: 'Like' },
+                                    { id: 'retweet', label: 'Repost' },
+                                    { id: 'follow', label: 'Follow' },
+                                    { id: 'reply', label: 'Reply' },
+                                    { id: 'dm', label: 'Send DM' }
+                                ].map((action) => (
+                                    <div key={action.id} className="flex items-center justify-between p-2 rounded bg-muted/30 border border-border/40">
+                                        <Label className="text-xs">{action.label}</Label>
+                                        <Switch
+                                            checked={currentActions.includes(action.id)}
+                                            onCheckedChange={(c) => toggleAction(action.id, c)}
+                                            className="scale-75"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {(currentActions.includes('reply') || currentActions.includes('dm')) && (
+                            <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <Field label="Prompt / Content">
+                                    <Textarea
+                                        value={config.replyText || ''}
+                                        onChange={(e) => handleConfigChange('replyText', e.target.value)}
+                                        placeholder="Enter the exact text OR instructions for the agent (e.g. 'Write a friendly reply about...')..."
+                                        className="min-h-[100px] text-xs resize-none"
+                                    />
+                                </Field>
+                            </div>
+                        )}
+
                         <div className="pt-4 pb-2 border-t border-border">
                             <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">Skip Filters</Label>
                         </div>
@@ -779,12 +1008,11 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 onCheckedChange={(v) => handleConfigChange('skip_verified', v)}
                             />
                         </div>
-                        <Field label="Skip Keywords (comma separated)">
-                            <Input
-                                value={config.skip_keywords || ''}
-                                onChange={(e) => handleConfigChange('skip_keywords', e.target.value)}
-                                placeholder="promotional, official, bot..."
-                                className="h-9 text-[12px]"
+                        <Field label="Skip Keywords">
+                            <TagsInput
+                                value={config.skip_keywords ? config.skip_keywords.split(',').map((s: string) => s.trim()).filter(Boolean) : []}
+                                onChange={(tags) => handleConfigChange('skip_keywords', tags.join(', '))}
+                                placeholder="promotional, official, bot... (Press Enter)"
                             />
                         </Field>
                     </div>

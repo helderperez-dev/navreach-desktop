@@ -113,8 +113,8 @@ export function TargetForm({ open, onOpenChange, target }: TargetDetailsDrawerPr
                 <Dialog.Content className="fixed right-0 top-0 h-full w-full max-w-[450px] bg-popover border-l border-border shadow-2xl z-50 flex flex-col data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:slide-in-from-right data-[state=closed]:slide-out-to-right duration-300">
                     <div className="flex items-center justify-between p-6 border-b border-white/5">
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
-                                {target ? <Building2 className="h-4 w-4 text-primary" /> : <Plus className="h-4 w-4 text-primary" />}
+                            <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center border border-border/50">
+                                {target ? <Building2 className="h-4 w-4 text-foreground/70" /> : <Plus className="h-4 w-4 text-foreground/70" />}
                             </div>
                             <Dialog.Title className="text-lg font-semibold text-foreground">
                                 {target ? "Target Details" : "Add Target"}
@@ -141,8 +141,8 @@ export function TargetForm({ open, onOpenChange, target }: TargetDetailsDrawerPr
                                             className={cn(
                                                 "flex flex-col items-center justify-center p-3 rounded-xl border transition-all gap-1.5",
                                                 formData.type === type.value
-                                                    ? "bg-primary/10 border-primary text-primary"
-                                                    : "bg-muted border-transparent text-muted-foreground hover:bg-accent"
+                                                    ? "bg-muted border-muted-foreground/30 text-foreground ring-1 ring-muted-foreground/10"
+                                                    : "bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/50"
                                             )}
                                         >
                                             <type.icon className="h-4 w-4" />
@@ -203,7 +203,7 @@ export function TargetForm({ open, onOpenChange, target }: TargetDetailsDrawerPr
                                     <button
                                         type="button"
                                         onClick={handleAddMetadata}
-                                        className="text-[10px] text-primary hover:text-primary/80 transition-colors flex items-center gap-1 bg-primary/5 px-2 py-1 rounded-lg border border-primary/10"
+                                        className="text-[10px] text-foreground/70 hover:text-foreground transition-colors flex items-center gap-1 bg-muted px-2 py-1 rounded-lg border border-border/50"
                                     >
                                         <Plus className="h-3 w-3" />
                                         Add Attribute
@@ -246,7 +246,7 @@ export function TargetForm({ open, onOpenChange, target }: TargetDetailsDrawerPr
                         <div className="p-6 border-t border-border bg-muted/10">
                             <Button
                                 type="submit"
-                                className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl shadow-lg shadow-primary/20 transition-all active:scale-[0.98]"
+                                className="w-full h-12 bg-secondary hover:bg-secondary/80 text-secondary-foreground font-semibold rounded-xl shadow-sm border border-border/20 transition-all active:scale-[0.98]"
                                 disabled={isLoading}
                             >
                                 {isLoading ? (target ? "Saving..." : "Creating...") : (target ? "Save Changes" : "Create Target")}

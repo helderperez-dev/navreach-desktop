@@ -1,5 +1,5 @@
 import { IpcMain, BrowserWindow, webContents } from 'electron';
-import { registerWebviewContents, unregisterWebviewContents, getWebviewContents, setNavigationBlocked, allowNavigation } from '../services/browser-tools';
+import { registerWebviewContents, unregisterWebviewContents, getWebviewContents, setNavigationBlocked, allowNavigation, startRecording, stopRecording } from '../services/browser-tools';
 
 export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:navigate', async (_event, tabId: string, url: string) => {
@@ -143,6 +143,24 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
       })()
     `);
     return { success: true, ...result };
+  });
+
+  ipcMain.handle('browser:start-recording', async (_event, tabId: string) => {
+    try {
+      await startRecording(tabId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('browser:stop-recording', async (_event, tabId: string) => {
+    try {
+      stopRecording(tabId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
   });
 
   ipcMain.handle('browser:register-webview', async (_event, tabId: string, webContentsId: number) => {

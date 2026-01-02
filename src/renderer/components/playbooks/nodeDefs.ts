@@ -5,7 +5,7 @@ import {
     Globe, Search, MessageCircle, FileText,
     Cpu, Webhook, MousePointer,
     CheckCircle, PauseCircle,
-    Heart, Reply, Send, UserPlus, MessagesSquare, MoveDown, Wand2, Users,
+    Heart, Reply, Send, UserPlus, MessagesSquare, MoveDown, Wand2, Users, User,
     Eye, Terminal, Layers
 } from 'lucide-react';
 import { PlaybookNodeType } from '@/types/playbook';
@@ -158,7 +158,7 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
     engage: {
         type: 'engage',
         label: 'Engage',
-        category: NODE_CATEGORIES.BROWSER,
+        category: NODE_CATEGORIES.ACTION,
         icon: MessageCircle,
         description: 'Interact/Comment/DM',
         color: 'bg-blue-500/10 text-blue-500',
@@ -225,22 +225,12 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         inputs: 1,
         outputs: 1
     },
-    x_search: {
-        type: 'x_search',
+    x_advanced_search: {
+        type: 'x_advanced_search',
         label: 'X Search',
         category: NODE_CATEGORIES.X,
         icon: Search,
-        description: 'Search for posts on X',
-        color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
-        inputs: 1,
-        outputs: 1
-    },
-    x_advanced_search: {
-        type: 'x_advanced_search',
-        label: 'X Adv Search',
-        category: NODE_CATEGORIES.X,
-        icon: Search,
-        description: 'Advanced X.com Search',
+        description: 'Advanced search for posts on X',
         color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
         inputs: 1,
         outputs: 1,
@@ -249,49 +239,35 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
             { label: 'Total Count', value: 'count', example: '50' }
         ]
     },
-    x_scout_topics: {
-        type: 'x_scout_topics',
+    x_scout: {
+        type: 'x_scout',
         label: 'X Scout',
         category: NODE_CATEGORIES.X,
         icon: Globe,
-        description: 'Auto-discover accounts/hashtags',
+        description: 'Scout Niches, Communities, or Competitor Audiences',
         color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
         inputs: 1,
         outputs: 1,
         outputs_schema: [
-            { label: 'Trending Topics', value: 'topics', example: '#saas #ai' },
-            { label: 'Active Accounts', value: 'accounts', example: '@founder1 @indie_maker' }
+            { label: 'Accounts Found', value: 'accounts', example: '@founder1 @indie_maker' },
+            { label: 'Trending Topics', value: 'topics', example: '#saas #ai' }
         ]
     },
-    x_scout_community: {
-        type: 'x_scout_community',
-        label: 'X Community',
+    x_profile: {
+        type: 'x_profile',
+        label: 'X Profile',
         category: NODE_CATEGORIES.X,
-        icon: Users,
-        description: 'Scout specific X Communities',
+        icon: User,
+        description: 'Qualify leads or check your identity.',
         color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
         inputs: 1,
-        outputs: 1
-    },
-    x_like: {
-        type: 'x_like',
-        label: 'X Like',
-        category: NODE_CATEGORIES.X,
-        icon: Heart,
-        description: 'Like a post on X',
-        color: 'bg-[#F91880]/10 text-[#F91880]',
-        inputs: 1,
-        outputs: 1
-    },
-    x_reply: {
-        type: 'x_reply',
-        label: 'X Reply',
-        category: NODE_CATEGORIES.X,
-        icon: Reply,
-        description: 'Reply to a post on X',
-        color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
-        inputs: 1,
-        outputs: 1
+        outputs: 1,
+        outputs_schema: [
+            { label: 'Handle', value: 'handle', example: '@elonmusk' },
+            { label: 'Followers', value: 'followers', example: '100000' },
+            { label: 'Bio', value: 'bio', example: 'Tech Fan' },
+            { label: 'Is Verified', value: 'is_verified', example: 'true' }
+        ]
     },
     x_post: {
         type: 'x_post',
@@ -303,16 +279,7 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         inputs: 1,
         outputs: 1
     },
-    x_follow: {
-        type: 'x_follow',
-        label: 'X Follow',
-        category: NODE_CATEGORIES.X,
-        icon: UserPlus,
-        description: 'Follow/Unfollow user on X',
-        color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
-        inputs: 1,
-        outputs: 1
-    },
+
     x_engage: {
         type: 'x_engage',
         label: 'X Engage',
@@ -487,6 +454,47 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         icon: MousePointer,
         description: 'Low-level action',
         color: 'bg-secondary text-secondary-foreground',
+        inputs: 1,
+        outputs: 1
+    },
+    // Recording / Advanced Browser Nodes
+    browser_click: {
+        type: 'browser_click',
+        label: 'Rec. Click',
+        category: NODE_CATEGORIES.BROWSER,
+        icon: MousePointer,
+        description: 'Recorded Click',
+        color: 'bg-green-500/10 text-green-500',
+        inputs: 1,
+        outputs: 1
+    },
+    browser_type: {
+        type: 'browser_type',
+        label: 'Rec. Type',
+        category: NODE_CATEGORIES.BROWSER,
+        icon: MessagesSquare, // or Keyboard icon if available
+        description: 'Recorded Input',
+        color: 'bg-green-500/10 text-green-500',
+        inputs: 1,
+        outputs: 1
+    },
+    browser_navigate: {
+        type: 'browser_navigate',
+        label: 'Rec. Nav',
+        category: NODE_CATEGORIES.BROWSER,
+        icon: Globe,
+        description: 'Recorded Navigation',
+        color: 'bg-green-500/10 text-green-500',
+        inputs: 1,
+        outputs: 1
+    },
+    browser_scrape: {
+        type: 'browser_scrape',
+        label: 'HTML Scrape',
+        category: NODE_CATEGORIES.BROWSER,
+        icon: FileText,
+        description: 'Cheerio Scrape',
+        color: 'bg-purple-500/10 text-purple-500',
         inputs: 1,
         outputs: 1
     },

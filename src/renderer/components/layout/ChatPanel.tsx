@@ -138,6 +138,8 @@ export function ChatPanel() {
     infiniteMode,
     setInfiniteMode,
     setAgentStartTime,
+    pendingPrompt,
+    setPendingPrompt,
   } = useChatStore();
 
   const { modelProviders } = useSettingsStore();
@@ -164,12 +166,19 @@ export function ChatPanel() {
     if (session) {
       console.log('[ChatPanel] Session detected, fetching playbooks and lists...');
       window.api.ai.listWorkflows().then(setWorkflows);
-      playbookService.getPlaybooks().then(data => {
-        console.log(`[ChatPanel] Fetched ${data.length} playbooks`);
-        setPlaybooks(data);
-      }).catch(err => console.error('[ChatPanel] Failed to fetch playbooks:', err));
 
-      fetchLists(); // targetsStore handles its own fetching logic but good to trigger it
+      const refreshData = async () => {
+        try {
+          const data = await playbookService.getPlaybooks();
+          console.log(`[ChatPanel] Fetched ${data.length} playbooks`);
+          setPlaybooks(data);
+        } catch (err) {
+          console.error('[ChatPanel] Failed to fetch playbooks:', err);
+        }
+      };
+
+      refreshData();
+      fetchLists();
     }
   }, [session, fetchLists]); // Re-run when session changes
 
@@ -437,7 +446,8 @@ export function ChatPanel() {
   }, [streamingContent, isStreaming]);
 
 
-  const sendMessage = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string, options: { isIsolated?: boolean, playbookId?: string } = {}) => {
+    const { isIsolated = false, playbookId = null } = options;
     const enabledProviders = modelProviders.filter((p) => p.enabled);
 
     if (!selectedModel && enabledProviders.length === 0) {
@@ -461,8 +471,27 @@ export function ChatPanel() {
       return;
     }
 
-    const conversationId = activeConversationId || createConversation();
-    if (!activeConversationId) {
+    const conversationId = isIsolated
+      ? `playbook-${playbookId || Date.now()}`
+      : (activeConversationId || createConversation());
+
+    // For isolated runs, ensure the conversation exists in the store so messages can be added
+    if (isIsolated && !conversations.some(c => c.id === conversationId)) {
+      useChatStore.setState((state) => ({
+        conversations: [{
+          id: conversationId,
+          title: 'Playbook Execution',
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          modelId: model.id
+        }, ...state.conversations]
+      }));
+    }
+
+    // Only set as active if NOT isolated. 
+    // This ensures the main chat panel stays on its current conversation during playbook runs.
+    if (!isIsolated && !activeConversationId) {
       setActiveConversation(conversationId);
     }
 
@@ -514,17 +543,34 @@ export function ChatPanel() {
       toolResults: m.toolResults
     }));
 
+    let latestPlaybooks = playbooks;
+    if (playbookId || isIsolated) {
+      try {
+        console.log('[ChatPanel] Refreshing playbooks before execution to ensure latest nodes/rules...');
+        latestPlaybooks = await playbookService.getPlaybooks();
+        setPlaybooks(latestPlaybooks);
+      } catch (err) {
+        console.warn('[ChatPanel] Failed to refresh playbooks, using stale state', err);
+      }
+    }
+
     try {
       // The backend expects the whole history including the new message
-      const messagesPayload = [
-        ...validHistory,
-        // If the store hasn't updated yet, we might need to append the new message. 
-        // But addMessage is sync in Zustand actions usually. 
-        // However, to be safe, validHistory comes from `conversations` variable which IS from the hook. 
-        // The hook value `conversations` won't update until next render.
-        // So validHistory is OLD. We must append.
-        authMessage
-      ] as any[];
+      // If isolated, we only send the current message to ensure a fresh, independent instance
+      const messagesPayload = isIsolated
+        ? [authMessage]
+        : [
+          ...validHistory,
+          authMessage
+        ] as any[];
+
+      let speed: 'slow' | 'normal' | 'fast' = 'normal';
+      if (playbookId) {
+        const pb = latestPlaybooks.find(p => p.id === playbookId);
+        if (pb?.execution_defaults?.speed) {
+          speed = pb.execution_defaults.speed;
+        }
+      }
 
       const result = await window.api.ai.chat({
         messages: messagesPayload,
@@ -533,11 +579,13 @@ export function ChatPanel() {
         systemPrompt: SYSTEM_PROMPT,
         maxIterations,
         infiniteMode,
-        initialUserPrompt: content, // This is used for some tailored prompts potentially
+        initialUserPrompt: content,
         accessToken: token,
         refreshToken: refreshToken,
-        playbooks: playbooks,
-        targetLists: lists
+        playbooks: latestPlaybooks,
+        targetLists: lists,
+        speed,
+        isPlaybookRun: isIsolated
       });
 
       if (!result.success && result.error) {
@@ -563,6 +611,24 @@ export function ChatPanel() {
     if (!input.trim() || isStreaming) return;
     await sendMessage(input.trim());
   }, [input, sendMessage, isStreaming]);
+
+  useEffect(() => {
+    if (pendingPrompt && !isStreaming) {
+      // Small delay to ensure everything is mounted/ready
+      const timer = setTimeout(() => {
+        if (typeof pendingPrompt === 'string') {
+          sendMessage(pendingPrompt);
+        } else {
+          sendMessage(pendingPrompt.content, {
+            isIsolated: pendingPrompt.isIsolated,
+            playbookId: pendingPrompt.playbookId
+          });
+        }
+        setPendingPrompt(null);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [pendingPrompt, isStreaming, sendMessage, setPendingPrompt]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (showSuggestions) {
@@ -673,40 +739,42 @@ export function ChatPanel() {
                   No conversations yet
                 </div>
               ) : (
-                conversations.map((conv) => (
-                  <button
-                    key={conv.id}
-                    onClick={() => {
-                      setActiveConversation(conv.id);
-                      setShowHistory(false);
-                    }}
-                    className={cn(
-                      'w-full text-left px-3 py-2.5 rounded-lg transition-colors flex items-start gap-3',
-                      conv.id === activeConversationId
-                        ? 'bg-secondary border border-border'
-                        : 'hover:bg-secondary/50 border border-transparent'
-                    )}
-                  >
-                    <MessageSquare className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium truncate">{conv.title}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {conv.messages.length} messages · {new Date(conv.updatedAt).toLocaleDateString()}
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 text-destructive/50 hover:text-destructive flex-shrink-0 opacity-0 group-hover:opacity-100"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteConversation(conv.id);
+                conversations
+                  .filter(conv => !conv.id.startsWith('playbook-'))
+                  .map((conv) => (
+                    <button
+                      key={conv.id}
+                      onClick={() => {
+                        setActiveConversation(conv.id);
+                        setShowHistory(false);
                       }}
+                      className={cn(
+                        'w-full text-left px-3 py-2.5 rounded-lg transition-colors flex items-start gap-3',
+                        conv.id === activeConversationId
+                          ? 'bg-secondary border border-border'
+                          : 'hover:bg-secondary/50 border border-transparent'
+                      )}
                     >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </button>
-                ))
+                      <MessageSquare className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium truncate">{conv.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {conv.messages.length} messages · {new Date(conv.updatedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive/50 hover:text-destructive flex-shrink-0 opacity-0 group-hover:opacity-100"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteConversation(conv.id);
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </button>
+                  ))
               )}
             </div>
           </ScrollArea>

@@ -18,11 +18,11 @@ const POINTER_HELPERS = `
     if (!indicator) {
       indicator = document.createElement('div');
       indicator.id = 'reavion-pointer';
-      const uniqueId = 'glass-gradient-' + Date.now();
-      indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="url(#' + uniqueId + ')" stroke="rgba(255,100,0,0.9)" stroke-width="1.5"/><defs><linearGradient id="' + uniqueId + '" x1="6" y1="4" x2="27" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0%" stop-color="rgba(255, 69, 0, 0.95)"/><stop offset="50%" stop-color="rgba(255, 140, 0, 0.95)"/><stop offset="100%" stop-color="rgba(255, 100, 0, 0.95)"/></linearGradient></defs></svg>';
       indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:left 0.3s ease, top 0.3s ease;';
       document.body.appendChild(indicator);
     }
+    // Always update visual style to clear any cached purple versions
+    indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
     indicator.style.left = x + 'px';
     indicator.style.top = y + 'px';
   }
@@ -44,7 +44,11 @@ const BASE_SCRIPT_HELPERS = `
 
   function wait(ms) {
     const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
-    const adjustedMs = Math.round(ms * multiplier);
+    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter
+    const randomFactor = 0.75 + (Math.random() * 0.5); 
+    const jitter = Math.random() * 200;
+    const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
+    
     return new Promise((resolve, reject) => {
       const start = Date.now();
       const checking = () => {
@@ -55,7 +59,7 @@ const BASE_SCRIPT_HELPERS = `
         if (Date.now() - start >= adjustedMs) {
           resolve();
         } else {
-          setTimeout(checking, 100);
+          setTimeout(checking, 50);
         }
       };
       checking();
@@ -65,15 +69,24 @@ const BASE_SCRIPT_HELPERS = `
   async function safeClick(el, label) {
     const clickable = el.closest('button, a, [role="button"]') || el;
     log('Clicking ' + label, { tagName: clickable.tagName });
-    clickable.scrollIntoView({ behavior: 'instant', block: 'center', inline: 'center' });
-    await wait(400);
+    
+    const rectBefore = clickable.getBoundingClientRect();
+    if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
+      clickable.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+      await wait(600);
+    }
+
     const rect = clickable.getBoundingClientRect();
     const x = rect.left + rect.width / 2;
     const y = rect.top + rect.height / 2;
     if (typeof movePointer === 'function') movePointer(x, y);
-    try { clickable.focus(); } catch (e) {}
-    await wait(150);
+    
+    await wait(300);
+    
     try {
+      const common = { bubbles: true, cancelable: true, view: window };
+      clickable.dispatchEvent(new MouseEvent('mousedown', common));
+      clickable.dispatchEvent(new MouseEvent('mouseup', common));
       clickable.click();
     } catch (e) {
       log('Native click failed on ' + label, { error: e.toString() });

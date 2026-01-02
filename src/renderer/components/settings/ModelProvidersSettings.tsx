@@ -448,7 +448,7 @@ export function ModelProvidersSettings() {
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleFetchModels(); }}
                       disabled={isFetchingModels}
-                      className="flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-50"
+                      className="flex items-center gap-1 text-xs text-foreground/70 hover:text-foreground hover:underline disabled:opacity-50"
                     >
                       {isFetchingModels ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
@@ -462,7 +462,7 @@ export function ModelProvidersSettings() {
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); enableAllModels(); }}
-                    className="text-xs text-primary hover:underline"
+                    className="text-xs text-foreground/70 hover:text-foreground hover:underline"
                   >
                     Enable all
                   </button>
@@ -498,7 +498,7 @@ export function ModelProvidersSettings() {
                           className={cn(
                             'flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all',
                             modelStates[model.id]
-                              ? 'bg-primary/5 border-primary/30 hover:bg-primary/10'
+                              ? 'bg-muted border-muted-foreground/30 hover:bg-muted/80'
                               : 'bg-secondary/30 border-border/50 hover:bg-secondary/50'
                           )}
                         >
@@ -507,7 +507,7 @@ export function ModelProvidersSettings() {
                               className={cn(
                                 'w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors',
                                 modelStates[model.id]
-                                  ? 'bg-primary border-primary'
+                                  ? 'bg-foreground border-foreground'
                                   : 'border-muted-foreground/30'
                               )}
                             >

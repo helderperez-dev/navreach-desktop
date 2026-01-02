@@ -37,7 +37,7 @@ export function MaxStepsSelector() {
 
   const currentLabel = isTimerMode
     ? `Timer (${agentRunLimit}m)`
-    : (infiniteMode ? '∞ Infinite' : `${maxIterations} Steps`);
+    : (infiniteMode ? '∞ Infinite' : 'Normal');
 
   return (
     <Popover open={isOpen} onOpenChange={(open) => {
@@ -67,57 +67,56 @@ export function MaxStepsSelector() {
             Session Limit
           </div>
 
-          <div className="grid grid-cols-2 gap-1 mb-1">
-            {STEP_OPTIONS.map((steps) => (
-              <button
-                key={steps}
-                onClick={() => handleSelectSteps(steps)}
-                className={cn(
-                  "flex items-center justify-between px-3 py-2 rounded-md text-[11px] transition-colors",
-                  !infiniteMode && maxIterations === steps ? "bg-blue-500/20 text-blue-100 font-bold" : "hover:bg-white/5 text-muted-foreground"
-                )}
-              >
-                {steps} steps
-              </button>
-            ))}
+          <div className="space-y-0.5">
+            <button
+              onClick={() => handleSelectSteps(30)}
+              className={cn(
+                "w-full flex items-center justify-between px-3 py-2.5 rounded-md text-[11px] transition-colors",
+                !infiniteMode && !agentRunLimit ? "bg-primary/20 text-primary-foreground font-bold" : "hover:bg-white/5 text-muted-foreground"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <List className="h-3.5 w-3.5" />
+                <span>Normal (Auto)</span>
+              </div>
+              {!infiniteMode && !agentRunLimit && <div className="h-1 w-1 rounded-full bg-primary" />}
+            </button>
+
+            <button
+              onClick={handleSelectInfinite}
+              className={cn(
+                "w-full flex items-center justify-between px-3 py-2.5 rounded-md text-[11px] transition-colors",
+                infiniteMode && !agentRunLimit ? "bg-purple-500/20 text-white font-bold" : "hover:bg-white/5 text-muted-foreground"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Infinity className="h-3.5 w-3.5 text-purple-400" />
+                <span>Infinite Mode</span>
+              </div>
+              {infiniteMode && !agentRunLimit && <div className="h-1 w-1 rounded-full bg-purple-400" />}
+            </button>
+
+            <button
+              onClick={() => {
+                setInfiniteMode(true);
+                if (!agentRunLimit) setAgentRunLimit(60);
+                setView('timer');
+              }}
+              className={cn(
+                "w-full flex items-center justify-between px-3 py-2.5 rounded-md text-[11px] transition-colors group",
+                isTimerMode ? "bg-blue-500/20 text-white font-bold" : "hover:bg-white/5 text-muted-foreground"
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <Clock className="h-3.5 w-3.5 text-blue-400" />
+                <span>Fixed Timer</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {isTimerMode && <span className="text-[10px] opacity-70">{agentRunLimit}m</span>}
+                <ChevronRight className="h-3 w-3 opacity-30 group-hover:opacity-100" />
+              </div>
+            </button>
           </div>
-
-          <div className="h-px bg-white/5 my-1 mx-2" />
-
-          <button
-            onClick={handleSelectInfinite}
-            className={cn(
-              "w-full flex items-center justify-between px-3 py-2.5 rounded-md text-[11px] transition-colors",
-              infiniteMode && !agentRunLimit ? "bg-purple-500/20 text-purple-100 font-bold" : "hover:bg-white/5 text-muted-foreground"
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <Infinity className="h-3.5 w-3.5" />
-              <span>Infinite Mode</span>
-            </div>
-            {infiniteMode && !agentRunLimit && <div className="h-1 w-1 rounded-full bg-purple-400" />}
-          </button>
-
-          <button
-            onClick={() => {
-              setInfiniteMode(true);
-              if (!agentRunLimit) setAgentRunLimit(60);
-              setView('timer');
-            }}
-            className={cn(
-              "w-full flex items-center justify-between px-3 py-2.5 rounded-md text-[11px] transition-colors group",
-              isTimerMode ? "bg-blue-500/20 text-blue-100 font-bold" : "hover:bg-white/5 text-muted-foreground"
-            )}
-          >
-            <div className="flex items-center gap-2">
-              <Clock className="h-3.5 w-3.5" />
-              <span>Fixed Timer</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {isTimerMode && <span className="text-[10px] opacity-70">{agentRunLimit}m</span>}
-              <ChevronRight className="h-3 w-3 opacity-30 group-hover:opacity-100" />
-            </div>
-          </button>
         </div>
 
         {/* Timer Config View */}

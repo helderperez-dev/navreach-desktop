@@ -4,7 +4,7 @@ import { useTargetsStore } from '@/stores/targets.store';
 import { TargetListSidebar } from './TargetListSidebar';
 import { TargetTable } from './TargetTable';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Search, LayoutGrid, X, Zap, FileUp, SlidersHorizontal } from 'lucide-react';
+import { Plus, Search, Users, X, Zap, Upload, SlidersHorizontal, LayoutGrid, Puzzle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -109,10 +109,10 @@ export function TargetListView() {
                 {/* Header Section */}
                 <div className="h-16 border-b border-border/30 flex items-center justify-between px-6 bg-card/40 backdrop-blur-md sticky top-0 z-30">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center border border-primary/20">
-                            <LayoutGrid className="h-5 w-5 text-primary" />
+                        <div className="w-9 h-9 rounded-xl bg-muted/40 flex items-center justify-center border border-border/40 shadow-sm transition-all">
+                            <Users className="h-4 w-4 text-muted-foreground/70" />
                         </div>
-                        <h1 className="text-lg font-semibold text-foreground tracking-tight">
+                        <h1 className="text-lg font-semibold text-foreground/90 tracking-tight">
                             Targets
                         </h1>
                     </div>
@@ -132,7 +132,7 @@ export function TargetListView() {
                                     size="sm"
                                     className={cn(
                                         "h-10 w-10 p-0 shrink-0 transition-colors rounded-xl focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-muted/50",
-                                        (isSearchExpanded || searchQuery) ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                                        (isSearchExpanded || searchQuery) ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                                     )}
                                     onClick={() => {
                                         setIsSearchExpanded(!isSearchExpanded);
@@ -169,22 +169,22 @@ export function TargetListView() {
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-10 w-10 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-muted focus-visible:text-primary"
+                                className="h-10 w-10 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-muted focus-visible:text-foreground"
                                 onClick={() => setIsIntegrationOpen(true)}
                                 disabled={!selectedListId}
                                 title="API Integration"
                             >
-                                <Zap className="h-4 w-4" />
+                                <Puzzle className="h-4 w-4" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-10 w-10 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-muted focus-visible:text-primary"
+                                className="h-10 w-10 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-muted focus-visible:text-foreground"
                                 onClick={() => setIsImportOpen(true)}
                                 disabled={!selectedListId}
                                 title="Import CSV"
                             >
-                                <FileUp className="h-4 w-4" />
+                                <Upload className="h-4 w-4" />
                             </Button>
 
                             <Button
@@ -193,8 +193,8 @@ export function TargetListView() {
                                 className={cn(
                                     "h-10 w-10 p-0 rounded-xl transition-all focus-visible:ring-0 focus-visible:outline-none",
                                     isViewOptionsOpen
-                                        ? "bg-primary/10 text-primary"
-                                        : "text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:bg-muted focus-visible:text-primary"
+                                        ? "bg-muted text-foreground"
+                                        : "text-muted-foreground hover:text-foreground hover:bg-muted focus-visible:bg-muted focus-visible:text-foreground"
                                 )}
                                 onClick={() => setIsViewOptionsOpen(true)}
                                 title="View Options"
@@ -207,11 +207,11 @@ export function TargetListView() {
 
                         <Button
                             size="sm"
-                            className="h-10 gap-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl px-5 transition-all active:scale-95 border border-border/50 font-semibold focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:outline-none"
+                            className="h-9 gap-2 bg-secondary/80 hover:bg-secondary text-secondary-foreground rounded-lg px-4 transition-all active:scale-95 border border-border/50 font-medium shadow-sm"
                             onClick={handleAddTarget}
                             disabled={!selectedListId}
                         >
-                            <Plus className="h-4 w-4" />
+                            <Plus className="h-3.5 w-3.5" />
                             <span className="text-sm">New Target</span>
                         </Button>
                     </div>

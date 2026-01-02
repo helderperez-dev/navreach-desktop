@@ -98,8 +98,8 @@ export function IntegrationsSettings() {
                 {/* External Collection Toggle */}
                 <div className="flex items-center justify-between p-6 rounded-2xl bg-muted/30 border border-border shadow-sm">
                     <div className="flex gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
-                            <Shield className="h-6 w-6 text-primary" />
+                        <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform border border-border/50">
+                            <Shield className="h-6 w-6 text-muted-foreground/70" />
                         </div>
                         <div>
                             <h4 className="text-sm font-medium text-foreground mb-1">External Target Collection</h4>
@@ -109,8 +109,8 @@ export function IntegrationsSettings() {
                         </div>
                     </div>
                     <Button
-                        variant={isCollectionEnabled ? "default" : "outline"}
-                        className={isCollectionEnabled ? "bg-primary hover:bg-primary/90 text-primary-foreground" : ""}
+                        variant={isCollectionEnabled ? "secondary" : "outline"}
+                        className={isCollectionEnabled ? "bg-secondary text-secondary-foreground hover:bg-secondary/80" : ""}
                         onClick={handleToggleCollection}
                     >
                         {isCollectionEnabled ? "Enabled" : "Disabled"}
@@ -120,15 +120,15 @@ export function IntegrationsSettings() {
                 {/* API Endpoint */}
                 <div className="p-6 rounded-2xl bg-muted/30 border border-border shadow-sm space-y-4">
                     <div className="flex gap-4">
-                        <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
-                            <ExternalLink className="h-6 w-6 text-primary" />
+                        <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform border border-border/50">
+                            <ExternalLink className="h-6 w-6 text-muted-foreground/70" />
                         </div>
                         <div>
                             <h4 className="text-sm font-medium text-foreground mb-1">API Endpoint</h4>
                             <p className="text-xs text-muted-foreground">The base URL for all API requests.</p>
                         </div>
                     </div>
-                    <div className="flex-1 bg-muted/50 border border-border rounded-xl px-4 py-3 font-mono text-sm text-primary font-medium tracking-tight">
+                    <div className="flex-1 bg-muted/50 border border-border rounded-xl px-4 py-3 font-mono text-sm text-foreground/80 font-medium tracking-tight">
                         {apiUrl}
                     </div>
                 </div>
@@ -175,7 +175,7 @@ export function IntegrationsSettings() {
                                         </button>
                                         <button
                                             onClick={handleCopy}
-                                            className="text-muted-foreground hover:text-primary transition-colors"
+                                            className="text-muted-foreground hover:text-foreground transition-colors"
                                             title="Copy API Key"
                                         >
                                             {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}

@@ -388,12 +388,18 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
     !message.content.toLowerCase().includes('approval') &&
     !message.content.toLowerCase().includes('approve');
 
+  // Robust check for isolated playbook run triggers - hide them from the UI
+  // Covers: "Run playbook {{playbooks.ID}}", "run {{playbooks...}}", etc.
+  if (isUser && message.content.trim().match(/^(?:Run playbook|run)\s*{{playbooks\.[^}]+}}$/i)) {
+    return null;
+  }
+
   // System messages
   if (isSystem) {
     return (
-      <div className="flex justify-center my-4">
-        <div className="bg-muted/30 border border-muted/50 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs text-muted-foreground">
-          <Square className="h-3 w-3" />
+      <div className="flex justify-center my-1.5">
+        <div className="bg-muted/30 border border-muted/50 rounded-full px-4 py-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+          <Square className="h-2.5 w-2.5" />
           <span>System: {message.content}</span>
         </div>
       </div>
@@ -422,13 +428,13 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
 
   return (
     <div className={cn(
-      'group relative px-4 py-2 transition-colors duration-200',
+      'group relative px-4 py-1 transition-colors duration-200',
       isUser ? 'bg-transparent' : 'bg-transparent'
     )}>
       <div className={cn('w-full flex min-w-0', isUser ? 'flex-row-reverse' : 'flex-row')}>
 
         {/* Content Body */}
-        <div className={cn('flex-1 min-w-0 space-y-2 overflow-hidden', isUser && 'flex flex-col items-end')}>
+        <div className={cn('flex-1 min-w-0 space-y-1 overflow-hidden', isUser && 'flex flex-col items-end')}>
 
           {isUser ? (
             <div className="max-w-[90%] bg-secondary/80 hover:bg-secondary text-secondary-foreground px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm leading-relaxed shadow-sm border border-white/5 mx-0 text-left break-words">
@@ -463,10 +469,12 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
               {/* 2. Structured Tool Executions (Consolidated) */}
               {hasStructuredTools && (
                 <div className="space-y-1.5 my-1">
-                  {message.toolCalls!.map((toolCall) => {
-                    const result = message.toolResults?.find((r) => r.toolCallId === toolCall.id);
-                    return <StructuredToolCard key={toolCall.id} toolCall={toolCall} toolResult={result} />;
-                  })}
+                  {message.toolCalls!
+                    .filter(tc => tc.name !== 'report_playbook_node_status')
+                    .map((toolCall) => {
+                      const result = message.toolResults?.find((r) => r.toolCallId === toolCall.id);
+                      return <StructuredToolCard key={toolCall.id} toolCall={toolCall} toolResult={result} />;
+                    })}
                 </div>
               )}
 
@@ -545,25 +553,27 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                 />
               )}
 
-              {/* Copy / Retry Actions - Minimalist, show on hover */}
-              <div className="flex items-center gap-3 pt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                <button
-                  onClick={handleCopy}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-                {onRetry && (
+              {/* Copy / Retry Actions - Minimalist, show on hover. Only if there is content. */}
+              {message.content && message.content.trim().length > 0 && (
+                <div className="flex items-center gap-3 pt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                   <button
-                    onClick={() => onRetry(message.content)}
-                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    onClick={handleCopy}
+                    className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <RotateCcw className="h-3 w-3" />
-                    Retry
+                    {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                    {copied ? 'Copied' : 'Copy'}
                   </button>
-                )}
-              </div>
+                  {onRetry && (
+                    <button
+                      onClick={() => onRetry(message.content)}
+                      className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      Retry
+                    </button>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>

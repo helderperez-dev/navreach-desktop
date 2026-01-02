@@ -18,16 +18,36 @@ const BASE_SCRIPT_HELPERS = `
 
   function wait(ms) {
     const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
-    const adjustedMs = Math.round(ms * multiplier);
+    const isFast = multiplier < 1.0;
+    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter, but scale down for FAST mode
+    const randomFactor = isFast ? (0.9 + Math.random() * 0.2) : (0.75 + (Math.random() * 0.5)); 
+    const jitter = Math.random() * (isFast ? 50 : 200);
+    const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
     return new Promise((resolve) => setTimeout(resolve, adjustedMs));
   }
   
   async function safeClick(el, label) {
     if(!el) throw new Error('Element not found: ' + label);
-    el.scrollIntoView({ behavior: 'instant', block: 'center' });
-    await wait(500);
-    el.click();
-    await wait(1000);
+    
+    const rectBefore = el.getBoundingClientRect();
+    if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await wait(600);
+    } else {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await wait(300);
+    }
+    
+    try {
+         const common = { bubbles: true, cancelable: true, view: window };
+         el.dispatchEvent(new MouseEvent('mousedown', common));
+         el.dispatchEvent(new MouseEvent('mouseup', common));
+         el.click();
+    } catch (e) {
+      log('Native click failed on ' + label, { error: e.toString() });
+      throw e;
+    }
+    await wait(800);
   }
 `;
 

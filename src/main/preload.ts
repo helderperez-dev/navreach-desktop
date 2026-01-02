@@ -20,6 +20,13 @@ const browserAPI = {
   scroll: (tabId: string, direction: 'up' | 'down', amount: number) => ipcRenderer.invoke('browser:scroll', tabId, direction, amount),
   evaluate: (tabId: string, script: string) => ipcRenderer.invoke('browser:evaluate', tabId, script),
   getPageContent: (tabId: string) => ipcRenderer.invoke('browser:get-page-content', tabId),
+  startRecording: (tabId: string) => ipcRenderer.invoke('browser:start-recording', tabId),
+  stopRecording: (tabId: string) => ipcRenderer.invoke('browser:stop-recording', tabId),
+  onRecordingAction: (callback: (data: any) => void) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('recorder:action', handler);
+    return () => ipcRenderer.removeListener('recorder:action', handler);
+  },
   registerWebview: (tabId: string, webContentsId: number) => ipcRenderer.invoke('browser:register-webview', tabId, webContentsId),
   unregisterWebview: (tabId: string) => ipcRenderer.invoke('browser:unregister-webview', tabId),
   allowNavigation: (url: string) => ipcRenderer.invoke('browser:allow-navigation', url),
@@ -69,6 +76,11 @@ const aiAPI = {
   listWorkflows: () => ipcRenderer.invoke('ai:list-workflows'),
   suggest: (request: unknown) => ipcRenderer.invoke('ai:suggest', request),
   testConnection: (provider: any, modelId?: string) => ipcRenderer.invoke('ai:test-connection', { provider, modelId }),
+  onPlaybookStatus: (callback: (data: { nodeId: string; status: 'running' | 'success' | 'error'; message?: string }) => void) => {
+    const handler = (_event: unknown, data: any) => callback(data);
+    ipcRenderer.on('ai:playbook-status', handler);
+    return () => ipcRenderer.removeListener('ai:playbook-status', handler);
+  },
 };
 
 const debugAPI = {

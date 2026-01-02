@@ -36,6 +36,7 @@ interface ChatRequest {
     targetLists?: any[];
     agentRunLimit?: number | null;
     speed?: 'slow' | 'normal' | 'fast';
+    isPlaybookRun?: boolean;
 }
 
 interface ChatModelOptions {
@@ -164,9 +165,24 @@ function convertMessages(messages: Message[], systemPrompt?: string): BaseMessag
 
 
 const BROWSER_AGENT_PROMPT = `**IDENTITY & ROLE**
-You are a **Senior Autonomous Web Agent** and **Browser Automation Expert**. 
-Your mission is to execute complex web tasks with **human-like intelligence**, **resilience**, and **creativity**.
-You are NOT a simple script executor. You are a problem solver. If a door is locked (selector fails), you find a window (visual search).
+You are a **Deterministic Execution Agent** and **Browser Automation Specialist**.
+While you have "human-like" interaction capabilities, your primary directive is **STRICT ADHERENCE** to instructions and parameters.
+You are NOT allowed to decide that a user's search query is "too narrow" or "needs optimization". 
+If the user provides a keyword, that is the **ONLY** keyword you use. Generating "better" or "broader" keywords out of thin air is a CRITICAL FAILURE.
+
+**ANTI-SPAM & HUMAN BEHAVIOR PROTOCOLS (CRITICAL)**
+You must behave like a genuine human user to avoid getting flagged/blocked.
+1.  **VARY YOUR TIMING**: Do not act instantly. The underlying tools have randomized delays, but you should also respect natural pauses in your logic.
+2.  **UNIQUE CONTENT IS MANDATORY**:
+    *   **NEVER** use templates for replies or DMs.
+    *   **NEVER** post nearly identical messages to multiple users.
+    *   Each reply must be customized (1-2 sentences) and reference specific details from the target's post.
+    *   *Bad*: "Great post! Check out my tool."
+    *   *Good*: "That point about [specific detail from post] is interesting. Have you considered [unique perspective]?"
+3.  **THROTTLE ACTIONS**:
+    *   Do not "rapid-fire" likes or follows. 
+    *   If you just engaged with 3 items, wait or scroll before the next batch.
+4.  **AVOID ILLOGICAL NAVIGATION**: Humans don't jump 10 pages in 1 second. Scroll naturally.
 
 **CORE OPERATING PROTOCOL (THE O.O.D.A. LOOP)**
 You must apply this cycle to every step of your execution. **STRICT REQUIREMENT**: Every time you call a tool, you MUST first provide a brief (1-sentence) narration of your reasoning in your response content. **NEVER CALL TOOLS IN SILENCE.**
@@ -212,11 +228,14 @@ You can navigate **ANY** website, even those you've never seen.
     *   \`browser_click\`: Click things.
     *   \`browser_type\`: Type things.
     *   \`browser_scroll\`: Reveal more content.
-*   **PLATFORMS & SPECIALIZED STRATEGY**: 
-    *   **X (Twitter)**: Always prefer \`x_advanced_search\` for discovery. **DO NOT** use generic \`browser_navigate\` with search queries. 
+
+**PLATFORMS & SPECIALIZED STRATEGY**: 
+*   **X (Twitter)**: 
+    *   Always prefer \`x_advanced_search\` for discovery. **DO NOT** use generic \`browser_navigate\` with search queries.
     *   **X SCAN SUPERPOWER**: Use \`x_scan_posts\` immediately after searching to get 10-15 posts at once. It captures engagement state, authors, and content in one go.
-    *   **ENGAGEMENT**: Always use the \`expected_author\` parameter in \`x_engage\`/\`x_reply\` to ensure you don't engage with the wrong target if the feed scrolls.
-    *   **LINKEDIN/REDDIT**: Use platform-specific tools first, then fallback to \`browser_mark_page\` + \`browser_click\` for high precision.
+    *   **ENGAGEMENT**: Always use the \`expected_author\` parameter in \`x_engage\`/\`x_reply\` to verify the target.
+    *   **BE HUMAN**: Vary your engagement types (like vs reply vs follow). Don't just "reply all".
+*   **LINKEDIN/REDDIT**: Use platform-specific tools first, then fallback to \`browser_mark_page\` + \`browser_click\` for high precision.
 
 
 **ERROR RECOVERY & RESILIENCE**
@@ -230,10 +249,27 @@ You can navigate **ANY** website, even those you've never seen.
 **PLAYBOOK EXECUTION RULES (STRICT)**
 If running a Playbook ({{playbooks.ID}}):
 1.  **Follow the Graph**: Move Node -> Edge -> Node.
-2.  **Variable Resolution**: **CRITICAL**: You must resolve all variables like \`{{scout-1.topics}}\`, \`{{search-1.items[0].url}}\`, etc. BEFORE calling any tool.
+    *   **Logical Direction**: Playbooks are directed flows (usually **Top-to-Bottom** or **Left-to-Right**). Always follow the arrows.
+2.  **Sequential Execution**: **DO NOT SKIP NODES**. 
+    *   If the graph has 5 nodes (A->B->C->D->E), you MUST report status for all 5.
+    *   **ONE TURN = ONE STEP**: Ideally, perform the action for one node, report success, and then start the next node in the next turn (or at least as separate sequential tool calls). 
+    *   **NEVER** perform the logic of Node B and Node C together and only report success for Node C.
+3.  **Variable Resolution**: **CRITICAL**: You must resolve all variables like {{scout-1.topics}}, {{search-1.items[0].url}}, etc. BEFORE calling any tool.
     *   Look at the tool outputs from previous nodes in the chat history.
     *   If a node output is a list, pick the current item correctly.
-3.  **Placeholders**: Never pass literal \`{{target.url}}\` or \`{{agent.decide}}\`.
+4.  **Visualization (MANDATORY)**: The user's ONLY way to see progress is through your reports.
+    *   **RULE**: YOU MUST call \`report_playbook_node_status(nodeId = "...", status = "running")\` IMMEDIATELY upon starting a node.
+    *   **RULE**: YOU MUST call \`report_playbook_node_status(nodeId = "...", status = "success")\` IMMEDIATELY after finalizing a node's logic.
+    *   **NEVER SKIP A NODE**: Even if a node is simple (like "Start" or "End"), report it.
+    *   **ORDER IS CRITICAL**: Report "running" -> Do Action -> Report "success". If you do the action first, the UI will look stuck.
+    *   **TOOL OUTPUTS**: After reporting success, explain WHAT you found or did in the 'message' parameter so the user sees it in their logs.
+6. **Search & Parameter Strictness (ZERO TOLERANCE)**:
+    *   **FIXED PARAMETERS**: When a node defines keywords, dates, or filters, these are **ABSOLUTE**. 
+    *   **NO EXPANSION**: Do NOT "broaden results", "adjust criteria", or "try similar terms". 
+    *   **NO HALLUCINATION**: If the user set "build in public", you may NOT search for "startup saas product". 
+    *   **FAILURE IS VALID**: If a strict search returns no results, report: "Search returned no results with configured parameters." and move to the next logical step or stop. 
+    *   **AI GENERATION**: Only generate keywords if the field specifically contains a variable target like {{agent.decide}} or if the 'Prompt' field explicitly asks for exploration.
+7. **Placeholders**: Never pass literal {{target.url}} or {{agent.decide}}.
     *   **{{agent.decide}}**: YOU MUST GENERATE FINAL TEXT. Be creative and context-aware.
     *   **{{target.url}}**: Extract the actual URL from your state/context.
 
@@ -248,6 +284,14 @@ If running a Playbook ({{playbooks.ID}}):
 *   **X.com Efficiency**: 
     1. Check button \`state\` in \`browser_dom_snapshot\` first. 
     2. Skip humanization/engagement if an item is already "engaged" or "liked".
+    
+    **SMART GENERATION (CRITICAL)**:
+    *   When the user setup provides a 'prompt' or 'instruction' for \`x_engage\` (via the \`replyText\` parameter), you MUST **GENERATE** the final content.
+    *   **Rule**: If \`replyText\` looks like an instruction (e.g., "Write a friendly reply", "Ask about pricing", or a long system prompt), you must:
+        1.  READ the target post/tweet content.
+        2.  GENERATE a relevant, high-quality reply based on the instruction.
+        3.  Call \`x_engage\` with the **GENERATED TEXT** as the \`replyText\` argument.
+    *   **NEVER** paste the raw instruction prompt (e.g., "Act as a supportive peer...") directly into the reply field. That is a failure.
 
 **NARRATION & TRANSPARENCY**
 *   **Announce your steps (STRICT)**: You MUST explain what you are doing. Example: "Searching for SaaS founders on X to identify potential targets."
@@ -296,7 +340,16 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
         if (contents && !contents.isDestroyed()) {
             try {
                 contents.stop(); // Stop any pending navigation or loading
-                await contents.executeJavaScript('window.__REAVION_STOP__ = true;');
+                await contents.executeJavaScript(`
+                  window.__REAVION_STOP__ = true;
+                  // Cleanup any DOM overlays
+                  const marks = document.getElementById('reavion-marks-container');
+                  if (marks) marks.remove();
+                  const grid = document.getElementById('reavion-grid-overlay');
+                  if (grid) grid.remove();
+                  const eye = document.getElementById('reavion-eye-highlight');
+                  if (eye) eye.remove();
+                `);
             } catch (e) {
                 // Ignore error if webview is not ready
             }
@@ -410,7 +463,8 @@ CRITICAL:
                 refreshToken,
                 playbooks = [],
                 targetLists = [],
-                speed
+                speed,
+                isPlaybookRun = false
             } = request;
             const window = BrowserWindow.fromWebContents(event.sender);
             if (window) {
@@ -464,7 +518,7 @@ CRITICAL:
             // Re-create tools with context AND the scoped supabase client
             const requestBrowserTools = createBrowserTools({ getSpeed });
             const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase });
-            const requestPlaybookTools = createPlaybookTools({
+            let requestPlaybookTools = createPlaybookTools({
                 playbooks,
                 supabaseClient: scopedSupabase,
                 onPlaybookLoaded: (playbook) => {
@@ -474,6 +528,12 @@ CRITICAL:
                     }
                 }
             });
+
+            // Only allow reporting node status in isolated Playbook Mode
+            if (!isPlaybookRun) {
+                requestPlaybookTools = requestPlaybookTools.filter(t => t.name !== 'report_playbook_node_status');
+            }
+
 
             const requestIntegrationTools = createIntegrationTools();
             const requestUtilityTools = createUtilityTools({ provider, model });
@@ -539,8 +599,10 @@ CRITICAL:
                 }
             }
 
-            const sanitizedMaxIterations = Math.max(1, Math.min(Math.round(requestedMaxIterations) || 1, 50));
-            const hardStopIterations = infiniteMode ? 500 : sanitizedMaxIterations;
+            // Increase limit for Playbook runs significantly to allow complex loops
+            const defaultMax = isPlaybookRun ? 200 : 50;
+            const sanitizedMaxIterations = Math.max(1, Math.min(Math.round(requestedMaxIterations) || 1, 200));
+            const hardStopIterations = infiniteMode ? 500 : (isPlaybookRun ? Math.max(sanitizedMaxIterations, 100) : sanitizedMaxIterations);
             const lastUserMessage =
                 [...messages]
                     .reverse()
@@ -558,16 +620,20 @@ CRITICAL:
 
             // 1. Playbooks
             try {
-                const { data: playbooks } = await supabase.from('playbooks').select('id, name, description').limit(20);
+                const { data: playbooks } = await scopedSupabase.from('playbooks').select('id, name, description, graph').limit(20);
                 if (playbooks && playbooks.length > 0) {
                     contextInjection += "\n**Playbooks ({{playbooks.ID}}):**\n";
-                    playbooks.forEach(p => contextInjection += `- ${p.name}: {{playbooks.${p.id}}} (${p.description || 'No description'})\n`);
+                    playbooks.forEach(p => {
+                        // Extract Node IDs for context context suggestion
+                        const nodeIds = (p.graph as any)?.nodes?.map((n: any) => `"${n.label || n.id}" (${n.id})`).join(', ') || 'No nodes';
+                        contextInjection += `- ${p.name}: {{playbooks.${p.id}}}\n  Description: ${p.description || 'None'}\n  Nodes: ${nodeIds}\n`;
+                    });
                 }
             } catch (e) { console.error('Error fetching playbooks context:', e); }
 
             // 2. Target Lists
             try {
-                const { data: lists } = await supabase.from('target_lists').select('id, name').limit(20);
+                const { data: lists } = await scopedSupabase.from('target_lists').select('id, name').limit(20);
                 if (lists && lists.length > 0) {
                     contextInjection += "\n**Target Lists ({{lists.ID}}):**\n";
                     lists.forEach(l => contextInjection += `- ${l.name}: {{lists.${l.id}}}\n`);
@@ -599,8 +665,36 @@ CRITICAL:
             const now = new Date();
             const timeContext = `\n**TEMPORAL CONTEXT:**\n- Current Date: ${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n- Current Time: ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}\n- ISO Timestamp: ${now.toISOString()}\n- Note: Use this "Current Date" as the anchor for all relative date calculations (e.g., "last week", "yesterday", "30 days ago").\n`;
 
+            const nonVisionModels = ['glm-4.7', 'glm-4-9b', 'deepseek-chat', 'llama-3', 'mistral-large'];
+            const modelLower = model.id.toLowerCase();
+            const isKnownNonVision = nonVisionModels.some(m => modelLower.includes(m)) ||
+                (modelLower.startsWith('glm-') && !modelLower.includes('v'));
+
+            const visionDirective = isKnownNonVision
+                ? `\n\n**CRITICAL: NO VISION CAPABILITIES**\nYour current model (${model.id}) CANNOT see images or screenshots. 
+- **DO NOT** use 'browser_screenshot' or 'browser_vision_snapshot'.
+- **USE 'browser_dom_snapshot'** exclusively to see the page content via text/DOM.
+- If you need to find something on the screen, rely on the DOM tree and IDs.`
+                : '';
+            const playbookDirective = isPlaybookRun
+                ? `\n\n**CRITICAL: PLAYBOOK AUTONOMY**
+You are currently executing a Playbook graph ({{playbooks.ID}}). 
+- **STAY IN THE FLOW**: Your ONLY objective is to reach a terminal node (e.g., 'Finished', 'End') by following the edges.
+- **NO CHAT**: Do NOT stop to chat with the user. Do NOT summarize and wait for instructions. 
+- **AUTONOMOUS LOOPS**: If you are in a loop (e.g., 'Engage Loop'), you must execute EVERY item in the loop autonomously. Do NOT stop after one item.
+- **FORCE PROGRESS**: Every response you provide SHOULD include tool calls (e.g., \`report_playbook_node_status\` or a browser action) until you reach the 'Finished' node. Outputting only text will terminate the automation.`
+                : '';
+
+            const speedDirective = currentSessionSpeed === 'fast'
+                ? `\n\n**CRITICAL: HIGH SPEED EXECUTION (TURBO)**
+You are in FAST mode. 
+- **BE EFFICIENT**: Minimize descriptions and narrations. Focus on high-speed tool execution.
+- **BATCH TOOLS**: You ARE ALLOWED and ENCOURAGED to call multiple tools in a single turn if they are sequential and non-conflicting. For example, you can call \`report_playbook_node_status\` (running) AND the actual platform action (e.g., \`x_engage\`) in the same turn to save time.
+- **REUSE CONTEXT**: If you just scanned a page or received results, act on them immediately without re-scanning unless necessary.`
+                : '';
+
             const effectiveSystemPrompt = enableTools
-                ? `${contextInjection}\n${timeContext}\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
+                ? `${contextInjection}\n${timeContext}${visionDirective}${playbookDirective}${speedDirective}\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
                 : systemPrompt;
 
             if (enableTools) {
@@ -903,7 +997,7 @@ CRITICAL:
                             // Send narration if it exists (relaxed limits: 50,000 chars for long reasoning)
                             if (cleanNarration.length < 50000) {
                                 window.webContents.send('ai:stream-chunk', {
-                                    content: cleanNarration + ' ',
+                                    content: cleanNarration,
                                     done: false,
                                     isNarration: true
                                 });
@@ -956,6 +1050,16 @@ CRITICAL:
                             if (stopSignals.get(window.id)) {
                                 console.log(`[AI Service] Stop signal detected before tool ${toolCall.name}.`);
                                 break;
+                            }
+
+                            // Special Playbook Visualization Handler - Only send if explicitly in playbook run mode
+                            if (toolCall.name === 'report_playbook_node_status') {
+                                console.log('[AI Service] Reporting Playbook Node Status:', toolCall.args);
+                                if (isPlaybookRun) {
+                                    window.webContents.send('ai:playbook-status', toolCall.args);
+                                } else {
+                                    console.log('[AI Service] Skipping playbook status visualization (not in Playbook Run mode)');
+                                }
                             }
 
                             // Send tool call event without text content pollution

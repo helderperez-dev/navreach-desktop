@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Globe, Settings, PanelLeft, MessageSquare, Target as TargetIcon, Workflow } from 'lucide-react';
+import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import { Button } from '@/components/ui/button';
@@ -11,10 +11,9 @@ interface NavItem {
   icon: React.ReactNode;
   view: 'browser' | 'settings' | 'targets' | 'playbooks';
 }
-
 const navItems: NavItem[] = [
-  { id: 'browser', label: 'Browser', icon: <Globe className="h-5 w-5" />, view: 'browser' },
-  { id: 'targets', label: 'Targets', icon: <TargetIcon className="h-5 w-5" />, view: 'targets' },
+  { id: 'browser', label: 'Browser', icon: <Compass className="h-5 w-5" />, view: 'browser' },
+  { id: 'targets', label: 'Targets', icon: <Users className="h-5 w-5" />, view: 'targets' },
   { id: 'playbooks', label: 'Playbooks', icon: <Workflow className="h-5 w-5" />, view: 'playbooks' },
   { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, view: 'settings' },
 ];
@@ -40,7 +39,7 @@ export function Sidebar() {
                   className={cn(
                     'w-full justify-start gap-3 transition-all duration-200',
                     sidebarCollapsed && 'justify-center h-10 w-full',
-                    activeView === item.view ? 'bg-primary/10 text-primary hover:bg-primary/15 shadow-[0_0_15px_rgba(var(--primary),0.05)]' : 'hover:bg-muted/50'
+                    activeView === item.view ? 'bg-muted text-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
                   )}
                   onClick={() => setActiveView(item.view)}
                 >

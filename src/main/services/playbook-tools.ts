@@ -210,5 +210,23 @@ export function createPlaybookTools(context?: PlaybookToolsContext): DynamicStru
         },
     });
 
-    return [getPlaybooksTool, getPlaybookDetailsTool, upsertPlaybookTool, deletePlaybookTool, humanApprovalTool, agentPauseTool];
+    const reportPlaybookNodeStatusTool = new DynamicStructuredTool({
+        name: 'report_playbook_node_status',
+        description: 'Report the execution status of a specific node in a playbook. YOU MUST CALL THIS before starting a node action (status="running") and after finishing (status="success" or "error").',
+        schema: z.object({
+            nodeId: z.string().describe('The ID of the node currently being executed'),
+            status: z.enum(['running', 'success', 'error']).describe('The current status of the node'),
+            message: z.string().nullable().describe('Optional message or output summary').default(null)
+        }),
+        func: async ({ nodeId, status, message }) => {
+            // This tool is primarily for side-effects (UI updates)
+            // The actual logic is handled in the main process event loop which intercepts this tool
+            return JSON.stringify({
+                success: true,
+                message: `Node ${nodeId} status reported: ${status}`
+            });
+        },
+    });
+
+    return [getPlaybooksTool, getPlaybookDetailsTool, upsertPlaybookTool, deletePlaybookTool, humanApprovalTool, agentPauseTool, reportPlaybookNodeStatusTool];
 }

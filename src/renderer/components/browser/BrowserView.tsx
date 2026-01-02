@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, RotateCw, X, Bug } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, X, Bug, Disc, StopCircle, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBrowserStore } from '@/stores/browser.store';
@@ -13,9 +13,9 @@ import reavionLogoBlack from '@assets/reavion-black-welcome.png';
 const INITIAL_URL = 'about:blank';
 
 export function BrowserView() {
-  const { tabId, url, title, isLoading, setUrl, setTitle, setIsLoading, setWebContentsId } = useBrowserStore();
+  const { tabId, url, title, isLoading, setUrl, setTitle, setIsLoading, setWebContentsId, isRecording, setIsRecording } = useBrowserStore();
   const { isDebugPanelOpen, toggleDebugPanel } = useDebugStore();
-  const { hasStarted } = useAppStore();
+  const { hasStarted, activeView, showPlaybookBrowser, playbookBrowserMaximized, togglePlaybookBrowserMaximized } = useAppStore();
   const { isStreaming } = useChatStore();
   const [urlInput, setUrlInput] = useState(url || '');
   const webviewRef = useRef<HTMLElement | null>(null);
@@ -34,11 +34,43 @@ export function BrowserView() {
   }, []);
 
   // Hide loader when page has loaded AND minimum time has passed
+  // OR if we are just on the welcome/blank page and NOT in the middle of a reset
   useEffect(() => {
-    if (pageLoaded && minTimeElapsed) {
+    const isBlank = !url || url === 'about:blank';
+
+    // 1. If we have a real URL and it's fully loaded (plus min time), hide loader
+    if (!isBlank && pageLoaded && minTimeElapsed) {
       setShowLoader(false);
+      return;
     }
-  }, [pageLoaded, minTimeElapsed]);
+
+    // 2. If we are on a blank page and NOT currently automated/streaming, hide loader
+    // This allows the Welcome Screen/New Tab to be visible immediately.
+    if (isBlank && !isStreaming) {
+      setShowLoader(false);
+      return;
+    }
+
+    // 3. Keep loader visible for:
+    // - Real pages that are still loading
+    // - Blank pages while an agent is streaming/running (preparing to navigate)
+    // - During the minimum 2s branding duration
+    setShowLoader(true);
+  }, [pageLoaded, minTimeElapsed, url, isStreaming]);
+
+  // Listen for store reset
+  useEffect(() => {
+    if (url === '') {
+      setPageLoaded(false);
+      setMinTimeElapsed(false);
+      setShowLoader(true);
+
+      const timer = setTimeout(() => {
+        setMinTimeElapsed(true);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [url]); // Only trigger when transition TO empty happens
 
   // Navigate programmatically when url changes (after webview is ready)
   useEffect(() => {
@@ -160,6 +192,16 @@ export function BrowserView() {
     setIsLoading(false);
   };
 
+  const toggleRecording = async () => {
+    if (isRecording) {
+      setIsRecording(false);
+      await window.api.browser.stopRecording(tabId);
+    } else {
+      setIsRecording(true);
+      await window.api.browser.startRecording(tabId);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {!showLoader && (
@@ -193,13 +235,44 @@ export function BrowserView() {
               type="button"
               variant="ghost"
               size="icon"
-              className={`h-8 w-8 ${isDebugPanelOpen ? 'text-primary' : ''}`}
+              className={`h-8 w-8 ${isDebugPanelOpen ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground'}`}
               onClick={toggleDebugPanel}
               title="Toggle debug panel"
             >
               <Bug className="h-4 w-4" />
             </Button>
           </form>
+
+          {activeView === 'playbooks' && (
+            <div className="flex items-center gap-1 border-l border-border pl-2">
+              <Button
+                variant={isRecording ? "destructive" : "ghost"}
+                size="icon"
+                className={`h-8 w-8 ${isRecording ? 'animate-pulse' : ''}`}
+                onClick={toggleRecording}
+                title={isRecording ? "Stop Recording" : "Record Playbook Step"}
+              >
+                {isRecording ? <StopCircle className="h-4 w-4" /> : <Disc className="h-4 w-4 text-red-500" />}
+              </Button>
+
+              {/* Maximize Button - Only visible in Playbook View */}
+              {showPlaybookBrowser && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 ml-1"
+                  onClick={togglePlaybookBrowserMaximized}
+                  title={playbookBrowserMaximized ? "Restore Split View" : "Maximize Browser"}
+                >
+                  {playbookBrowserMaximized ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -235,6 +308,7 @@ export function BrowserView() {
           className="absolute inset-0 w-full h-full"
           // @ts-ignore - webview attributes
           allowpopups="true"
+          webpreferences="nativeWindowOpen=yes, backgroundThrottling=no"
         />
       </div>
     </div>

@@ -19,6 +19,9 @@ declare global {
         registerWebview: (tabId: string, webContentsId: number) => Promise<{ success: boolean }>;
         unregisterWebview: (tabId: string) => Promise<{ success: boolean }>;
         allowNavigation: (url: string) => Promise<{ success: boolean }>;
+        startRecording: (tabId: string) => Promise<{ success: boolean; error?: string }>;
+        stopRecording: (tabId: string) => Promise<{ success: boolean; error?: string }>;
+        onRecordingAction: (callback: (data: any) => void) => () => void;
       };
       settings: {
         get: <T>(key: string) => Promise<T>;
@@ -61,6 +64,8 @@ declare global {
           playbooks?: any[];
           targetLists?: any[];
           agentRunLimit?: number | null;
+          isPlaybookRun?: boolean;
+          speed?: 'slow' | 'normal' | 'fast';
         }) => Promise<{ success: boolean; response?: string; error?: string }>;
         chatSync: (request: {
           messages: import('@shared/types').Message[];
@@ -78,6 +83,7 @@ declare global {
         onStreamChunk: (callback: (data: { content: string; done: boolean; toolCall?: any; toolResult?: any }) => void) => () => void;
         listWorkflows: () => Promise<{ name: string; path: string }[]>;
         testConnection: (provider: import('@shared/types').ModelProvider, modelId?: string) => Promise<{ success: boolean; message: string; response?: string }>;
+        onPlaybookStatus: (callback: (data: { nodeId: string; status: 'running' | 'success' | 'error'; message?: string }) => void) => () => void;
       };
       debug: {
         onLog: (callback: (data: { type: string; message: string; data?: any }) => void) => () => void;
