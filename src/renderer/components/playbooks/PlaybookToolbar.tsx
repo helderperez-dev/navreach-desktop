@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useReactFlow } from 'reactflow';
-import { Settings, Save, X, Play, Layout as LayoutIcon, Columns } from 'lucide-react';
+import { Settings, Save, X, Play, Layout as LayoutIcon, Columns, Radio, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -28,10 +28,12 @@ interface PlaybookToolbarProps {
     onStop?: () => void;
     saving?: boolean;
     isRunning?: boolean;
+    isRecording?: boolean;
+    onToggleRecording?: () => void;
 }
 
 export function PlaybookToolbar({
-    playbookName, onNameChange, playbook, onMetadataChange, onSave, onRun, onStop, onBack, onLayout, layoutDirection, saving, isRunning
+    playbookName, onNameChange, playbook, onMetadataChange, onSave, onRun, onStop, onBack, onLayout, layoutDirection, saving, isRunning, isRecording, onToggleRecording
 }: PlaybookToolbarProps) {
     const [localCapabilities, setLocalCapabilities] = useState<PlaybookCapabilities>({ browser: true, mcp: [], external_api: [] });
     const [localDefaults, setLocalDefaults] = useState<PlaybookExecutionDefaults>({ mode: 'observe', require_approval: true, speed: 'normal', model: '' });
@@ -181,6 +183,27 @@ export function PlaybookToolbar({
                         </div>
                     </SheetContent>
                 </Sheet>
+
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant={isRecording ? "secondary" : "outline"}
+                            size="sm"
+                            onClick={onToggleRecording}
+                            className={cn(isRecording && "bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20")}
+                        >
+                            {isRecording ? (
+                                <Square className="h-4 w-4 mr-2" fill="currentColor" />
+                            ) : (
+                                <Radio className="h-4 w-4 mr-2" />
+                            )}
+                            {isRecording ? "Stop Recording" : "Record Actions"}
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                        {isRecording ? "Stop Recording Browser Actions" : "Record Browser Actions to Nodes"}
+                    </TooltipContent>
+                </Tooltip>
 
                 <Tooltip>
                     <TooltipTrigger asChild>

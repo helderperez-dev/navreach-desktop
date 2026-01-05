@@ -2,8 +2,10 @@ export interface TargetList {
     id: string;
     name: string;
     description: string | null;
-    created_at: string;
     user_id: string;
+    workspace_id: string;
+    created_at: string;
+    updated_at: string;
     target_count?: number;
 }
 
@@ -26,7 +28,8 @@ export interface Target {
 export interface CreateTargetListInput {
     name: string;
     description?: string;
-    user_id?: string;
+    user_id: string;
+    workspace_id: string;
 }
 
 export interface CreateTargetInput {

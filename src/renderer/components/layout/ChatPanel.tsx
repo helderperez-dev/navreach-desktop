@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import type { Conversation } from '@shared/types';
+
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ArrowUp, Square, Plus, Trash2, History, X, MessageSquare, PanelLeftClose, Globe, MousePointer, Type, ScrollText, FileText, ArrowLeft, ArrowRight, RefreshCw, Clock, Search, Eye, Check, Heart, UserPlus, Camera, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -19,6 +21,9 @@ import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
 import { ProcessedText } from '@/lib/mention-utils';
 import { supabase } from '@/lib/supabase';
+import { useWorkspaceStore } from '@/stores/workspace.store';
+
+
 
 
 
@@ -142,6 +147,9 @@ export function ChatPanel() {
     setPendingPrompt,
   } = useChatStore();
 
+  const { currentWorkspace } = useWorkspaceStore();
+
+
   const { modelProviders } = useSettingsStore();
   const { toggleChatPanel, setHasStarted } = useAppStore();
   const { addLog } = useDebugStore();
@@ -152,6 +160,13 @@ export function ChatPanel() {
   const [playbooks, setPlaybooks] = useState<any[]>([]);
 
   const { session } = useAuthStore();
+
+  const filteredConversations = useMemo(() => {
+    return conversations.filter((conv: Conversation) =>
+      !conv.id.startsWith('playbook-') &&
+      conv.workspaceId === currentWorkspace?.id
+    );
+  }, [conversations, currentWorkspace?.id]);
 
   // Debug logging
   console.log('[ChatPanel] Render State:', {
@@ -169,7 +184,7 @@ export function ChatPanel() {
 
       const refreshData = async () => {
         try {
-          const data = await playbookService.getPlaybooks();
+          const data = await playbookService.getPlaybooks(currentWorkspace?.id);
           console.log(`[ChatPanel] Fetched ${data.length} playbooks`);
           setPlaybooks(data);
         } catch (err) {
@@ -180,7 +195,7 @@ export function ChatPanel() {
       refreshData();
       fetchLists();
     }
-  }, [session, fetchLists]); // Re-run when session changes
+  }, [session, fetchLists, currentWorkspace?.id]); // Re-run when session or workspace changes
 
   const getGlobalVariables = useCallback(() => {
     const groups: { nodeName: string; variables: { label: string; value: string; example?: string }[] }[] = [];
@@ -547,7 +562,7 @@ export function ChatPanel() {
     if (playbookId || isIsolated) {
       try {
         console.log('[ChatPanel] Refreshing playbooks before execution to ensure latest nodes/rules...');
-        latestPlaybooks = await playbookService.getPlaybooks();
+        latestPlaybooks = await playbookService.getPlaybooks(useWorkspaceStore.getState().currentWorkspace?.id);
         setPlaybooks(latestPlaybooks);
       } catch (err) {
         console.warn('[ChatPanel] Failed to refresh playbooks, using stale state', err);
@@ -585,7 +600,9 @@ export function ChatPanel() {
         playbooks: latestPlaybooks,
         targetLists: lists,
         speed,
-        isPlaybookRun: isIsolated
+        isPlaybookRun: isIsolated,
+        workspaceId: currentWorkspace?.id,
+        workspaceSettings: currentWorkspace?.settings
       });
 
       if (!result.success && result.error) {
@@ -693,7 +710,7 @@ export function ChatPanel() {
             </Button>
           ) : (
             <>
-              {conversations.length > 0 && (
+              {filteredConversations.length > 0 && (
                 <Button
                   variant="ghost"
                   size="icon"
@@ -734,13 +751,12 @@ export function ChatPanel() {
         <div className="absolute top-12 left-0 right-0 bottom-0 z-10 bg-card flex flex-col">
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-1">
-              {conversations.length === 0 ? (
+              {filteredConversations.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">
                   No conversations yet
                 </div>
               ) : (
-                conversations
-                  .filter(conv => !conv.id.startsWith('playbook-'))
+                filteredConversations
                   .map((conv) => (
                     <button
                       key={conv.id}

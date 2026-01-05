@@ -66,6 +66,11 @@ declare global {
           agentRunLimit?: number | null;
           isPlaybookRun?: boolean;
           speed?: 'slow' | 'normal' | 'fast';
+          workspaceId?: string;
+          workspaceSettings?: {
+            disabledTools?: string[];
+            disabledMCPServers?: string[];
+          };
         }) => Promise<{ success: boolean; response?: string; error?: string }>;
         chatSync: (request: {
           messages: import('@shared/types').Message[];

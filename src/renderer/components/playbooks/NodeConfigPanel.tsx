@@ -291,6 +291,7 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                     </div>
                 );
             case 'navigate':
+            case 'browser_navigate':
                 const vars = getUpstreamVariables().flatMap(g => g.variables);
                 const isManual = config.url_mode === 'manual' || (config.url && !config.url.startsWith('{{'));
 
@@ -982,8 +983,12 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                             <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
                                 <Field label="Prompt / Content">
                                     <Textarea
-                                        value={config.replyText || ''}
-                                        onChange={(e) => handleConfigChange('replyText', e.target.value)}
+                                        value={config.replyText || config.text || config.value || ''}
+                                        onChange={(e) => {
+                                            handleConfigChange('replyText', e.target.value);
+                                            handleConfigChange('text', e.target.value);
+                                            handleConfigChange('value', e.target.value);
+                                        }}
                                         placeholder="Enter the exact text OR instructions for the agent (e.g. 'Write a friendly reply about...')..."
                                         className="min-h-[100px] text-xs resize-none"
                                     />
@@ -1006,6 +1011,13 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                             <Switch
                                 checked={config.skip_verified === true}
                                 onCheckedChange={(v) => handleConfigChange('skip_verified', v)}
+                            />
+                        </div>
+                        <div className="flex items-center justify-between px-1">
+                            <Label className="text-[12px] text-muted-foreground">Only engage with verified users</Label>
+                            <Switch
+                                checked={config.only_verified === true}
+                                onCheckedChange={(v) => handleConfigChange('only_verified', v)}
                             />
                         </div>
                         <Field label="Skip Keywords">
@@ -1168,6 +1180,22 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                         </Field>
                     </div>
                 );
+            case 'reddit_scan_posts':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Max Posts">
+                            <Input
+                                type="number"
+                                value={config.limit || 10}
+                                onChange={(e) => handleConfigChange('limit', parseInt(e.target.value))}
+                                className="h-9 text-xs"
+                            />
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            Scans the currently visible posts on the Reddit page for metadata, engagement, and promoted status.
+                        </div>
+                    </div>
+                );
             case 'reddit_vote':
                 return (
                     <div className="space-y-4">
@@ -1221,8 +1249,11 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                         </Field>
                         <Field label="Comment Text">
                             <MentionInput
-                                value={config.text || ''}
-                                onChange={(e) => handleConfigChange('text', e.target.value)}
+                                value={config.text || config.value || ''}
+                                onChange={(e) => {
+                                    handleConfigChange('text', e.target.value);
+                                    handleConfigChange('value', e.target.value);
+                                }}
                                 placeholder="Write your comment..."
                                 variableGroups={variableGroups}
                             />
@@ -1344,8 +1375,11 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                     <div className="space-y-4">
                         <Field label="Post content">
                             <MentionInput
-                                value={config.text || ''}
-                                onChange={(e) => handleConfigChange('text', e.target.value)}
+                                value={config.text || config.value || ''}
+                                onChange={(e) => {
+                                    handleConfigChange('text', e.target.value);
+                                    handleConfigChange('value', e.target.value);
+                                }}
                                 placeholder="What's up in the sky?"
                                 variableGroups={variableGroups}
                             />
@@ -1364,8 +1398,11 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                         </Field>
                         <Field label="Reply content">
                             <MentionInput
-                                value={config.text || ''}
-                                onChange={(e) => handleConfigChange('text', e.target.value)}
+                                value={config.text || config.value || ''}
+                                onChange={(e) => {
+                                    handleConfigChange('text', e.target.value);
+                                    handleConfigChange('value', e.target.value);
+                                }}
                                 variableGroups={variableGroups}
                             />
                         </Field>
@@ -1376,6 +1413,73 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                     <div className="space-y-4">
                         <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
                             Retrieves the simplified accessibility tree of the page. No configuration needed.
+                        </div>
+                    </div>
+                );
+            case 'browser_click':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Selector">
+                            <MentionInput
+                                value={config.selector || ''}
+                                onChange={(e) => handleConfigChange('selector', e.target.value)}
+                                placeholder="CSS selector to click..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Simulates a human-like click on the matched element.
+                        </div>
+                        <Field label="Element Index">
+                            <Input
+                                type="number"
+                                value={config.index || 0}
+                                onChange={(e) => handleConfigChange('index', parseInt(e.target.value))}
+                                placeholder="0"
+                            />
+                        </Field>
+                    </div>
+                );
+            case 'browser_type':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Selector">
+                            <MentionInput
+                                value={config.selector || ''}
+                                onChange={(e) => handleConfigChange('selector', e.target.value)}
+                                placeholder="CSS selector for input..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Text to Type">
+                            <MentionInput
+                                value={config.text || config.value || ''}
+                                onChange={(e) => {
+                                    handleConfigChange('text', e.target.value);
+                                    handleConfigChange('value', e.target.value);
+                                }}
+                                placeholder="Text to enter..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Focuses the element and enters the specified text.
+                        </div>
+                    </div>
+                );
+            case 'browser_scrape':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Selector">
+                            <MentionInput
+                                value={config.selector || ''}
+                                onChange={(e) => handleConfigChange('selector', e.target.value)}
+                                placeholder="CSS selector to scrape..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Extracts inner text and HTML structure from the target element.
                         </div>
                     </div>
                 );
@@ -1429,6 +1533,43 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                     <div className="space-y-4">
                         <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
                             Overlays a numbered coordinate grid on the page for 30 seconds to assist in finding target X/Y coordinates.
+                        </div>
+                    </div>
+                );
+            case 'browser_replay':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Recorder JSON">
+                            <Textarea
+                                value={config.recording || ''}
+                                onChange={(e) => handleConfigChange('recording', e.target.value)}
+                                placeholder='Paste Chrome Recorder JSON here...'
+                                className="min-h-[150px] font-mono text-[10px]"
+                            />
+                        </Field>
+                        <Field label="Speed Multiplier">
+                            <Select
+                                value={(config.speed_multiplier || 1).toString()}
+                                onValueChange={(v) => handleConfigChange('speed_multiplier', parseFloat(v))}
+                            >
+                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="0.5">0.5x (Slow)</SelectItem>
+                                    <SelectItem value="1">1x (Normal)</SelectItem>
+                                    <SelectItem value="2">2x (Fast)</SelectItem>
+                                    <SelectItem value="4">4x (Turbo)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <div className="flex items-center justify-between px-1">
+                            <Label className="text-[12px] text-muted-foreground">Enable Agent Decisions</Label>
+                            <Switch
+                                checked={config.enable_agent_decisions === true}
+                                onCheckedChange={(v) => handleConfigChange('enable_agent_decisions', v)}
+                            />
+                        </div>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded">
+                            Executes a recorded sequence of actions. If agent decisions are enabled, the AI can intervene if a step fails.
                         </div>
                     </div>
                 );

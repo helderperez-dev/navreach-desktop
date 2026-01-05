@@ -26,6 +26,7 @@ import { useAppStore } from '@/stores/app.store';
 import { useChatStore } from '@/stores/chat.store';
 import { useBrowserStore } from '@/stores/browser.store';
 import { useSettingsStore } from '@/stores/settings.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import { NodePalette } from './NodePalette';
 import { PlaybookToolbar } from './PlaybookToolbar';
 import { NodeConfigPanel } from './NodeConfigPanel';
@@ -63,6 +64,7 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [executionLogs, setExecutionLogs] = useState<{ id: string, msg: string, type: 'info' | 'success' | 'error' | 'running', time: string, timestamp: number }[]>([]);
     const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB');
+    const [isRecording, setIsRecording] = useState(false);
     const isRunning = useChatStore(s => s.isStreaming);
     const nodesRef = useRef(nodes);
     useEffect(() => {
@@ -90,6 +92,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
     }, [edges]);
 
     const lastActiveNodeRef = useRef<string | null>(null);
+    const lastRecordedNodeRef = useRef<string | null>(null);
+    const lastRecordedSelectorRef = useRef<string | null>(null);
 
     // Playbook Execution Status Listener
     useEffect(() => {
@@ -254,9 +258,10 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
     // Recording Listener
     useEffect(() => {
-        const removeListener = window.api.browser.onRecordingAction((action: any) => {
-            if (!capabilities.browser) return; // Ignore if browser capability disabled? Or maybe just allow it.
+        // We only want to listen for recording events if we are actually recording
+        if (!isRecording) return;
 
+        const removeListener = window.api.browser.onRecordingAction((action: any) => {
             // Only handle if we have a valid action
             if (!action || !action.type) return;
 
@@ -267,78 +272,136 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
             if (action.type === 'click') {
                 nodeType = 'browser_click';
-                nodeLabel = `Click ${action.tagName.toLowerCase()}`;
+                nodeLabel = `Click ${action.tagName?.toLowerCase() || 'element'}`;
                 config = { selector: action.selector };
                 if (action.text) nodeLabel += ` "${action.text}"`;
             } else if (action.type === 'type') {
                 nodeType = 'browser_type';
-                nodeLabel = `Type "${action.value}"`;
-                config = { selector: action.selector, text: action.value };
+                let displayValue = action.value || '';
+
+                // Handle complex editor state (like JSON from shreddit-composer)
+                if (displayValue && typeof displayValue === 'string' && displayValue.startsWith('{')) {
+                    try {
+                        const parsed = JSON.parse(displayValue);
+                        if (parsed.document || parsed.blocks || parsed.root) {
+                            displayValue = action.text || 'Rich Text Content';
+                        }
+                    } catch (e) { }
+                }
+
+                // Truncate for label
+                const truncated = displayValue.length > 25 ? displayValue.slice(0, 22) + '...' : displayValue;
+                nodeLabel = `Type "${truncated}"`;
+                config = { selector: action.selector, text: action.value, value: action.value };
             } else if (action.type === 'navigation') {
-                // Optional: Don't record every nav, maybe just the first one or explicit ones?
-                // For now, let's record it.
                 nodeType = 'browser_navigate';
-                nodeLabel = `Navigate`;
+                let host = '';
+                try {
+                    host = action.url ? new URL(action.url).hostname : '';
+                } catch (e) { }
+                nodeLabel = host ? `Navigate to ${host}` : 'Navigate';
                 config = { url: action.url };
             }
 
             if (!nodeType) return;
 
+            // MERGE LOGIC: If this is a 'type' action on the same element as the last recorded node,
+            // update that node instead of creating a new one.
+            if (nodeType === 'browser_type' && lastRecordedSelectorRef.current === action.selector) {
+                const lastId = lastRecordedNodeRef.current;
+                if (lastId) {
+                    setNodes((current) => current.map(n => {
+                        if (n.id === lastId) {
+                            // If it's a 'change' event, it's often the most complete/final version
+                            // but we always want the most up to date value anyway.
+                            return {
+                                ...n,
+                                data: {
+                                    ...n.data,
+                                    label: nodeLabel,
+                                    config: {
+                                        ...n.data.config,
+                                        text: action.value,
+                                        value: action.value
+                                    }
+                                }
+                            };
+                        }
+                        return n;
+                    }));
+
+                    // If this was a 'change' event, we can clear the selector ref to force a new node 
+                    // if the user starts typing in the same field again later (rare but cleaner).
+                    if (action.subtype === 'change') {
+                        // lastRecordedSelectorRef.current = null; // optional
+                    }
+
+                    return; // Important: skip adding new node and edge
+                }
+            }
+
+            const newNodeId = uuidv4();
+
+            // Atomically update nodes and edges
             setNodes((currentNodes) => {
-                // Find insertion point: 
-                // 1. Selected node?
-                // 2. Last added node?
-                // 3. End node (insert before it)?
+                // Determine position
+                let position = { x: 100, y: 100 };
+                const prevNodeId = lastRecordedNodeRef.current;
+                const prevNode = currentNodes.find(n => n.id === prevNodeId);
 
-                // Simple strategy: Append to the "last" node that isn't 'end', or the selected node.
-                // For a straight line recording, we want to chain them.
-
-                const lastNode = currentNodes.length > 0 ? currentNodes[currentNodes.length - 2] : null; // Assumes End is last? No, order varies.
-
-                // Better: Use selectedNode if present, else find the node with no outgoing edges (excluding End).
-                // But we don't have edges in this callback scope easily without prop drilling or state ref.
-                // "nodes" in useNodesState is fresh here thanks to setNodes callback.
-
-                // Let's create the new node first
-                const newNodeId = uuidv4();
-
-                // Position? Just offset from the last one or default. Auto-layout will fix it.
-                // Or try to place it sensibly.
-                const lastPos = currentNodes[currentNodes.length - 1]?.position || { x: 0, y: 0 };
+                if (prevNode) {
+                    position = { x: prevNode.position.x, y: prevNode.position.y + 120 };
+                } else {
+                    // Start from the "Start" node if it exists
+                    const startNode = currentNodes.find(n => n.type === 'start');
+                    if (startNode) {
+                        position = { x: startNode.position.x, y: startNode.position.y + 120 };
+                        lastRecordedNodeRef.current = startNode.id;
+                    }
+                }
 
                 const newNode = {
                     id: newNodeId,
                     type: nodeType,
-                    position: { x: lastPos.x + 50, y: lastPos.y + 50 },
+                    position,
                     data: { label: nodeLabel, config },
                     selected: true
                 };
 
-                // Deselect others
-                const updatedNodes = currentNodes.map(n => ({ ...n, selected: false }));
-                return [...updatedNodes, newNode];
+                // Track selector for next merge check
+                if (nodeType === 'browser_type') {
+                    lastRecordedSelectorRef.current = config.selector;
+                } else {
+                    lastRecordedSelectorRef.current = null;
+                }
+
+                return currentNodes.map(n => ({ ...n, selected: false })).concat(newNode);
             });
 
             setEdges((currentEdges) => {
-                const currentNodes = nodes; // CAUTION: stale closure potentially? No, logic above uses callback. 
-                // But here we need "the node we just appended to".
-                // This is tricky with separate setNodes/setEdges.
+                const prevNodeId = lastRecordedNodeRef.current;
+                if (!prevNodeId) {
+                    lastRecordedNodeRef.current = newNodeId;
+                    return currentEdges;
+                }
 
-                // Let's rely on a helper or Ref to track "lastAddedNodeId" for recording session?
-                // Or just scan the graph.
-                return currentEdges; // Placeholder: Edges need logic
+                const newEdge = {
+                    id: `e-${prevNodeId}-${newNodeId}`,
+                    source: prevNodeId,
+                    target: newNodeId,
+                    type: 'smoothstep',
+                    style: { strokeWidth: 2 }
+                };
+
+                lastRecordedNodeRef.current = newNodeId;
+                return [...currentEdges, newEdge];
             });
-
-            // Re-think: We need atomic update or access to latest state.
-            // Using a func inside is safe but we need to coordinate.
-            // Let's do it in one effect with access to current state ref?
-            // Or use the "nodes" dependency but that triggers re-sub.
         });
 
         return () => {
             if (removeListener) removeListener();
         };
-    }, [capabilities, nodes]); // Logic needs refining for edge creation
+    }, [isRecording, setNodes, setEdges]);
 
     const loadPlaybook = async (id: string) => {
         try {
@@ -707,7 +770,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                 description,
                 graph: { nodes, edges },
                 capabilities,
-                execution_defaults: defaults
+                execution_defaults: defaults,
+                workspace_id: useWorkspaceStore.getState().currentWorkspace?.id // Inject Workspace ID
             };
 
             if (playbookId) {
@@ -790,6 +854,27 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         }
     };
 
+    const toggleRecording = useCallback(async () => {
+        const { tabId, setIsRecording: setBrowserRecording } = useBrowserStore.getState();
+
+        if (!isRecording) {
+            // Start
+            lastRecordedNodeRef.current = null;
+            lastRecordedSelectorRef.current = null;
+            useAppStore.getState().setShowPlaybookBrowser(true);
+            await window.api.browser.startRecording(tabId);
+            setIsRecording(true);
+            setBrowserRecording(true);
+            toast.info('Recording started. Perform actions in the browser.');
+        } else {
+            // Stop
+            await window.api.browser.stopRecording(tabId);
+            setIsRecording(false);
+            setBrowserRecording(false);
+            toast.success('Recording stopped.');
+        }
+    }, [isRecording]);
+
     const resetNodeStatuses = useCallback(() => {
         lastActiveNodeRef.current = null;
         setNodes((nds) => nds.map((node) => ({
@@ -871,6 +956,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                 onBack={onBack}
                 onLayout={onLayout}
                 layoutDirection={layoutDirection}
+                isRecording={isRecording}
+                onToggleRecording={toggleRecording}
                 saving={saving}
             />
 

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 import type { Message, Conversation, ModelConfig } from '@shared/types';
+import { useWorkspaceStore } from './workspace.store';
 
 interface ChatState {
   conversations: Conversation[];
@@ -30,6 +31,7 @@ interface ChatState {
   setAgentRunLimit: (min: number | null) => void;
   setCurrentSessionTime: (sec: number) => void;
   setPendingPrompt: (prompt: string | { content: string, isIsolated?: boolean, playbookId?: string } | null) => void;
+  assignWorkspaces: (workspaceId: string) => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -48,6 +50,11 @@ export const useChatStore = create<ChatState>()(
 
       createConversation: () => {
         const id = uuidv4();
+        // Fallback to local storage if store state isn't immediately available during hydration/boot
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id ||
+          localStorage.getItem('reavion_current_workspace_id') ||
+          undefined;
+
         const conversation: Conversation = {
           id,
           title: 'New Chat',
@@ -55,6 +62,7 @@ export const useChatStore = create<ChatState>()(
           createdAt: Date.now(),
           updatedAt: Date.now(),
           modelId: get().selectedModel?.id || '',
+          workspaceId: workspaceId,
         };
         set((state) => ({
           conversations: [conversation, ...state.conversations],
@@ -206,7 +214,11 @@ export const useChatStore = create<ChatState>()(
 
       getActiveConversation: () => {
         const state = get();
-        return state.conversations.find((c) => c.id === state.activeConversationId);
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        return state.conversations.find((c) =>
+          c.id === state.activeConversationId &&
+          (!c.workspaceId || c.workspaceId === workspaceId)
+        );
       },
 
       setMaxIterations: (value) =>
@@ -218,6 +230,13 @@ export const useChatStore = create<ChatState>()(
       setAgentRunLimit: (min) => set({ agentRunLimit: min }),
       setCurrentSessionTime: (sec) => set({ currentSessionTime: sec }),
       setPendingPrompt: (prompt) => set({ pendingPrompt: prompt }),
+      assignWorkspaces: (workspaceId) => {
+        set((state) => ({
+          conversations: state.conversations.map(conv =>
+            !conv.workspaceId ? { ...conv, workspaceId } : conv
+          )
+        }));
+      },
     }),
     {
       name: 'reavion-chat-store',

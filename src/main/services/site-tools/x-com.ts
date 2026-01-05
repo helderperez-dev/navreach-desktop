@@ -234,6 +234,15 @@ const BASE_SCRIPT_HELPERS = `
 const WAIT_FOR_RESULTS_SCRIPT = `
   (async function() {
     ${BASE_SCRIPT_HELPERS}
+
+    // Aggressively prevent focus stealing
+    try {
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
+      }
+      window.focus = function() { console.log("Blocked window.focus to prevent app stealing OS focus"); };
+    } catch (e) { /* ignore */ }
+
     return await new Promise((resolve) => {
       const start = Date.now();
       const check = () => {
@@ -663,7 +672,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                                 document.querySelector('div[role="textbox"][contenteditable="true"]');
                if (composer) {
                   await safeClick(composer, 'Composer');
-                  composer.focus();
+                  // Soft focus
+                  composer.focus({ preventScroll: true });
                   document.execCommand('selectAll', false, null);
                   document.execCommand('insertText', false, ${JSON.stringify(text)});
                   await wait(800);
@@ -724,7 +734,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             if (!composer) return { success: false, error: 'Reply composer not found after click' };
 
             await safeClick(composer, 'Composer', { focusWait: 50, afterWait: 200 });
-            composer.focus();
+            // Soft focus - preventScroll helps avoid window jumping
+            composer.focus({ preventScroll: true });
             document.execCommand('selectAll', false, null);
             document.execCommand('insertText', false, ${JSON.stringify(text)});
             await wait(500);
@@ -775,7 +786,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                  if (!composer) return { success: false, error: 'Redirected to compose but no composer found' };
                  
                  await safeClick(composer, 'Composer');
-                 composer.focus();
+                 // Soft focus
+                 composer.focus({ preventScroll: true });
                  document.execCommand('selectAll', false, null);
                  document.execCommand('insertText', false, ${JSON.stringify(text)});
                  await wait(800);
@@ -797,7 +809,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             if (!composer) return { success: false, error: 'No composer found after clicking reply' };
             
             await safeClick(composer, 'Composer');
-            composer.focus();
+            // Soft focus
+            composer.focus({ preventScroll: true });
             document.execCommand('selectAll', false, null); // Clear existing if any
             document.execCommand('insertText', false, ${JSON.stringify(text)});
             await wait(800);
@@ -856,7 +869,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             if (!composer) return { success: false, error: 'Could not find or open composer' };
 
             await safeClick(composer, 'Composer');
-            composer.focus();
+            // Soft focus
+            composer.focus({ preventScroll: true });
             document.execCommand('insertText', false, ${JSON.stringify(text)});
             composer.dispatchEvent(new Event('input', { bubbles: true }));
             await wait(500);
@@ -1253,21 +1267,24 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       replyText: z.string().optional().describe('Required if "reply" action is specified.'),
       skip_self: z.boolean().default(true).describe('Skip if this is your own post.'),
       skip_verified: z.boolean().default(false).describe('Skip if the author is verified.'),
+      only_verified: z.boolean().default(false).describe('Only engage with verified users (blue/gold/grey check).'),
       skip_keywords: z.string().default('').describe('Comma-separated keywords to avoid.'),
       expected_author: z.string().optional().describe('Optional handle (without @) to verify the correct tweet is targeted.'),
     }),
-    func: async ({ targetIndex, actions, replyText, skip_self, skip_verified, skip_keywords, expected_author }: {
+    func: async ({ targetIndex, actions, replyText, skip_self, skip_verified, only_verified, skip_keywords, expected_author }: {
       targetIndex: number | string | null;
       actions: string;
       replyText: string | null;
       skip_self: boolean | null;
       skip_verified: boolean | null;
+      only_verified?: boolean | null;
       skip_keywords: string | null;
       expected_author: string | null;
     }) => {
       const contents = ctx.getContents();
       const finalSkipSelf = skip_self ?? true;
       const finalSkipVerified = skip_verified ?? false;
+      const finalOnlyVerified = only_verified ?? false;
       const finalSkipKeywords = skip_keywords || '';
       const rIndex = parseInt(String(targetIndex ?? 0), 10);
       try {
@@ -1286,7 +1303,11 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               const actionsList = ${JSON.stringify(actions || '')}.split(',').map(a => a.trim().toLowerCase());
               const authorHandle = getTweetAuthor(tweet);
               const authorName = tweet.querySelector('[data-testid="User-Name"]')?.innerText || '';
-              const verifiedIcon = tweet.querySelector('[data-testid="icon-verified"], [aria-label*="Verified"]');
+              const verifiedIcon = tweet.querySelector('[data-testid="icon-verified"]') || 
+                                   tweet.querySelector('svg[aria-label="Verified account"]') || 
+                                   tweet.querySelector('svg[aria-label="Verified organization"]') ||
+                                   tweet.querySelector('svg[data-testid="icon-verified"]'); // Extra robust check
+
               const socialContext = tweet.querySelector('[data-testid="socialContext"]')?.innerText.toLowerCase() || '';
               const isMyRetweet = socialContext.includes('you retweeted') || socialContext.includes('tu retuiteaste');
               
@@ -1298,6 +1319,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               }
               if (${finalSkipVerified} && verifiedIcon) {
                 return { success: true, skipped: true, reason: 'verified', message: 'Skipped: Verified profile' };
+              }
+              if (${finalOnlyVerified} && !verifiedIcon) {
+                return { success: true, skipped: true, reason: 'unverified', message: 'Skipped: Not a verified profile (only_verified=true)' };
               }
               const keywords = ${JSON.stringify(finalSkipKeywords)}.split(',').map(k => k.trim().toLowerCase()).filter(Boolean);
               if (keywords.length > 0) {
@@ -1363,7 +1387,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                                searchRoot.querySelector('div[role="textbox"][contenteditable="true"]');
                   if (comp) {
                     await safeClick(comp, 'Composer');
-                    comp.focus();
+                    comp.focus({ preventScroll: true });
                     document.execCommand('selectAll', false, null);
                     document.execCommand('insertText', false, ${JSON.stringify(replyText || '')});
                     await wait(800);
@@ -1402,7 +1426,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                              const dmComposer = document.querySelector('[data-testid="dmComposerTextInput"], [data-testid="dmComposer"] div[role="textbox"]');
                              if (dmComposer) {
                                  await safeClick(dmComposer, 'DM Composer');
-                                 dmComposer.focus();
+                                 dmComposer.focus({ preventScroll: true });
                                  document.execCommand('insertText', false, replyText);
                                  await wait(800);
                                  const sendBtn = document.querySelector('[data-testid="dmComposerSendButton"]');

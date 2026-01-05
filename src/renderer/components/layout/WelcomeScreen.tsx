@@ -13,6 +13,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MentionInput } from '@/components/ui/mention-input';
 import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
+import { useWorkspaceStore } from '@/stores/workspace.store';
+import type { Conversation } from '@shared/types';
+
 import reavionLogoWhite from '@assets/reavion-white-welcome.png';
 import reavionLogoBlack from '@assets/reavion-black-welcome.png';
 
@@ -70,15 +73,23 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
   } = useChatStore();
   const { modelProviders, mcpServers, apiTools } = useSettingsStore();
   const { lists, fetchLists } = useTargetsStore();
+  const { currentWorkspace } = useWorkspaceStore();
   const { session } = useAuthStore();
   const [playbooks, setPlaybooks] = useState<any[]>([]);
 
+  const filteredConversations = useMemo(() => {
+    return conversations.filter((conv: Conversation) =>
+      !conv.id.startsWith('playbook-') &&
+      conv.workspaceId === currentWorkspace?.id
+    );
+  }, [conversations, currentWorkspace?.id]);
+
   useEffect(() => {
-    playbookService.getPlaybooks().then(setPlaybooks);
-    if (lists.length === 0) {
+    playbookService.getPlaybooks(currentWorkspace?.id).then(setPlaybooks);
+    if (session) {
       fetchLists();
     }
-  }, []);
+  }, [currentWorkspace?.id, session]);
 
   const getGlobalVariables = useCallback(() => {
     const groups: { nodeName: string; variables: { label: string; value: string; example?: string }[] }[] = [];
@@ -293,7 +304,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
       exit={{ opacity: 0, scale: 0.95 }}
       transition={{ duration: 0.3 }}
     >
-      {conversations.length > 0 && (
+      {filteredConversations.length > 0 && (
         <motion.div
           className="absolute top-4 right-4"
           initial={{ opacity: 0 }}
@@ -334,11 +345,10 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
             </div>
             <ScrollArea className="flex-1">
               <div className="p-2 space-y-1">
-                {conversations.length === 0 ? (
+                {filteredConversations.length === 0 ? (
                   <p className="text-center py-8 text-muted-foreground text-sm">No conversations yet</p>
                 ) : (
-                  conversations
-                    .filter(conv => !conv.id.startsWith('playbook-'))
+                  filteredConversations
                     .map((conv) => (
                       <div
                         key={conv.id}

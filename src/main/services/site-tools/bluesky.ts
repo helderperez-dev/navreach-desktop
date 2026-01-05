@@ -68,7 +68,7 @@ export function createBlueskyTools(ctx: SiteToolContext): DynamicStructuredTool[
             const composer = document.querySelector('[contenteditable="true"][aria-label="Write your post"]');
             if (!composer) return { success: false, error: 'Composer not found' };
             
-            composer.focus();
+            composer.focus({ preventScroll: true });
             document.execCommand('insertText', false, ${JSON.stringify(text)});
             await wait(500);
             
@@ -123,7 +123,7 @@ export function createBlueskyTools(ctx: SiteToolContext): DynamicStructuredTool[
                   const composer = document.querySelector('[contenteditable="true"]');
                   if (!composer) return { success: false, error: 'Composer not found' };
                   
-                  composer.focus();
+                  composer.focus({ preventScroll: true });
                   document.execCommand('insertText', false, ${JSON.stringify(text)});
                   await wait(500);
                   

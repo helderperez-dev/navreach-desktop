@@ -30,47 +30,59 @@ export function isNavigationBlocked(): boolean {
 
 // Recording State
 const recordingTabs = new Set<string>();
+const recordingInitiators = new Map<string, Electron.WebContents>();
 
 const RECORDING_SCRIPT = `
 (function() {
   if (window.__REAVION_RECORDER_ACTIVE__) return;
   window.__REAVION_RECORDER_ACTIVE__ = true;
-
   function generateSelector(element) {
+    if (!element || element.nodeType !== 1) return '';
+    
+    // 1. High-priority attributes
     const testId = element.getAttribute('data-testid');
     if (testId) return '[data-testid="' + testId + '"]';
-    if (element.id) return '#' + element.id;
+    
+    if (element.id) return '#' + (window.CSS && CSS.escape ? CSS.escape(element.id) : element.id);
+    
     const ariaLabel = element.getAttribute('aria-label');
     if (ariaLabel) return '[aria-label="' + ariaLabel + '"]';
     
-    if (element.tagName.toLowerCase() === 'input') {
+    // 2. Element specific semantics
+    const tagName = element.tagName.toLowerCase();
+    if (tagName === 'input' || tagName === 'textarea' || tagName === 'button') {
         const placeholder = element.getAttribute('placeholder');
-        if (placeholder) return 'input[placeholder="' + placeholder + '"]';
+        if (placeholder) return tagName + '[placeholder="' + placeholder + '"]';
+        
         const name = element.getAttribute('name');
-        if (name) return 'input[name="' + name + '"]';
-    }
-    
-    if (element.tagName.toLowerCase() === 'button') {
-        const text = element.textContent?.trim();
-        // Safe check for text content to be used in :contains
-        if (text && text.length < 50 && !text.includes('"')) return 'button:contains("' + text + '")';
+        if (name) return tagName + '[name="' + name + '"]';
+        
+        const type = element.getAttribute('type');
+        if (type && type !== 'text') return tagName + '[type="' + type + '"]';
     }
 
-    // Simple path fallback
+    const role = element.getAttribute('role');
+    if (role) return '[role="' + role + '"]';
+
+    // 3. Fallback path-based selector
     let path = [];
     let current = element;
     while (current && current.nodeType === 1) {
       let selector = current.tagName.toLowerCase();
       if (current.id) {
-        selector += '#' + current.id;
+        selector += '#' + (window.CSS && CSS.escape ? CSS.escape(current.id) : current.id);
         path.unshift(selector);
-        break;
+        break; // Stop at ID
+      } else {
+        // Add class if unique among siblings (simplified)
+        const className = Array.from(current.classList).filter(c => !c.startsWith('reavion-'))[0];
+        if (className) selector += '.' + className;
+        
+        // Add position if needed? (Too brittle? For now just tags)
+        path.unshift(selector);
       }
-      if (current.currentStyle && current.className) {
-        // clean class name
-      }
-      path.unshift(selector);
       current = current.parentElement;
+      if (path.length > 5) break; 
     }
     return path.join(' > ');
   }
@@ -83,38 +95,51 @@ const RECORDING_SCRIPT = `
     const selector = generateSelector(target);
     const timestamp = Date.now();
 
+    // Capture 'type' for input/change
+    const isType = event.type === 'input' || event.type === 'change' || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.getAttribute('contenteditable') === 'true';
+    const actionType = isType ? 'type' : 'click';
+
+    let value = target.value || '';
+    if (target.getAttribute('contenteditable') === 'true' || target.tagName === 'DIV' || (typeof value === 'string' && value.startsWith('{"'))) {
+        const textContent = target.innerText || target.textContent || '';
+        if (textContent.trim()) {
+            value = textContent.trim();
+        }
+    }
+
     const data = {
-        type: event.type === 'input' || event.type === 'change' ? 'type' : 'click',
+        type: actionType,
+        subtype: event.type, // 'input', 'change', 'click'
         selector: selector,
         url: window.location.href,
         tagName: target.tagName,
-        text: target.textContent ? target.textContent.slice(0, 50) : '',
-        value: target.value,
+        text: target.textContent ? target.textContent.slice(0, 100).trim() : '',
+        value: value,
         timestamp: timestamp
     };
     
-    // Log with prefix for main process detection
+    // Log for main process
     console.log('REAVION_RECORDING:' + JSON.stringify(data));
   }
 
   document.addEventListener('click', handleEvent, true);
+  document.addEventListener('input', handleEvent, true);
   document.addEventListener('change', handleEvent, true);
   
   // Navigation tracking
-  // We can't easily capture "will navigate" from here for SPA, but popstate/hashchange helps
   window.addEventListener('popstate', () => {
     console.log('REAVION_RECORDING:' + JSON.stringify({ type: 'navigation', url: window.location.href, timestamp: Date.now() }));
   });
-  
-  // Initial nav
-  console.log('REAVION_RECORDING:' + JSON.stringify({ type: 'navigation', url: window.location.href, timestamp: Date.now() }));
   
   console.log('Reavion Recorder Active');
 })();
 `;
 
-export async function startRecording(tabId: string) {
+export async function startRecording(tabId: string, initiator?: Electron.WebContents) {
   recordingTabs.add(tabId);
+  if (initiator) {
+    recordingInitiators.set(tabId, initiator);
+  }
   const contents = getWebviewContents(tabId);
   if (contents) {
     try {
@@ -127,6 +152,7 @@ export async function startRecording(tabId: string) {
 
 export function stopRecording(tabId: string) {
   recordingTabs.delete(tabId);
+  recordingInitiators.delete(tabId);
   const contents = getWebviewContents(tabId);
   if (contents) {
     // We can't easily remove event listeners without storing refs in the page context.
@@ -142,7 +168,7 @@ const consoleLogs = new Map<string, string[]>();
 export function registerWebviewContents(tabId: string, contents: Electron.WebContents) {
   webviewContents.set(tabId, contents);
 
-  // Inject black and white border cursor styles
+  // Inject black and white border cursor styles and recorder script if needed
   contents.on('did-finish-load', () => {
     contents.insertCSS(`
       * {
@@ -152,6 +178,21 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
         cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='black' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E") 0 0, pointer !important;
       }
     `);
+
+    if (recordingTabs.has(tabId)) {
+      // Send navigation event to initiator
+      const initiator = recordingInitiators.get(tabId);
+      if (initiator && !initiator.isDestroyed()) {
+        initiator.send('recorder:action', {
+          type: 'navigation',
+          url: contents.getURL(),
+          timestamp: Date.now()
+        });
+      }
+      contents.executeJavaScript(RECORDING_SCRIPT).catch(err => {
+        console.error(`[Recorder] Failed to re-inject on ${tabId}:`, err);
+      });
+    }
   });
 
   // Initialize logs
@@ -167,10 +208,16 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
         try {
           const jsonStr = message.replace('REAVION_RECORDING:', '');
           const eventData = JSON.parse(jsonStr);
-          // Send to renderer (Playbook Editor)
-          const windows = BrowserWindow.getAllWindows();
-          if (windows.length > 0) {
-            windows[0].webContents.send('recorder:action', eventData);
+          // Send to the initiator of the recording
+          const initiator = recordingInitiators.get(tabId);
+          if (initiator && !initiator.isDestroyed()) {
+            initiator.send('recorder:action', eventData);
+          } else {
+            // Fallback to all windows if initiator is lost
+            const windows = BrowserWindow.getAllWindows();
+            if (windows.length > 0) {
+              windows[0].webContents.send('recorder:action', eventData);
+            }
           }
         } catch (e) {
           console.error('Failed to parse recording event:', e);
@@ -222,6 +269,174 @@ const SCRIPT_HELPERS = `
     const jitter = Math.random() * (isFast ? 30 : 100);
     const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
     return new Promise(resolve => setTimeout(resolve, adjustedMs));
+  };
+
+  /** Finds element traversing shadow roots recursively, handling multi-part selectors */
+  const querySelectorPierce = (selector, root = document) => {
+    const parts = selector.split(/[ >]+/).filter(Boolean);
+    let currentRoots = [root];
+    
+    for (const part of parts) {
+      let foundElement = null;
+      let nextRoots = [];
+      
+      for (const r of currentRoots) {
+        // 1. Try direct match in this root
+        const match = r.querySelector(part);
+        if (match) {
+          foundElement = match;
+          // Collect all shadow roots for next step if this part matched multiple things? 
+          // For simplicity, we take the first match that works for the whole path.
+          break; 
+        }
+        
+        // 2. Look into all shadow roots at this level
+        const all = r.querySelectorAll('*');
+        for (const el of all) {
+          if (el.shadowRoot) {
+            const subMatch = el.shadowRoot.querySelector(part);
+            if (subMatch) {
+              foundElement = subMatch;
+              break;
+            }
+            nextRoots.push(el.shadowRoot);
+          }
+        }
+        if (foundElement) break;
+      }
+      
+      if (!foundElement) {
+        // If we didn't find the part yet, maybe it's deeper. 
+        // We'll continue with the collected shadow roots.
+        if (nextRoots.length > 0) {
+          currentRoots = nextRoots;
+          // We need a way to "retry" the same part on the next level...
+          // This is getting complex. Let's use a simpler "deep-match" for the whole selector.
+        } else {
+          return null;
+        }
+      } else {
+        // Found the part, now the next part must be found within this element or its shadow root
+        currentRoots = [foundElement.shadowRoot || foundElement];
+      }
+    }
+    
+    // Final check - did we find something? 
+    // The loop above is a bit flawed for complex paths. 
+    // Let's use a battle-tested approach: search every shadow root for the FULL selector.
+    const match = root.querySelector(selector);
+    if (match) return match;
+    
+    const queue = [root];
+    const visited = new Set();
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (!curr || visited.has(curr)) continue;
+      visited.add(curr);
+      
+      const m = curr.querySelector(selector);
+      if (m) return m;
+      
+      const children = curr.querySelectorAll('*');
+      for (const el of children) {
+        if (el.shadowRoot) queue.push(el.shadowRoot);
+      }
+    }
+    return null;
+  };
+
+  /** Finds element by exact or partial text content */
+  const findElementByText = (text, root = document) => {
+    const clean = text.replace(/['"]/g, '').trim().toLowerCase();
+    if (!clean) return null;
+    
+    const queue = [root];
+    const visited = new Set();
+    
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (!current || visited.has(current)) continue;
+      visited.add(current);
+      
+      // Use TreeWalker for efficient text node search
+      const walker = document.createTreeWalker(current, NodeFilter.SHOW_TEXT, null, false);
+      let node;
+      while (node = walker.nextNode()) {
+        if (node.textContent.toLowerCase().includes(clean)) {
+          const parent = node.parentElement;
+          if (parent && parent.offsetWidth > 0 && parent.offsetHeight > 0) {
+            return parent;
+          }
+        }
+      }
+      
+      // Check shadow roots
+      const children = current.querySelectorAll('*');
+      for (const el of children) {
+        if (el.shadowRoot) {
+          queue.push(el.shadowRoot);
+        }
+      }
+    }
+    return null;
+  };
+
+  /** Finds element by ARIA label, title, or placeholder */
+  const querySelectorAria = (ariaLabel) => {
+    const clean = ariaLabel.replace(/['"]/g, '').trim();
+    // 1. Try attribute selectors
+    const attrSelectors = [
+      '[aria-label*="' + clean + '" i]',
+      '[title*="' + clean + '" i]',
+      '[placeholder*="' + clean + '" i]',
+      '[alt*="' + clean + '" i]'
+    ];
+    for (const sel of attrSelectors) {
+      const el = querySelectorPierce(sel);
+      if (el) return el;
+    }
+    // 2. Fallback to text search if no attribute matches
+    return findElementByText(clean);
+  };
+
+  /** Finds element by XPath */
+  const querySelectorXPath = (xpath) => {
+    try {
+      // Handle both xpath/ and xpath// prefixes
+      const clean = xpath.replace(/^xpath\/{1,2}/, '');
+      const result = document.evaluate(clean, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      return result.singleNodeValue;
+    } catch (e) {
+      return null;
+    }
+  };
+
+  /** Master selector function for Chrome Recorder compatibility */
+  const findAnyElement = (selector) => {
+    if (!selector) return null;
+    
+    // Pierce prefix
+    if (selector.startsWith('pierce/')) {
+      return querySelectorPierce(selector.replace('pierce/', ''));
+    }
+    
+    // ARIA prefix
+    if (selector.startsWith('aria/')) {
+      return querySelectorAria(selector.replace('aria/', ''));
+    }
+    
+    // XPath prefix
+    if (selector.startsWith('xpath/')) {
+      return querySelectorXPath(selector);
+    }
+    
+    // Text prefix
+    if (selector.startsWith('text/')) {
+      return findElementByText(selector.replace('text/', ''));
+    }
+    
+    // Default: try regular Pierce search (covers CSS)
+    return querySelectorPierce(selector);
   };
 `;
 
@@ -288,11 +503,10 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     name: 'browser_click',
     description: 'Click on an element in the browser using a CSS selector.',
     schema: z.object({
-      selector: z.string().describe('CSS selector for the element to click (e.g., "button.submit", "#login-btn", "[data-testid=\\"like\\"]")'),
+      selector: z.string().describe('CSS selector for the element to click (e.g., "button.submit", "#login-btn", "[data-testid=\\"like\\"]"). Can also be a numeric ID from browser_mark_page.'),
       index: z.number().describe('0-based index of element to click when multiple elements match the selector. Use 0 for first.'),
     }),
     func: async ({ selector, index }) => {
-      const targetIndex = index;
       try {
         const contents = getContents();
         await ensureSpeedMultiplier(getSpeed);
@@ -300,186 +514,67 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         const result = await contents.executeJavaScript(`
           (async function() {
             ${SCRIPT_HELPERS}
-              // Standard selector
-              try {
-                return root.querySelector(selStr);
-              } catch (e) {
-                console.error('Invalid selector:', selStr, e);
-                return null;
-              }
-            }
+            const selectorStr = "${selector.replace(/"/g, '\\"').replace(/'/g, "\\'")}";
+            const targetIndex = ${index || 0};
             
-            function querySelectorAllWithContains(root, sel) {
-              if (!sel) return [];
-              const selStr = String(sel).trim();
+            let element = null;
+            // Handle numeric IDs from browser_mark_page
+            if (/^\\d+$/.test(selectorStr)) {
+               element = document.querySelector('[data-reavion-id="' + selectorStr + '"]');
+            } else {
+               // Full piercing search
+               const matches = [];
+               // Look globally
+               const allMatches = document.querySelectorAll(selectorStr);
+               matches.push(...Array.from(allMatches));
+               
+               // If no light DOM matches, or to be thorough, we can use our pierce helper
+               if (matches.length === 0) {
+                  const pierced = findAnyElement(selectorStr);
+                  if (pierced) matches.push(pierced);
+               }
 
-              // Handle numeric IDs from browser_mark_page
-              if (/^\d+$/.test(selStr)) {
-                const el = root.querySelector('[data-reavion-id="' + selStr + '"]');
-                return el ? [el] : [];
-              }
-
-              const containsMatch = selStr.match(/^(.+?):contains\("([^"]+)"\)$/);
-              if (containsMatch) {
-                const baseSelector = containsMatch[1];
-                const textToFind = containsMatch[2];
-                const candidates = root.querySelectorAll(baseSelector);
-                return Array.from(candidates).filter(el => el.textContent && el.textContent.includes(textToFind));
-              }
-              try {
-                return Array.from(root.querySelectorAll(selStr));
-              } catch (e) {
-                console.error('Invalid selector:', selStr, e);
-                return [];
-              }
+               if (matches.length > targetIndex) {
+                 element = matches[targetIndex];
+               } else if (matches.length > 0) {
+                 element = matches[0];
+               }
             }
             
-            // Priority 1: Check inside active modal/dialog/overlay first
-            const visibleModals = Array.from(document.querySelectorAll('[role="dialog"], [data-testid="modal"], [aria-modal="true"], .modal, .dialog'))
-              .filter(m => {
-                const style = window.getComputedStyle(m);
-                return m.offsetParent !== null && style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-              });
-
-            if (visibleModals.length > 0) {
-              const topModal = visibleModals[visibleModals.length - 1];
-              const modalMatches = querySelectorAllWithContains(topModal, selectorStr).filter(el => el.offsetParent !== null);
-              if (modalMatches.length > targetIndex) {
-                element = modalMatches[targetIndex];
-                console.log('Found element inside active modal at index', targetIndex, ':', element);
-              }
-            }
-            
-            // Priority 2: Global search if not found in modal
-            if (!element) {
-              const matches = querySelectorAllWithContains(document, selectorStr).filter(el => el.offsetParent !== null);
-              if (matches.length > targetIndex) {
-                element = matches[targetIndex];
-              } else if (matches.length > 0) {
-                // If index is out of bounds, use the last available element
-                element = matches[matches.length - 1];
-                console.warn('Index', targetIndex, 'out of bounds, using last element at index', matches.length - 1);
-              }
-            }
-            
-            if (!element) return { success: false, error: 'Element not found: ${selector}' + (targetIndex > 0 ? ' at index ' + targetIndex : '') };
+            if (!element) return { success: false, error: 'Element not found: ' + selectorStr };
             
             // Human-like scroll
-            const rectBefore = element.getBoundingClientRect();
-            if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
-              element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-              await wait(600);
-            } else {
-              // already visible, maybe micro scroll
-              element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-              await wait(300);
-            }
+            element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+            await wait(500);
             
-            // Brief wait for scroll to settle
-            await wait(200);
-            
-            // Get element position after scroll
             const rect = element.getBoundingClientRect();
             const x = rect.left + rect.width / 2;
             const y = rect.top + rect.height / 2;
             
-            // Check what's at the center point
-            const topElement = document.elementFromPoint(x, y);
-            
-            // Valid click if: element contains topElement, topElement contains element, 
-            // they're the same, OR topElement is an ancestor (like a link wrapper)
-            const isValidClick = topElement && (
-              element.contains(topElement) || 
-              topElement.contains(element) || 
-              element === topElement ||
-              // Also valid if the covering element is a common wrapper and our target is inside it
-              (topElement.querySelector && querySelectorWithContains(topElement, selectorStr) === element)
-            );
-            
-            if (!isValidClick && topElement) {
-              // Check if our TARGET element is inside a modal - if so, it's valid to click
-              const targetInModal = element.closest('[role="dialog"], [data-testid="modal"], .modal, [aria-modal="true"]');
-              if (targetInModal) {
-                // Element is inside modal, proceed with click
-                console.log('Element is inside modal, proceeding with click');
-              } else {
-                // Check if a modal is blocking us from clicking a background element
-                const coveringModal = topElement.closest('[role="dialog"], [data-testid="modal"], .modal');
-                if (coveringModal) {
-                   return { 
-                     success: false, 
-                     error: 'Element is obscured by a modal/dialog. Try finding the element INSIDE the modal.' 
-                   };
-                }
-              }
-              
-              // For other occlusions, try clicking anyway
-              console.warn('Element may be obscured by:', topElement.tagName, '- attempting click anyway');
-            }
-            
-            // Add animation styles if not exists
-            if (!document.getElementById('reavion-click-styles')) {
-              const style = document.createElement('style');
-              style.id = 'reavion-click-styles';
-              style.textContent = \`
-                @keyframes reavionClickPulse { 
-                  0% { opacity: 1; transform: translate(-50%, -50%) scale(0.5); } 
-                  50% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-                  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.2); } 
-                }
-                @keyframes reavionRipple {
-                  0% { transform: translate(-50%, -50%) scale(0); opacity: 0.6; }
-                  100% { transform: translate(-50%, -50%) scale(3); opacity: 0; }
-                }
-              \`;
-              document.head.appendChild(style);
-            }
-            
-            // Create ripple effect
+            // Visual feedback
             const ripple = document.createElement('div');
-            ripple.style.cssText = 'position:fixed;z-index:999998;pointer-events:none;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,0.2);border: 1px solid rgba(255,255,255,0.4);animation:reavionRipple 0.8s ease-out forwards;';
+            ripple.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;width:50px;height:50px;border-radius:50%;background:rgba(139,92,246,0.3);border:2px solid rgba(139,92,246,0.5);transform:translate(-50%,-50%);transition:all 0.5s ease-out;';
             ripple.style.left = x + 'px';
             ripple.style.top = y + 'px';
             document.body.appendChild(ripple);
-            setTimeout(() => ripple.remove(), 800);
-            
-            // Remove any existing pointer indicator
-            const existingPointer = document.getElementById('reavion-pointer');
-            if (existingPointer) existingPointer.remove();
-            
-            // Create pointer indicator
-            const indicator = document.createElement('div');
-            indicator.id = 'reavion-pointer';
-            indicator.innerHTML = \`
-              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="black" stroke="white" stroke-width="2"/>
-              </svg>
-            \`;
-            
-            if (!document.getElementById('reavion-float-anim')) {
-              const style = document.createElement('style');
-              style.id = 'reavion-float-anim';
-              style.textContent = '@keyframes reavionFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }';
-              document.head.appendChild(style);
-            }
+            setTimeout(() => {
+              ripple.style.transform = 'translate(-50%,-50%) scale(2)';
+              ripple.style.opacity = '0';
+              setTimeout(() => ripple.remove(), 500);
+            }, 50);
 
-            indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;transition:all 0.4s ease-out;animation: reavionFloat 3s ease-in-out infinite;';
-            indicator.style.left = x + 'px';
-            indicator.style.top = y + 'px';
-            document.body.appendChild(indicator);
-            
+            // Dispatch events
             const eventOptions = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, buttons: 1 };
-            element.dispatchEvent(new MouseEvent('mousemove', eventOptions));
-            element.dispatchEvent(new MouseEvent('mouseover', eventOptions));
             element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-            // element.focus(); // Removed to prevent stealing focus in background
+            // Removed redundant element.focus() here to prevent window focus theft
             element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
             element.dispatchEvent(new MouseEvent('click', eventOptions));
             
-            if (!element.disabled) element.click();
+            if (typeof element.click === 'function') {
+                try { element.click(); } catch(e) {}
+            }
             
-            await wait(200);
-            return { success: true, message: 'Clicked element: ${selector}' };
+            return { success: true, message: 'Clicked ' + selectorStr };
           })()
         `);
 
@@ -503,46 +598,35 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         await ensureSpeedMultiplier(getSpeed);
         const result = await contents.executeJavaScript(`
           (async function() {
-            const selStr = String('${selector.replace(/'/g, "\\'")}').trim();
-            let element = null;
-
-            if (/^\\d+$/.test(selStr)) {
-               element = document.querySelector('[data-reavion-id="' + selStr + '"]');
-            } else {
-               element = document.querySelector(selStr);
-            }
-
-            if (!element) return { success: false, error: 'Element not found: ' + selStr };
+            ${SCRIPT_HELPERS}
+            const selectorStr = "${selector.replace(/"/g, '\\"').replace(/'/g, "\\'")}";
+            const typeText = "${text.replace(/"/g, '\\"').replace(/'/g, "\\'")}";
             
-            // Human-like scroll
-            const rectBefore = element.getBoundingClientRect();
-            if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
-                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                 await wait(600);
-            } else {
-                 element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                 await wait(300);
-            }
-            // contenteditable requires focus for execCommand to work on the right element
+            let element = findAnyElement(selectorStr);
+            if (!element) return { success: false, error: 'Element not found: ' + selectorStr };
             
-            let editableEl = element;
-            if (element.getAttribute('contenteditable') !== 'true') {
-              const closest = element.closest('[contenteditable="true"]') || element.querySelector('[contenteditable="true"]');
-              if (closest) editableEl = closest;
-            }
-
-            const textToType = '${text.replace(/'/g, "\\'")}';
-            if (editableEl.getAttribute('contenteditable') === 'true' || editableEl.tagName === 'DIV') {
-                editableEl.focus(); // Focus required for execCommand
-                document.execCommand('insertText', false, textToType);
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await wait(500);
+            element.focus({ preventScroll: true });
+            
+            const isEditable = element.getAttribute('contenteditable') === 'true' || element.tagName === 'DIV' || element.tagName === 'P';
+            
+            if (isEditable) {
+                element.innerHTML = '';
+                element.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: typeText, bubbles: true }));
+                document.execCommand('insertText', false, typeText);
+                if (!element.textContent || element.textContent.length < 1) {
+                    element.textContent = typeText;
+                }
             } else {
-                // Do not focus standard inputs to avoid stealing window focus
-                editableEl.value = textToType;
-                editableEl.dispatchEvent(new Event('input', { bubbles: true }));
-                editableEl.dispatchEvent(new Event('change', { bubbles: true }));
+                element.value = '';
+                element.value = typeText;
             }
             
-            return { success: true, message: 'Typed text' };
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            return { success: true, message: 'Typed into ' + selectorStr };
           })()
         `);
         return JSON.stringify(result);
@@ -1316,6 +1400,129 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             count: results.length,
             results: results.slice(0, 50) // Limit results
           });
+        } catch (e) {
+          return JSON.stringify({ success: false, error: String(e) });
+        }
+      }
+    }),
+
+    new DynamicStructuredTool({
+      name: 'browser_replay',
+      description: 'Replay a sequence of browser actions recorded via Chrome DevTools Recorder (JSON format). Allows for complex automation flows with high precision.',
+      schema: z.object({
+        recording: z.string().describe('The JSON string of the recording artifact'),
+        speed_multiplier: z.number().optional().describe('Speed up or slow down replay (default 1.0)'),
+        enable_agent_decisions: z.boolean().optional().describe('Allow the agent to pause or branch if an element is missing'),
+      }),
+      func: async ({ recording, speed_multiplier = 1.0, enable_agent_decisions = false }) => {
+        const contents = getContents();
+        try {
+          const data = JSON.parse(recording);
+          const steps = data.steps || [];
+          const logs: string[] = [];
+
+          sendDebugLog('info', `Starting replay: ${data.title || 'Untitled'}`);
+
+          for (const step of steps) {
+            // Check for stop signal
+            const isStopped = await contents.executeJavaScript('window.__REAVION_STOP__').catch(() => false);
+            if (isStopped) return JSON.stringify({ success: false, error: 'Replay stopped by user' });
+
+            const type = step.type;
+            logs.push(`Executing ${type}...`);
+            sendDebugLog('info', `Step: ${type}`, step);
+
+            if (type === 'setViewport') {
+              // We don't usually resize the webview directly here as it's governed by the UI,
+              // but we can log intent.
+            } else if (type === 'navigate') {
+              try {
+                await contents.loadURL(step.url);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+              } catch (e) {
+                logs.push(`Navigation failed to ${step.url}: ${String(e)}`);
+              }
+            } else if (type === 'click' || type === 'change' || type === 'keyDown' || type === 'keyUp') {
+              // Convert Chrome Recorder selectors to something our engine understands
+              // They provide an array of arrays: [["primary"], ["backup"]]
+              const rawSelectors = step.selectors || [];
+              const flatSelectors = rawSelectors.map((s: any) => Array.isArray(s) ? s[s.length - 1] : s);
+
+              const result = await contents.executeJavaScript(`
+                (async function() {
+                  ${SCRIPT_HELPERS}
+                  const selectors = ${JSON.stringify(flatSelectors)};
+                  const type = "${type}";
+                  const value = "${(step.value || '').replace(/"/g, '\\"')}";
+                  const key = "${(step.key || '').replace(/"/g, '\\"')}";
+                  
+                  let element = null;
+                  if (selectors && selectors.length > 0) {
+                    for (const sel of selectors) {
+                      element = findAnyElement(sel);
+                      if (element) break;
+                    }
+                  }
+
+                  // Default for key events if no element found
+                  if (!element && (type === 'keyDown' || type === 'keyUp')) {
+                    element = document.activeElement || document.body;
+                  }
+
+                  if (!element && type !== 'navigate') {
+                    return { success: false, error: 'Element not found' + (selectors.length ? ': ' + selectors.join(', ') : '') };
+                  }
+
+                  if (element) {
+                    if (element.scrollIntoView) {
+                      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                      await wait(500);
+                    }
+
+                    const rect = element.getBoundingClientRect();
+                    const x = rect.left + rect.width / 2;
+                    const y = rect.top + rect.height / 2;
+
+                    if (type === 'click') {
+                      // Removed element.focus() for generic click
+                      element.click();
+                      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+                      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+                      element.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
+                    } else if (type === 'change') {
+                      element.focus({ preventScroll: true });
+                      // Handle custom elements/editors like shreddit-composer
+                      if (element.tagName.toLowerCase().includes('composer') || element.isContentEditable || element.tagName === 'DIV') {
+                        element.textContent = value;
+                        element.innerText = value;
+                        // Trigger internal editor events
+                        element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
+                      } else {
+                        element.value = value;
+                      }
+                      element.dispatchEvent(new Event('input', { bubbles: true }));
+                      element.dispatchEvent(new Event('change', { bubbles: true }));
+                    } else if (type === 'keyDown' || type === 'keyUp') {
+                      const opts = { key: key, code: key, bubbles: true };
+                      element.dispatchEvent(new KeyboardEvent(type, opts));
+                    }
+                  }
+
+                  await wait(400);
+                  return { success: true };
+                })()
+              `);
+
+              if (!result.success && !enable_agent_decisions) {
+                return JSON.stringify({ success: false, error: result.error, logs });
+              }
+            }
+
+            // Artificial delay between steps for realism
+            await new Promise(resolve => setTimeout(resolve, 500 / speed_multiplier));
+          }
+
+          return JSON.stringify({ success: true, message: `Completed ${steps.length} steps of "${data.title}"`, logs });
         } catch (e) {
           return JSON.stringify({ success: false, error: String(e) });
         }

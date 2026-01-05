@@ -8,16 +8,21 @@ import {
 
 export const targetService = {
     // Target Lists
-    async getTargetLists() {
-        const { data, error } = await supabase
+    async getTargetLists(workspaceId?: string) {
+        let query = supabase
             .from('target_lists')
             .select(`
                 *,
                 targets:targets(count)
-            `)
-            .order('created_at', { ascending: false });
+            `);
 
-        const formattedData = data?.map(list => ({
+        if (workspaceId) {
+            query = query.eq('workspace_id', workspaceId);
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: false });
+
+        const formattedData = data?.map((list: any) => ({
             ...list,
             target_count: list.targets?.[0]?.count || 0
         }));

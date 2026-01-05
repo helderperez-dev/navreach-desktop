@@ -118,7 +118,7 @@ export function createInstagramTools(ctx: SiteToolContext): DynamicStructuredToo
                       if (!textarea) return { success: false, error: 'Comment box not found' };
                       
                       await safeClick(textarea, 'Comment Box');
-                      textarea.focus();
+                      textarea.focus({ preventScroll: true });
                       document.execCommand('insertText', false, ${JSON.stringify(commentText || '')});
                       await wait(500);
                       

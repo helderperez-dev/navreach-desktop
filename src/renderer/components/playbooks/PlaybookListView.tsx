@@ -17,38 +17,25 @@ import { toast } from 'sonner';
 interface PlaybookListViewProps {
     onCreate: () => void;
     onSelect: (id: string) => void;
+    playbooks: Playbook[];
+    loading: boolean;
+    onRefresh: () => void;
 }
 
-export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) {
-    const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
-    const [loading, setLoading] = useState(true);
+export function PlaybookListView({ onCreate, onSelect, playbooks, loading, onRefresh }: PlaybookListViewProps) {
     const [search, setSearch] = useState('');
     const [isSearchExpanded, setIsSearchExpanded] = useState(false);
     const searchRef = useRef<HTMLInputElement>(null);
 
-    const loadPlaybooks = async () => {
-        try {
-            setLoading(true);
-            const data = await playbookService.getPlaybooks();
-            setPlaybooks(data);
-        } catch (error) {
-            toast.error('Failed to load playbooks');
-            console.error(error);
-        } finally {
-            setLoading(false);
-        }
-    };
+    // Internal filtering based on props
 
-    useEffect(() => {
-        loadPlaybooks();
-    }, []);
 
     const handleDelete = async (e: React.MouseEvent, id: string) => {
         e.stopPropagation();
         try {
             await playbookService.deletePlaybook(id);
             toast.success('Playbook deleted');
-            loadPlaybooks();
+            onRefresh();
         } catch (error) {
             toast.error('Failed to delete playbook');
         }
@@ -95,7 +82,7 @@ export function PlaybookListView({ onCreate, onSelect }: PlaybookListViewProps) 
                     visibility: 'private'
                 });
                 toast.success('Playbook imported');
-                loadPlaybooks();
+                onRefresh();
             } catch (error) {
                 toast.error('Failed to import playbook');
                 console.error(error);

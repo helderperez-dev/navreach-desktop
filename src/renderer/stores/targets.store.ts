@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import { TargetList, Target } from '@/types/targets';
 import { targetService } from '@/lib/targets.service';
 import { toast } from 'sonner';
@@ -34,15 +35,33 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
 
     fetchLists: async () => {
         set({ isLoading: true });
-        const { data, error } = await targetService.getTargetLists();
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        const { data, error } = await targetService.getTargetLists(workspaceId);
+
         if (error) {
             set({ error: error.message, isLoading: false });
             toast.error(`Failed to fetch lists: ${error.message}`);
         } else {
-            set({ lists: data || [], isLoading: false });
-            if (data && data.length > 0 && !get().selectedListId) {
-                set({ selectedListId: data[0].id });
-                get().fetchTargets(data[0].id);
+            const fetchedLists = data || [];
+            const currentSelectedId = get().selectedListId;
+
+            // Check if the current selected list belongs to the new lists
+            const isSelectedValid = fetchedLists.some(l => l.id === currentSelectedId);
+
+            if (!isSelectedValid) {
+                // Workspace changed or list deleted, clear current selection
+                const nextSelectedId = fetchedLists.length > 0 ? fetchedLists[0].id : null;
+                set({
+                    lists: fetchedLists,
+                    selectedListId: nextSelectedId,
+                    targets: [], // Clear targets from previous workspace
+                    isLoading: false
+                });
+                if (nextSelectedId) {
+                    get().fetchTargets(nextSelectedId);
+                }
+            } else {
+                set({ lists: fetchedLists, isLoading: false });
             }
         }
     },
@@ -74,10 +93,17 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             return;
         }
 
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        if (!workspaceId) {
+            toast.error('No workspace selected');
+            return;
+        }
+
         const { data, error } = await targetService.createTargetList({
             name,
             description,
-            user_id: user.id
+            user_id: user.id,
+            workspace_id: workspaceId
         });
 
         if (error) {

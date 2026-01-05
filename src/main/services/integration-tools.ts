@@ -8,7 +8,10 @@ const store = new Store<AppSettings>({
     name: 'settings',
 });
 
-export function createIntegrationTools(): DynamicStructuredTool[] {
+export function createIntegrationTools(workspaceSettings?: {
+    disabledTools?: string[];
+    disabledMCPServers?: string[];
+}): DynamicStructuredTool[] {
     const getMcpServersTool = new DynamicStructuredTool({
         name: 'db_get_mcp_servers',
         description: 'Fetch all configured MCP (Model Context Protocol) servers.',
@@ -18,7 +21,10 @@ export function createIntegrationTools(): DynamicStructuredTool[] {
         func: async () => {
             try {
                 const servers = store.get('mcpServers') || [];
-                return JSON.stringify({ success: true, servers });
+                const filtered = workspaceSettings?.disabledMCPServers
+                    ? servers.filter(s => !workspaceSettings.disabledMCPServers?.includes(s.id))
+                    : servers;
+                return JSON.stringify({ success: true, servers: filtered });
             } catch (error: any) {
                 return JSON.stringify({ success: false, error: error.message || String(error) });
             }
@@ -33,6 +39,9 @@ export function createIntegrationTools(): DynamicStructuredTool[] {
         }),
         func: async ({ server_id }) => {
             try {
+                if (workspaceSettings?.disabledMCPServers?.includes(server_id)) {
+                    throw new Error(`MCP Server "${server_id}" is disabled in this workspace.`);
+                }
                 const tools = await mcpService.listTools(server_id);
                 return JSON.stringify({ success: true, tools });
             } catch (error: any) {
@@ -51,6 +60,9 @@ export function createIntegrationTools(): DynamicStructuredTool[] {
         }),
         func: async ({ server_id, tool_name, arguments_json }) => {
             try {
+                if (workspaceSettings?.disabledMCPServers?.includes(server_id)) {
+                    throw new Error(`MCP Server "${server_id}" is disabled in this workspace.`);
+                }
                 const args = JSON.parse(arguments_json || '{}');
                 const result = await mcpService.callTool(server_id, tool_name, args);
                 return JSON.stringify({ success: true, result });
@@ -69,7 +81,10 @@ export function createIntegrationTools(): DynamicStructuredTool[] {
         func: async () => {
             try {
                 const tools = store.get('apiTools') || [];
-                return JSON.stringify({ success: true, tools });
+                const filtered = workspaceSettings?.disabledTools
+                    ? tools.filter(t => !workspaceSettings.disabledTools?.includes(t.id))
+                    : tools;
+                return JSON.stringify({ success: true, tools: filtered });
             } catch (error: any) {
                 return JSON.stringify({ success: false, error: error.message || String(error) });
             }
@@ -85,6 +100,9 @@ export function createIntegrationTools(): DynamicStructuredTool[] {
         }),
         func: async ({ tool_id, arguments_json }) => {
             try {
+                if (workspaceSettings?.disabledTools?.includes(tool_id)) {
+                    throw new Error(`API Tool "${tool_id}" is disabled in this workspace.`);
+                }
                 const args = JSON.parse(arguments_json || '{}');
                 const tools = store.get('apiTools') || [];
                 const tool = tools.find(t => t.id === tool_id);

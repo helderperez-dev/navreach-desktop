@@ -145,9 +145,9 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
     return { success: true, ...result };
   });
 
-  ipcMain.handle('browser:start-recording', async (_event, tabId: string) => {
+  ipcMain.handle('browser:start-recording', async (event, tabId: string) => {
     try {
-      await startRecording(tabId);
+      await startRecording(tabId, event.sender);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };

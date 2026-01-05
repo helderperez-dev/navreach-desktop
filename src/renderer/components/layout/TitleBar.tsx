@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LogOut, Settings, User } from 'lucide-react';
+import { WorkspaceSelector } from './WorkspaceSelector';
 
 export function TitleBar() {
   const { user, signOut } = useAuthStore();
@@ -50,6 +51,7 @@ export function TitleBar() {
       </div>
 
       <div className="flex items-center gap-4 pr-4 no-drag">
+        <WorkspaceSelector />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center justify-center transition-opacity hover:opacity-80 outline-none">

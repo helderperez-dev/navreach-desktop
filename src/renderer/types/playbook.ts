@@ -13,6 +13,7 @@ export interface Playbook {
     created_at: string;
     updated_at: string;
     user_id?: string;
+    workspace_id?: string;
 }
 
 export interface PlaybookGraph {
@@ -39,12 +40,12 @@ export type PlaybookNodeType =
     | 'use_target_list' | 'generate_targets' | 'filter_targets' // Target
     | 'navigate' | 'analyze' | 'engage' | 'extract' | 'scroll' | 'browser_accessibility_tree' | 'browser_inspect' | 'browser_highlight' | 'browser_console_logs' | 'browser_grid' // Action
     | 'x_advanced_search' | 'x_scout' | 'x_engage' | 'x_scan_posts' | 'x_post' | 'x_profile' // X tools
-    | 'reddit_search' | 'reddit_scout_community' | 'reddit_vote' | 'reddit_comment' | 'reddit_join' // Reddit tools
+    | 'reddit_search' | 'reddit_scout_community' | 'reddit_vote' | 'reddit_comment' | 'reddit_join' | 'reddit_scan_posts' // Reddit tools
     | 'linkedin_search' | 'linkedin_connect' | 'linkedin_message' // LinkedIn
     | 'instagram_post' | 'instagram_engage' // Instagram
     | 'bluesky_post' | 'bluesky_reply' // Bluesky
     | 'mcp_call' | 'api_call' | 'browser_action' | 'humanize' // Capability
-    | 'browser_click' | 'browser_type' | 'browser_navigate' | 'browser_scrape' // Recording/Advanced
+    | 'browser_click' | 'browser_type' | 'browser_navigate' | 'browser_scrape' | 'browser_replay' // Recording/Advanced
     | 'approval' | 'pause'; // HITL
 
 // Base config interface, specific nodes will extend or use this
@@ -58,6 +59,7 @@ export interface CreatePlaybookDTO {
     graph: PlaybookGraph;
     capabilities: PlaybookCapabilities;
     execution_defaults: PlaybookExecutionDefaults;
+    workspace_id?: string;
 }
 
 export interface UpdatePlaybookDTO {

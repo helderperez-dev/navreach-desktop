@@ -52,4 +52,10 @@ export const nodeTypes: Record<string, any> = {
     browser_console_logs: BaseNode,
     browser_grid: BaseNode,
     x_scan_posts: BaseNode,
+    reddit_scan_posts: BaseNode,
+    browser_click: BaseNode,
+    browser_type: BaseNode,
+    browser_navigate: BaseNode,
+    browser_scrape: BaseNode,
+    browser_replay: BaseNode,
 };

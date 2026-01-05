@@ -354,6 +354,20 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         inputs: 1,
         outputs: 1
     },
+    reddit_scan_posts: {
+        type: 'reddit_scan_posts',
+        label: 'Reddit Scan',
+        category: NODE_CATEGORIES.REDDIT,
+        icon: Eye,
+        description: 'Scan visible posts on Reddit',
+        color: 'bg-[#FF4500]/10 text-[#FF4500]',
+        inputs: 1,
+        outputs: 1,
+        outputs_schema: [
+            { label: 'Posts Found', value: 'posts', example: '[{ author: "user", title: "..." }]' },
+            { label: 'Total Count', value: 'count', example: '12' }
+        ]
+    },
     // LinkedIn Nodes
     linkedin_search: {
         type: 'linkedin_search',
@@ -495,6 +509,16 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         icon: FileText,
         description: 'Cheerio Scrape',
         color: 'bg-purple-500/10 text-purple-500',
+        inputs: 1,
+        outputs: 1
+    },
+    browser_replay: {
+        type: 'browser_replay',
+        label: 'Replay Rec.',
+        category: NODE_CATEGORIES.BROWSER,
+        icon: Terminal,
+        description: 'Replay Chrome Recorder JSON',
+        color: 'bg-green-500/10 text-green-500',
         inputs: 1,
         outputs: 1
     },

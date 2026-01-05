@@ -93,10 +93,12 @@ if (!gotTheLock) {
 } else {
   app.on('second-instance', (_event, commandLine) => {
     if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
       const url = commandLine.pop();
-      if (url) handleAuthRedirect(url);
+      if (url && url.startsWith('reavion://')) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        handleAuthRedirect(url);
+      }
     }
   });
 

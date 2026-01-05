@@ -37,6 +37,11 @@ interface ChatRequest {
     agentRunLimit?: number | null;
     speed?: 'slow' | 'normal' | 'fast';
     isPlaybookRun?: boolean;
+    workspaceId?: string;
+    workspaceSettings?: {
+        disabledTools?: string[];
+        disabledMCPServers?: string[];
+    };
 }
 
 interface ChatModelOptions {
@@ -464,7 +469,8 @@ CRITICAL:
                 playbooks = [],
                 targetLists = [],
                 speed,
-                isPlaybookRun = false
+                isPlaybookRun = false,
+                workspaceSettings
             } = request;
             const window = BrowserWindow.fromWebContents(event.sender);
             if (window) {
@@ -535,7 +541,7 @@ CRITICAL:
             }
 
 
-            const requestIntegrationTools = createIntegrationTools();
+            const requestIntegrationTools = createIntegrationTools(workspaceSettings);
             const requestUtilityTools = createUtilityTools({ provider, model });
 
             const requestToolsRaw = [

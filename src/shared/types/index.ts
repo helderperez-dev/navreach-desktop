@@ -26,6 +26,7 @@ export interface Conversation {
   createdAt: number;
   updatedAt: number;
   modelId: string;
+  workspaceId?: string;
 }
 
 export interface ModelProvider {

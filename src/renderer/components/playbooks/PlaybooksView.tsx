@@ -1,13 +1,24 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { PlaybookListView } from './PlaybookListView';
 import { PlaybookEditor } from './PlaybookEditor';
 import { useAppStore } from '@/stores/app.store';
 import { useChatStore } from '@/stores/chat.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
+import { Playbook } from '@/types/playbook';
+import { playbookService } from '@/services/playbookService';
+import { toast } from 'sonner';
 
 export function PlaybooksView() {
     const [view, setView] = useState<'list' | 'editor'>('list');
     const [selectedPlaybookId, setSelectedPlaybookId] = useState<string | null>(null);
     const { setShowPlaybookBrowser } = useAppStore();
+
+    const navigate = useNavigate();
+    const [isLoading, setIsLoading] = useState(true);
+    const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
+    const [importDialogOpen, setImportDialogOpen] = useState(false);
+    const { currentWorkspace } = useWorkspaceStore();
 
     // Ensure browser is hidden when in list view
     useEffect(() => {
@@ -15,6 +26,23 @@ export function PlaybooksView() {
             setShowPlaybookBrowser(false);
         }
     }, [view, setShowPlaybookBrowser]);
+
+    useEffect(() => {
+        loadPlaybooks();
+    }, [currentWorkspace?.id]);
+
+    async function loadPlaybooks() {
+        if (!currentWorkspace?.id) return;
+        setIsLoading(true);
+        try {
+            const data = await playbookService.getPlaybooks(currentWorkspace.id);
+            setPlaybooks(data);
+        } catch (error) {
+            toast.error('Failed to load playbooks');
+        } finally {
+            setIsLoading(false);
+        }
+    }
 
     const handleCreate = () => {
         setSelectedPlaybookId(null);
@@ -38,10 +66,20 @@ export function PlaybooksView() {
         setShowPlaybookBrowser(false);
     };
 
+    const handleRefresh = () => {
+        loadPlaybooks();
+    };
+
     return (
         <div className="h-full w-full bg-background">
             {view === 'list' ? (
-                <PlaybookListView onCreate={handleCreate} onSelect={handleSelect} />
+                <PlaybookListView
+                    onCreate={handleCreate}
+                    onSelect={handleSelect}
+                    playbooks={playbooks}
+                    loading={isLoading}
+                    onRefresh={handleRefresh}
+                />
             ) : (
                 <PlaybookEditor playbookId={selectedPlaybookId} onBack={handleBack} />
             )}

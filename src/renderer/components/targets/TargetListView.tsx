@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useTargetsStore } from '@/stores/targets.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import { TargetListSidebar } from './TargetListSidebar';
 import { TargetTable } from './TargetTable';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -24,6 +25,7 @@ import { cn } from '@/lib/utils';
 
 export function TargetListView() {
     const { targets, fetchLists, selectedListId, fetchTargets, isLoading } = useTargetsStore();
+    const { currentWorkspace } = useWorkspaceStore();
     const [isTargetFormOpen, setIsTargetFormOpen] = useState(false);
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [isIntegrationOpen, setIsIntegrationOpen] = useState(false);
@@ -91,8 +93,10 @@ export function TargetListView() {
     };
 
     useEffect(() => {
-        fetchLists();
-    }, [fetchLists]);
+        if (currentWorkspace?.id) {
+            fetchLists();
+        }
+    }, [fetchLists, currentWorkspace?.id]);
 
     const toggleColumn = (column: string) => {
         setVisibleColumns(prev => ({

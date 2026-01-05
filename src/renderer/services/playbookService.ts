@@ -3,11 +3,16 @@ import { supabase } from '@/lib/supabase';
 import { CreatePlaybookDTO, Playbook, UpdatePlaybookDTO } from '@/types/playbook';
 
 export const playbookService = {
-    async getPlaybooks(): Promise<Playbook[]> {
-        const { data, error } = await supabase
+    async getPlaybooks(workspaceId?: string): Promise<Playbook[]> {
+        let query = supabase
             .from('playbooks')
-            .select('*')
-            .order('updated_at', { ascending: false });
+            .select('*');
+
+        if (workspaceId) {
+            query = query.eq('workspace_id', workspaceId);
+        }
+
+        const { data, error } = await query.order('updated_at', { ascending: false });
 
         if (error) throw error;
         return data || [];

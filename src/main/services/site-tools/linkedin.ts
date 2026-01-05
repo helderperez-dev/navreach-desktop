@@ -186,7 +186,7 @@ export function createLinkedInTools(ctx: SiteToolContext): DynamicStructuredTool
                   if (!composer) return { success: false, error: 'Chat composer not found' };
                   
                   // 3. Type message
-                  composer.focus();
+                  composer.focus({ preventScroll: true });
                   document.execCommand('insertText', false, ${JSON.stringify(message)});
                   await wait(500);
                   

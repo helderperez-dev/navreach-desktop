@@ -18,13 +18,16 @@ const POINTER_HELPERS = `
     if (!indicator) {
       indicator = document.createElement('div');
       indicator.id = 'reavion-pointer';
-      indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:left 0.3s ease, top 0.3s ease;';
+      indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);';
       document.body.appendChild(indicator);
     }
     // Always update visual style to clear any cached purple versions
     indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
     indicator.style.left = x + 'px';
     indicator.style.top = y + 'px';
+     // Visual kick on movement
+    indicator.style.transform = 'scale(1.1)';
+    setTimeout(() => { if (indicator) indicator.style.transform = 'scale(1)'; }, 400);
   }
 `;
 
@@ -44,9 +47,10 @@ const BASE_SCRIPT_HELPERS = `
 
   function wait(ms) {
     const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
-    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter
-    const randomFactor = 0.75 + (Math.random() * 0.5); 
-    const jitter = Math.random() * 200;
+    const isFast = multiplier < 1.0;
+    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter, but scale down for FAST mode
+    const randomFactor = isFast ? (0.9 + Math.random() * 0.2) : (0.75 + (Math.random() * 0.5)); 
+    const jitter = Math.random() * (isFast ? 50 : 200);
     const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
     
     return new Promise((resolve, reject) => {
@@ -59,21 +63,21 @@ const BASE_SCRIPT_HELPERS = `
         if (Date.now() - start >= adjustedMs) {
           resolve();
         } else {
-          setTimeout(checking, 50);
+          setTimeout(checking, 20); // Faster check interval
         }
       };
       checking();
     });
   }
 
-  async function safeClick(el, label) {
+  async function safeClick(el, label, options = {}) {
     const clickable = el.closest('button, a, [role="button"]') || el;
     log('Clicking ' + label, { tagName: clickable.tagName });
     
     const rectBefore = clickable.getBoundingClientRect();
     if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
       clickable.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-      await wait(600);
+      await wait(options.scrollWait || 600);
     }
 
     const rect = clickable.getBoundingClientRect();
@@ -81,7 +85,7 @@ const BASE_SCRIPT_HELPERS = `
     const y = rect.top + rect.height / 2;
     if (typeof movePointer === 'function') movePointer(x, y);
     
-    await wait(300);
+    await wait(options.focusWait || 300);
     
     try {
       const common = { bubbles: true, cancelable: true, view: window };
@@ -92,7 +96,62 @@ const BASE_SCRIPT_HELPERS = `
       log('Native click failed on ' + label, { error: e.toString() });
       throw e;
     }
-    await wait(800);
+    await wait(options.afterWait || 800);
+  }
+
+  function getRedditPostData(p, i) {
+    // Shreddit Post (Modern Reddit)
+    const title = p.getAttribute('post-title') || 
+                  p.querySelector('[slot="title"]')?.innerText || 
+                  p.querySelector('h3')?.innerText || 
+                  '';
+    const author = p.getAttribute('author') || p.querySelector('[slot="author"]')?.innerText || '';
+    const url = p.getAttribute('content-href') || p.getAttribute('permalink') || '';
+    const score = p.getAttribute('score') || '';
+    const commentCount = p.getAttribute('comment-count') || '';
+    
+    // Check engagement
+    let isUpvoted = false;
+    let isDownvoted = false;
+    
+    // Shreddit buttons state
+    if (p.shadowRoot) {
+      const upBtn = p.shadowRoot.querySelector('button[upvote]');
+      const downBtn = p.shadowRoot.querySelector('button[downvote]');
+      isUpvoted = upBtn?.getAttribute('aria-pressed') === 'true';
+      isDownvoted = downBtn?.getAttribute('aria-pressed') === 'true';
+    } else {
+       // Light DOM fallback
+       const upBtn = p.querySelector('button[upvote], button[name="upvote"]');
+       isUpvoted = upBtn?.getAttribute('aria-pressed') === 'true';
+    }
+
+    const isPromoted = p.hasAttribute('is-promoted') || p.querySelector('.promoted-tag') || p.innerText.includes('Promoted');
+
+    return {
+      index: i,
+      title,
+      author,
+      url: url ? (url.startsWith('http') ? url : 'https://www.reddit.com' + url) : '',
+      score,
+      commentCount,
+      isUpvoted,
+      isDownvoted,
+      isPromoted,
+      isEngaged: isUpvoted || isDownvoted
+    };
+  }
+
+  async function findTargetRobustly(index, type = 'post') {
+     const selector = type === 'post' ? 'shreddit-post, .Post' : 'shreddit-comment, .Comment';
+     const items = Array.from(document.querySelectorAll(selector)).filter(isVisible);
+     const target = items[index]; // Don't fallback to items[0] automatically here, handle in tool
+     if (!target) return null;
+     if (!isVisible(target)) {
+         target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+         await wait(800);
+     }
+     return target;
   }
 `;
 
@@ -148,12 +207,35 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
         const result = await contents.executeJavaScript(`
               (async function() {
                 ${BASE_SCRIPT_HELPERS}
-                // Scroll to load a few more
-                window.scrollBy(0, 800);
-                await wait(1000);
+                
+                // Robust waiting for posts
+                const waitForPosts = async () => {
+                  const start = Date.now();
+                  while (Date.now() - start < 10000) {
+                    if (window.__REAVION_STOP__) break;
+                    const posts = document.querySelectorAll('shreddit-post, .Post');
+                    if (posts.length > 0) return true;
+                    await new Promise(r => setTimeout(r, 500));
+                  }
+                  return false;
+                };
 
-                const posts = Array.from(document.querySelectorAll('shreddit-post, .Post'));
-                return { success: true, postCount: posts.length, foundPosts: posts.length };
+                await waitForPosts();
+                
+                // Scroll to load a few more
+                window.scrollBy(0, 1200);
+                await wait(1500);
+
+                const posts = Array.from(document.querySelectorAll('shreddit-post, .Post')).slice(0, ${limit || 15});
+                const data = posts.map((p, i) => getRedditPostData(p, i));
+
+                return { 
+                  success: true, 
+                  postCount: data.length, 
+                  foundPosts: data.length,
+                  posts: data,
+                  message: 'Scanned r/' + window.location.pathname.split('/')[2] + '. Found ' + data.length + ' posts.'
+                };
               })()
             `);
         return JSON.stringify({ ...result, url });
@@ -184,15 +266,8 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
                      ${POINTER_HELPERS}
                      ${BASE_SCRIPT_HELPERS}
                      
-                     let target = null;
-                     if ('${rType}' === 'post') {
-                        // Modern Reddit: <shreddit-post>
-                        const posts = Array.from(document.querySelectorAll('shreddit-post, .Post')).filter(isVisible);
-                        target = posts[${rIndex}] || posts[0];
-                     } else {
-                        const comments = Array.from(document.querySelectorAll('shreddit-comment, .Comment')).filter(isVisible);
-                        target = comments[${rIndex}] || comments[0];
-                     }
+                     const target = await findTargetRobustly(${rIndex}, '${rType}');
+                     if (!target) return { success: false, error: 'Target ' + '${rType}' + ' not found at index ' + ${rIndex}, logs };
 
                      if (!target) return { success: false, error: 'Target not found' };
 
@@ -229,15 +304,11 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
                      }
 
                      if (btn) {
-                         // Check if already voted? (Optional, but user said 'vote', so we usually just click)
-                         // Inspecting 'aria-pressed' could tell us state.
-                         // const isPressed = btn.getAttribute('aria-pressed') === 'true';
-                         
                         await safeClick(btn, desired + 'vote');
-                        return { success: true, message: desired + 'voted' };
+                        return { success: true, message: desired + 'voted', logs };
                      } 
                      
-                     return { success: false, error: 'Vote buttons not found via selectors' };
+                     return { success: false, error: 'Vote buttons not found via selectors', logs };
                  } catch (e) {
                      return { success: false, error: e.toString() };
                  }
@@ -270,20 +341,57 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
                 ${POINTER_HELPERS}
                 ${BASE_SCRIPT_HELPERS}
 
-                // Context Check: Ensure we are on a post page
-                const isPostPage = window.location.href.includes('/comments/') || !!document.querySelector('shreddit-comment-tree');
-                // Allow if replying to a comment (type != post) regardless, though usually needs post page too
-                // But strict check for type='post'
-                if ('${rType}' === 'post' && !isPostPage) {
-                    // Check for overlay (modal post)
-                    const overlay = document.querySelector('#overlayScrollContainer');
-                    if (!overlay) {
-                        return { 
-                            success: false, 
-                            error: 'WRONG_CONTEXT: You are attempting to comment while on a feed/list page. Reddit requires you to be on the specific post page to comment. Please add a "Navigate" step to open the post first.',
-                            logs
-                        };
-                    }
+                // --- 1. Robust Context Detection & Transition ---
+                let isPostPage = false;
+                let overlay = null;
+                
+                const updateContext = () => {
+                    isPostPage = window.location.href.includes('/comments/') || 
+                                 !!document.querySelector('shreddit-comment-tree') ||
+                                 !!document.querySelector('shreddit-post[full-post]');
+                    overlay = document.querySelector('#overlayScrollContainer') || 
+                              document.querySelector('shreddit-async-loader[slot="full-post-loader"]') ||
+                              document.querySelector('shreddit-async-loader[slot="overlay-loader"]') ||
+                              document.querySelector('faceplate-tracker[source="post_detail"]');
+                    return isPostPage || !!overlay;
+                };
+
+                // Wait up to 4s for transition if we just arrived or are loading
+                for (let i = 0; i < 20; i++) {
+                    if (updateContext()) break;
+                    await wait(200);
+                }
+
+                // --- 2. Auto-Navigation if in Feed ---
+                if ('${rType}' === 'post' && !isPostPage && !overlay) {
+                     const isFeedPage = window.location.pathname.includes('/new/') || 
+                                       window.location.pathname.includes('/top/') || 
+                                       window.location.pathname.includes('/hot/') ||
+                                       window.location.pathname.endsWith('/r/') ||
+                                       window.location.pathname === '/';
+                     
+                     if (isFeedPage) {
+                         log('Currently on feed, searching for post at index ' + ${rIndex});
+                         const targetPost = await findTargetRobustly(${rIndex}, 'post');
+                         if (targetPost) {
+                             log('Found target post, navigating to detail page...');
+                             // Click the title or the post itself to open
+                             const titleLink = targetPost.querySelector('a[slot="full-post-link"]') || 
+                                               targetPost.querySelector('a[href*="/comments/"]') ||
+                                               targetPost.querySelector('h3, [slot="title"]') ||
+                                               targetPost;
+                             
+                             await safeClick(titleLink, 'Post Link');
+                             
+                             // Wait for detail view to appear
+                             for (let i = 0; i < 30; i++) {
+                                if (updateContext()) break;
+                                await wait(250);
+                             }
+                         } else {
+                             log('Post not found at index ' + ${rIndex} + ' in feed.');
+                         }
+                     }
                 }
 
                 const checkVisible = (el) => {
@@ -296,80 +404,102 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
                     // Top-level comment interaction flow
                     
                     const findEditor = () => {
-                        // 1. Standard Shreddit elements or explicit role (Light DOM)
-                        let el = document.querySelector('shreddit-composer div[role="textbox"]') ||
-                                 document.querySelector('shreddit-composer div[contenteditable="true"]') || 
-                                 document.querySelector('shreddit-composer [role="textbox"]');
-                        
-                        // 2. Standard Shreddit elements (Shadow DOM)
+                        // Priority 1: Shadow DOM composers (Modern Reddit) - Use querySelectorPierce if available
+                        let el = querySelectorPierce('shreddit-composer [role="textbox"]') ||
+                                 querySelectorPierce('shreddit-composer [contenteditable="true"]') ||
+                                 querySelectorPierce('comment-composer-host [role="textbox"]') ||
+                                 querySelectorPierce('comment-composer-host [contenteditable="true"]') ||
+                                 querySelectorPierce('.lexical-editor-container [contenteditable="true"]') ||
+                                 querySelectorPierce('.rich-text-editor [contenteditable="true"]');
+
                         if (!el) {
-                            const composer = document.querySelector('shreddit-composer');
-                            if (composer && composer.shadowRoot) {
-                                el = composer.shadowRoot.querySelector('div[contenteditable="true"]') || 
-                                     composer.shadowRoot.querySelector('[role="textbox"]') ||
-                                     composer.shadowRoot.querySelector('div.rich-text-editor');
+                            const composers = document.querySelectorAll('shreddit-composer, comment-composer-host, [role="composer"]');
+                            for (const composer of Array.from(composers)) {
+                                if (composer.shadowRoot) {
+                                    el = composer.shadowRoot.querySelector('div[contenteditable="true"]') || 
+                                         composer.shadowRoot.querySelector('[role="textbox"]') ||
+                                         composer.shadowRoot.querySelector('.lexical-editor-container [contenteditable="true"]') ||
+                                         composer.shadowRoot.querySelector('.rich-text-editor') ||
+                                         composer.shadowRoot.querySelector('#comment-composer');
+                                }
+                                if (!el) {
+                                    el = composer.querySelector('div[contenteditable="true"]') || 
+                                         composer.querySelector('[role="textbox"]');
+                                }
+                                if (el && checkVisible(el)) break;
                             }
                         }
 
-                        // 3. Placeholder/Input variants
+                        // Priority 2: Faceplate textarea (Mobile/Lite)
                         if (!el) {
-                            const placeholder = document.querySelector('faceplate-textarea-input');
-                            if (placeholder) {
-                                el = placeholder.querySelector('textarea, div[contenteditable="true"], [role="textbox"]') || 
-                                     (placeholder.shadowRoot ? placeholder.shadowRoot.querySelector('textarea, div[contenteditable="true"], [role="textbox"]') : null);
+                            const faceplates = document.querySelectorAll('faceplate-textarea-input, faceplate-textarea-pwa');
+                            for (const fp of Array.from(faceplates)) {
+                               let elFp = null;
+                               if (fp.shadowRoot) {
+                                   elFp = fp.shadowRoot.querySelector('textarea, div[contenteditable="true"], [role="textbox"]');
+                               }
+                               if (!elFp) {
+                                   elFp = fp.querySelector('textarea, div[contenteditable="true"], [role="textbox"]');
+                               }
+                               if (elFp && checkVisible(elFp)) {
+                                   el = elFp;
+                                   break;
+                               }
                             }
                         }
 
-                        // 4. Simple textarea fallback
-                        if (!el) el = document.querySelector('textarea[name="text"]');
+                        // Priority 3: Global search for common roles
+                        if (!el) {
+                            el = document.querySelector('div[role="textbox"][contenteditable="true"]') ||
+                                 document.querySelector('textarea[name="text"]') ||
+                                 document.querySelector('.CommentForm textarea');
+                        }
                         
                         return el;
                     };
 
+
                     let editor = findEditor();
                     
-                    // If it's a faceplate-textarea-pwa (seen in some mobile/lite views), click it
+                    // If it's a closed composer, we might need to click it first
                     if (!editor || !checkVisible(editor)) {
                         const potential = document.querySelector('faceplate-textarea-input') || 
                                          document.querySelector('faceplate-textarea-pwa') ||
-                                         document.querySelector('shreddit-composer'); // Sometimes clicking the composer host helps
+                                         document.querySelector('shreddit-composer') ||
+                                         document.querySelector('#comment-composer-host');
                         
                         if (potential) {
-                            log('Clicking potential editor host/placeholder to expand', { tagName: potential.tagName });
+                            log('Clicking composer host to expand', { tagName: potential.tagName });
                             try {
-                                // Try to find the specific clickable area in shadow root
-                                let trigger = potential;
-                                if (potential.shadowRoot) {
-                                    trigger = potential.shadowRoot.querySelector('div[role="textbox"]') || potential.shadowRoot.querySelector('textarea') || potential;
-                                }
-                                await safeClick(trigger, 'Editor Host/Trigger');
-                            } catch (e) {
-                                log('Clicking host failed, trying direct click on element', { error: e.toString() });
-                                await safeClick(potential, 'Editor Host (Fallback)');
-                            }
-                            await wait(800);
-                            editor = findEditor();
+                                await safeClick(potential, 'Editor Host');
+                                await wait(800);
+                                editor = findEditor();
+                            } catch (e) { log('Host click failed', e.toString()); }
                         }
                     }
 
-                    // Retry lookups
+                    // Retry lookups for a while (up to 8 seconds for slow loads)
                     if (!editor || !checkVisible(editor)) {
-                         log('Editor not visible yet, waiting...');
-                         for (let i = 0; i < 30; i++) {
+                         log('Editor not visible, waiting for discovery...');
+                         for (let i = 0; i < 40; i++) {
+                            if (window.__REAVION_STOP__) break;
                             editor = findEditor();
                             if (editor && checkVisible(editor)) break;
-                            await new Promise(r => setTimeout(r, 100));
+                            await new Promise(r => setTimeout(r, 200));
                         }
                     }
                     
                     if (!editor) {
-                         return { success: false, error: 'Comment editor not found after attempting validation. Start logs: ' + JSON.stringify(logs) };
+                         return { 
+                           success: false, 
+                           error: 'Comment editor not found. If this is a restricted community or you are not logged in, please check the browser state. Detail logs: ' + JSON.stringify(logs) 
+                         };
                     }
 
                     if (editor) {
                         log('Focusing and clicking editor', { tagName: editor.tagName });
-                        editor.scrollIntoView({ behavior: 'instant', block: 'center' });
-                        await wait(200);
+                        editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        await wait(500);
 
                         const r = editor.getBoundingClientRect();
                         const x = r.left + r.width/2;
@@ -377,75 +507,103 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
 
                         if (typeof movePointer === 'function') movePointer(x, y);
                         
-                        // Simulate full click sequence for framework listeners
+                        editor.focus({ preventScroll: true });
                         editor.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
-                        editor.focus();
                         editor.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
                         try { (editor as any).click(); } catch(e) {}
-                        await wait(300);
+                        await wait(400);
                         
-                        // Clear
+                        log('Clearing existing content if any...');
                         try {
                             const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
                             if (isDiv) {
-                                editor.innerHTML = ''; 
-                                // Also try to clear via selection which some editors rely on
+                                editor.focus();
                                 const selection = window.getSelection();
                                 const range = document.createRange();
                                 range.selectNodeContents(editor);
                                 selection.removeAllRanges();
                                 selection.addRange(range);
                                 document.execCommand('delete', false, null);
+                                // Absolute clear for Lexical/Shadow DOM
+                                if (editor.textContent.length > 0) {
+                                   editor.textContent = '';
+                                   editor.innerHTML = '';
+                                }
                             } else {
                                 (editor as any).value = '';
+                                editor.dispatchEvent(new Event('input', { bubbles: true }));
                             }
                         } catch (e) { log('Clear failed', e.toString()); }
 
-                        log('Typing text into editor');
-                        // Use beforeinput for rich editors that use it to update state
-                        try {
-                            editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: ${JSON.stringify(text)}, bubbles: true }));
-                        } catch(e) {}
+                        log('Attempting to type text: ' + ${JSON.stringify(text)});
                         
-                        document.execCommand('insertText', false, ${JSON.stringify(text)});
+                        const typeIntoEditor = (txt) => {
+                             const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
+                             if (isDiv) {
+                                 editor.focus();
+                                 document.execCommand('insertText', false, txt);
+                                 // Verification
+                                 if (editor.textContent.indexOf(txt) === -1) {
+                                     log('insertText failed/partial, setting textContent as fallback');
+                                     editor.textContent = txt;
+                                     editor.dispatchEvent(new Event('input', { bubbles: true }));
+                                 }
+                             } else {
+                                 (editor as any).value = txt;
+                                 editor.dispatchEvent(new Event('input', { bubbles: true }));
+                                 editor.dispatchEvent(new Event('change', { bubbles: true }));
+                             }
+                        };
+
+                        typeIntoEditor(${JSON.stringify(text)});
+                        await wait(600);
                         
-                        // Verify content
-                        const currentVal = editor.tagName === 'DIV' ? editor.textContent : (editor as any).value;
-                        if (!currentVal || currentVal.length < 1) {
-                            log('Fallback assignment used');
-                            if (editor.tagName === 'DIV') {
-                                editor.textContent = ${JSON.stringify(text)};
-                            } else {
-                                (editor as any).value = ${JSON.stringify(text)};
-                            }
-                            editor.dispatchEvent(new Event('input', { bubbles: true }));
-                            editor.dispatchEvent(new Event('change', { bubbles: true }));
+                        // Second pass check
+                        let finalVal = editor.tagName === 'DIV' ? editor.textContent : (editor as any).value;
+                        if (!finalVal || finalVal.trim().length === 0) {
+                            log('Editor value empty after typing, retrying...');
+                            typeIntoEditor(${JSON.stringify(text)});
+                            await wait(500);
                         }
 
-                        await wait(500);
+
+                        await wait(600);
                         
                         // Submit button logic
-                        const composer = editor.closest('shreddit-composer') || editor.closest('faceplate-textarea-input') || document;
-                        let submitBtn = composer.querySelector('button[slot="submit-button"]') || 
-                                        composer.querySelector('button[type="submit"]');
-                        
-                        // Search in Shadow DOM of composer if not found
-                        if (!submitBtn && composer !== document && composer.shadowRoot) {
-                             submitBtn = composer.shadowRoot.querySelector('button[slot="submit-button"]') || 
-                                         composer.shadowRoot.querySelector('button[type="submit"]');
-                        }
+                        const findSubmitBtn = () => {
+                            // Try piercing through composer first
+                            const composer = editor.closest('shreddit-composer') || 
+                                             editor.closest('faceplate-textarea-input') || 
+                                             editor.closest('comment-composer-host') ||
+                                             document;
 
-                        if (!submitBtn) {
-                            const buttons = Array.from(document.querySelectorAll('button')).filter(checkVisible);
-                            submitBtn = buttons.find(b => {
-                                const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                return txt === 'comment' || txt === 'post';
-                            });
-                        }
-                        
+                            let btn = composer.querySelector('button[slot="submit-button"]') || 
+                                      composer.querySelector('button[type="submit"]') ||
+                                      composer.querySelector('button.send-button');
+                            
+                            // Deep pierce for shadow buttons
+                            if (!btn) {
+                                btn = querySelectorPierce('shreddit-composer [slot="submit-button"]') ||
+                                      querySelectorPierce('shreddit-composer button[type="submit"]') ||
+                                      querySelectorPierce('comment-composer-host [slot="submit-button"]') ||
+                                      querySelectorPierce('comment-composer-host button[type="submit"]');
+                            }
+
+                            if (!btn) {
+                                const allBtns = Array.from(document.querySelectorAll('button')).filter(checkVisible);
+                                btn = allBtns.find(b => {
+                                    const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
+                                    return (txt === 'comment' || txt === 'post' || txt === 'reply') && !txt.includes('sort');
+                                });
+                            }
+                            return btn;
+                        };
+
+
+                        const submitBtn = findSubmitBtn();
                         if (submitBtn) {
                              await safeClick(submitBtn, 'Submit Comment');
-                             return { success: true, message: 'Comment submitted', logs };
+                             return { success: true, message: 'Comment submitted successfully.', logs };
                         } else {
                              return { success: false, error: 'Submit button not found', logs };
                         }
@@ -457,37 +615,46 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
                      const target = comments[${rIndex}] || comments[0];
                      if (!target) return { success: false, error: 'Comment to reply to not found', logs };
                      
-                     let replyBtn = target.querySelector('button[slot="reply"]');
-                     if (!replyBtn && target.shadowRoot) replyBtn = target.shadowRoot.querySelector('button[slot="reply"]');
-                     
-                     if (replyBtn) {
-                        await safeClick(replyBtn, 'Reply Button');
+                      let replyBtn = target.querySelector('button[name="reply"]') || 
+                                     target.querySelector('button[slot="reply"]') ||
+                                     target.querySelector('[data-testid="reply-button"]');
+                      
+                      if (!replyBtn && target.shadowRoot) {
+                         replyBtn = target.shadowRoot.querySelector('button[name="reply"]') || 
+                                    target.shadowRoot.querySelector('button[slot="reply"]');
+                      }
+                      
+                      if (!replyBtn) {
+                         const actionRow = target.querySelector('shreddit-comment-action-row');
+                         if (actionRow && actionRow.shadowRoot) {
+                             replyBtn = actionRow.shadowRoot.querySelector('button[name="reply"]');
+                         }
+                      }
+
+                      if (replyBtn) {
+                         await safeClick(replyBtn, 'Reply Button');
+                         await wait(1200); // Wait for async loader
                         
                         let editor = null;
                         const findReplyEditor = () => {
-                             // Light DOM
-                             let el = target.querySelector('shreddit-composer div[role="textbox"]') ||
-                                    target.querySelector('shreddit-composer div[contenteditable="true"]') ||
-                                    target.querySelector('shreddit-composer [role="textbox"]');
-                             
-                             // Shadow DOM of a nested composer in the comment
-                             if (!el) {
-                                  const localComposer = target.querySelector('shreddit-composer');
-                                  if (localComposer && localComposer.shadowRoot) {
-                                      el = localComposer.shadowRoot.querySelector('div[contenteditable="true"]') ||
-                                           localComposer.shadowRoot.querySelector('[role="textbox"]');
-                                  }
-                             }
-                             
-                             // Shadow DOM of the comment itself? Rarely contains the composer directly, but good to check
-                             if (!el && target.shadowRoot) {
-                                  el = target.shadowRoot.querySelector('shreddit-composer div[role="textbox"]');
-                             }
-
-                             return el;
+                              const area = target.parentElement || document;
+                              let el = area.querySelector('shreddit-composer div[role="textbox"]') ||
+                                      area.querySelector('shreddit-composer div[contenteditable="true"]') ||
+                                      area.querySelector('shreddit-composer [role="textbox"]');
+                              
+                              if (!el) {
+                                  el = querySelectorPierce('shreddit-composer [role="textbox"]') ||
+                                       querySelectorPierce('shreddit-composer [contenteditable="true"]') ||
+                                       querySelectorPierce('comment-composer-host [role="textbox"]') ||
+                                       querySelectorPierce('comment-composer-host [contenteditable="true"]') ||
+                                       querySelectorPierce('.lexical-editor-container [contenteditable="true"]');
+                              }
+                              return el;
                         };
 
-                        for (let i = 0; i < 30; i++) {
+
+                        for (let i = 0; i < 40; i++) {
+                            if (window.__REAVION_STOP__) break;
                             editor = findReplyEditor();
                             // Fallback: look for sibling composer (old reddit/some views)
                             if (!editor && target.nextElementSibling && target.nextElementSibling.tagName === 'SHREDDIT-COMPOSER') {
@@ -516,60 +683,82 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
                             if (typeof movePointer === 'function') movePointer(x, y);
                             
                             editor.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
-                            editor.focus();
+                            editor.focus({ preventScroll: true });
                             editor.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
                             try { (editor as any).click(); } catch(e) {}
                             await wait(300);
-                            
+                                                       log('Clearing reply editor...');
                             try {
                                 const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
                                 if (isDiv) {
-                                    editor.innerHTML = '';
+                                    editor.focus();
                                     const selection = window.getSelection();
                                     const range = document.createRange();
                                     range.selectNodeContents(editor);
                                     selection.removeAllRanges();
                                     selection.addRange(range);
                                     document.execCommand('delete', false, null);
+                                    if (editor.textContent.length > 0) {
+                                        editor.textContent = '';
+                                        editor.innerHTML = '';
+                                    }
                                 } else {
                                     (editor as any).value = '';
+                                    editor.dispatchEvent(new Event('input', { bubbles: true }));
                                 }
                             } catch (e) {}
 
-                            log('Typing reply text');
-                            try {
-                                editor.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: ${JSON.stringify(text)}, bubbles: true }));
-                            } catch(e) {}
-                            document.execCommand('insertText', false, ${JSON.stringify(text)});
+                            log('Typing reply text: ' + ${JSON.stringify(text)});
+                            const typeIntoReply = (txt) => {
+                                 const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
+                                 if (isDiv) {
+                                     editor.focus();
+                                     document.execCommand('insertText', false, txt);
+                                     if (editor.textContent.indexOf(txt) === -1) {
+                                         editor.textContent = txt;
+                                         editor.dispatchEvent(new Event('input', { bubbles: true }));
+                                     }
+                                 } else {
+                                     (editor as any).value = txt;
+                                     editor.dispatchEvent(new Event('input', { bubbles: true }));
+                                 }
+                            };
+                            
+                            typeIntoReply(${JSON.stringify(text)});
+                            await wait(500);
 
-                            const currentVal = editor.tagName === 'DIV' ? editor.textContent : (editor as any).value;
-                            if (!currentVal || currentVal.length < 1) {
-                                if (editor.tagName === 'DIV') {
-                                    editor.textContent = ${JSON.stringify(text)};
-                                } else {
-                                    (editor as any).value = ${JSON.stringify(text)};
-                                }
-                                editor.dispatchEvent(new Event('input', { bubbles: true }));
+                            let rFinalVal = editor.tagName === 'DIV' ? editor.textContent : (editor as any).value;
+                            if (!rFinalVal || rFinalVal.trim().length === 0) {
+                                log('Reply editor value empty, retrying typing...');
+                                typeIntoReply(${JSON.stringify(text)});
                             }
+
 
                             await wait(500);
                             
-                            const composer = editor.closest('shreddit-composer') || document;
-                            let submitBtn = composer.querySelector('button[slot="submit-button"]') ||
-                                            composer.querySelector('button[type="submit"]');
+                            let submitBtn = null;
+                            const composer = editor.closest('shreddit-composer') || 
+                                             editor.closest('comment-composer-host') || 
+                                             document;
+                                             
+                            submitBtn = composer.querySelector('button[slot="submit-button"]') ||
+                                        composer.querySelector('button[type="submit"]');
                             
-                            if (!submitBtn && composer !== document && composer.shadowRoot) {
-                                submitBtn = composer.shadowRoot.querySelector('button[slot="submit-button"]') ||
-                                            composer.shadowRoot.querySelector('button[type="submit"]');
+                            if (!submitBtn) {
+                                submitBtn = querySelectorPierce('shreddit-composer [slot="submit-button"]') ||
+                                            querySelectorPierce('shreddit-composer button[type="submit"]') ||
+                                            querySelectorPierce('comment-composer-host [slot="submit-button"]') ||
+                                            querySelectorPierce('comment-composer-host button[type="submit"]');
                             }
 
                             if (!submitBtn) {
                                 const buttons = Array.from(document.querySelectorAll('button')).filter(checkVisible);
                                 submitBtn = buttons.find(b => {
                                     const txt = (b.innerText || b.textContent || '').trim().toLowerCase();
-                                    return txt === 'reply' || txt === 'comment' || txt === 'post';
+                                    return (txt === 'reply' || txt === 'comment' || txt === 'post') && !txt.includes('sort');
                                 });
                             }
+
 
                             if (submitBtn) {
                                 await safeClick(submitBtn, 'Submit Reply');
@@ -636,5 +825,35 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
     }
   });
 
-  return [searchTool, scoutCommunityTool, voteTool, commentTool, joinTool];
+  const scanPostsTool = new DynamicStructuredTool({
+    name: 'reddit_scan_posts',
+    description: 'Scan visible posts on the current Reddit page to get their titles, authors, and engagement status. Use this to identify targets without navigating.',
+    schema: z.object({
+      limit: z.number().nullable().default(10),
+    }),
+    func: async ({ limit }: { limit: number | null }) => {
+      const contents = ctx.getContents();
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            const posts = Array.from(document.querySelectorAll('shreddit-post, .Post')).slice(0, ${limit || 15});
+            const data = posts.map((p, i) => getRedditPostData(p, i));
+            
+            return { 
+              success: true, 
+              count: data.length, 
+              posts: data,
+              message: 'Scanned ' + data.length + ' visible posts.'
+            };
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
+  return [searchTool, scoutCommunityTool, voteTool, commentTool, joinTool, scanPostsTool];
 }

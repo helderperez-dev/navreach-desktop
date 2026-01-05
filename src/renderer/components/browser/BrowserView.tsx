@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, RotateCw, X, Bug, Disc, StopCircle, Maximize2, M
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBrowserStore } from '@/stores/browser.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useDebugStore } from '@/stores/debug.store';
 import { useAppStore } from '@/stores/app.store';
 import { useChatStore } from '@/stores/chat.store';
@@ -13,6 +14,7 @@ import reavionLogoBlack from '@assets/reavion-black-welcome.png';
 const INITIAL_URL = 'about:blank';
 
 export function BrowserView() {
+  const { currentWorkspace } = useWorkspaceStore();
   const { tabId, url, title, isLoading, setUrl, setTitle, setIsLoading, setWebContentsId, isRecording, setIsRecording } = useBrowserStore();
   const { isDebugPanelOpen, toggleDebugPanel } = useDebugStore();
   const { hasStarted, activeView, showPlaybookBrowser, playbookBrowserMaximized, togglePlaybookBrowserMaximized } = useAppStore();
@@ -304,10 +306,14 @@ export function BrowserView() {
 
         <webview
           ref={webviewRef as any}
+          key={currentWorkspace ? currentWorkspace.id : 'default'}
           src={INITIAL_URL}
           className="absolute inset-0 w-full h-full"
           // @ts-ignore - webview attributes
+          partition={currentWorkspace ? `persist:workspace_${currentWorkspace.id}` : undefined}
+          // @ts-ignore - webview attributes
           allowpopups="true"
+          // @ts-ignore - webview attributes
           webpreferences="nativeWindowOpen=yes, backgroundThrottling=no"
         />
       </div>
