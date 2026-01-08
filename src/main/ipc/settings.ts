@@ -1,6 +1,7 @@
 import { IpcMain, powerSaveBlocker } from 'electron';
 import Store from 'electron-store';
-import type { AppSettings, ModelProvider, MCPServer, APITool } from '../../shared/types';
+import { supabase } from '../lib/supabase';
+import type { AppSettings, ModelProvider, MCPServer, APITool, ModelConfig } from '../../shared/types';
 
 let sleepBlockerId: number | null = null;
 
@@ -55,7 +56,57 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('settings:get-all', async () => {
-    return store.store;
+    const localSettings = store.store;
+
+    try {
+      // Fetch system settings for managed AI provider
+      const { data: systemData } = await supabase
+        .from('system_settings')
+        .select('key, value');
+
+      const sysSettings = (systemData || []).reduce((acc: any, curr: any) => {
+        acc[curr.key] = curr.value;
+        return acc;
+      }, {});
+
+      const defaultProviderType = sysSettings['default_ai_provider'];
+      const defaultModelId = sysSettings['default_ai_model'];
+      const hasSystemKey = !!sysSettings['system_ai_api_key'];
+
+      // Always prepend the System Default provider if configured, even if key is missing (visibility preference)
+      if (defaultProviderType && defaultModelId) {
+        // Create the system managed provider
+        const systemProvider: ModelProvider = {
+          id: 'system-default',
+          name: 'Reavion',
+          type: defaultProviderType,
+          apiKey: 'managed-by-system',
+          enabled: true,
+          models: [
+            {
+              id: defaultModelId,
+              name: 'Reavion Flash',
+              providerId: 'system-default',
+              contextWindow: 128000,
+              enabled: true
+            }
+          ]
+        };
+
+        // If local settings already have providers, system default goes first.
+        // We filter out any previous system-default if it somehow got saved to disk (unlikely but safe)
+        const cleanLocalProviders = (localSettings.modelProviders || []).filter(p => p.id !== 'system-default');
+
+        return {
+          ...localSettings,
+          modelProviders: [systemProvider, ...cleanLocalProviders]
+        };
+      }
+    } catch (error) {
+      console.error('Failed to fetch system settings:', error);
+    }
+
+    return localSettings;
   });
 
   ipcMain.handle('settings:reset', async () => {

@@ -225,8 +225,8 @@ export function CSVImportDialog({ open, onOpenChange }: CSVImportDialogProps) {
                 <Dialog.Content className="fixed left-[50%] top-[50%] translate-x-[-50%] translate-y-[-50%] w-full max-w-3xl bg-popover border border-border pb-8 rounded-3xl shadow-2xl z-50 animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
                     <div className="flex items-center justify-between p-8 border-b border-border">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                                <Upload className="h-5 w-5 text-primary" />
+                            <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center border border-border/50">
+                                <Upload className="h-5 w-5 text-muted-foreground/70" />
                             </div>
                             <div>
                                 <Dialog.Title className="text-xl font-semibold text-foreground">
@@ -249,8 +249,8 @@ export function CSVImportDialog({ open, onOpenChange }: CSVImportDialogProps) {
                                     onClick={() => fileInputRef.current?.click()}
                                     className="h-64 border-2 border-dashed border-border rounded-3xl flex flex-col items-center justify-center gap-4 cursor-pointer hover:bg-muted/50 hover:border-primary/20 transition-all group"
                                 >
-                                    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                        <FileIcon className="h-8 w-8 text-primary/50" />
+                                    <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center group-hover:scale-110 transition-transform">
+                                        <FileIcon className="h-8 w-8 text-muted-foreground/30" />
                                     </div>
                                     <div className="text-center">
                                         <p className="text-sm font-medium text-foreground/80">Click to upload your CSV file</p>
@@ -271,11 +271,11 @@ export function CSVImportDialog({ open, onOpenChange }: CSVImportDialogProps) {
 
                         {step === 'mapping' && (
                             <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-400">
-                                <div className="bg-primary/5 border border-primary/10 rounded-2xl p-4 flex gap-4">
-                                    <Settings2 className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                                <div className="bg-muted/30 border border-border/50 rounded-2xl p-4 flex gap-4">
+                                    <Settings2 className="h-5 w-5 text-muted-foreground/70 flex-shrink-0 mt-0.5" />
                                     <div className="space-y-1">
-                                        <p className="text-sm font-medium text-primary">Field Mapping</p>
-                                        <p className="text-xs text-primary/50">Select which CSV columns correspond to our required fields.</p>
+                                        <p className="text-sm font-medium text-foreground">Field Mapping</p>
+                                        <p className="text-xs text-muted-foreground/60">Select which CSV columns correspond to our required fields.</p>
                                     </div>
                                 </div>
 
@@ -283,12 +283,12 @@ export function CSVImportDialog({ open, onOpenChange }: CSVImportDialogProps) {
                                     {TARGET_FIELDS.map((field) => (
                                         <div key={field.key} className="grid grid-cols-12 gap-4 items-center group">
                                             <div className="col-span-4 flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-                                                    <field.icon className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
+                                                <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center group-hover:bg-muted/80 transition-colors">
+                                                    <field.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
                                                 </div>
                                                 <div>
                                                     <p className="text-xs font-semibold text-foreground/60 uppercase tracking-wider">{field.label}</p>
-                                                    {field.required && <span className="text-[9px] text-primary uppercase font-bold">Required</span>}
+                                                    {field.required && <span className="text-[9px] text-muted-foreground/40 uppercase font-bold">Required</span>}
                                                 </div>
                                             </div>
 
@@ -346,7 +346,7 @@ export function CSVImportDialog({ open, onOpenChange }: CSVImportDialogProps) {
                                             variant="outline"
                                             size="sm"
                                             onClick={handleAddMetadataMapping}
-                                            className="h-8 gap-2 border-primary/20 bg-primary/5 text-primary hover:bg-primary/10 text-xs"
+                                            className="h-8 gap-2 border-border bg-muted text-muted-foreground hover:bg-muted/80 text-xs"
                                         >
                                             <Plus className="h-3 w-3" />
                                             Add Attribute

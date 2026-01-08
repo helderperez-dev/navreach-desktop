@@ -70,6 +70,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         set({ selectedListId: id });
         if (id) {
             get().fetchTargets(id);
+            get().fetchLists(); // Refresh counts when switching lists
         } else {
             set({ targets: [] });
         }
@@ -169,6 +170,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 targets: [data, ...get().targets],
                 lists: get().lists.map(l => l.id === data.list_id ? { ...l, target_count: (l.target_count || 0) + 1 } : l)
             });
+            get().fetchLists(); // Sync counts with DB
             toast.success('Target added successfully');
         }
     },
@@ -195,6 +197,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 targets: get().targets.filter(t => t.id !== id),
                 lists: targetToDelete ? get().lists.map(l => l.id === targetToDelete.list_id ? { ...l, target_count: Math.max(0, (l.target_count || 0) - 1) } : l) : get().lists
             });
+            get().fetchLists(); // Sync counts with DB
             toast.success('Target deleted successfully');
         }
     },
@@ -217,6 +220,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 targets: [...data, ...get().targets],
                 lists: get().lists.map(l => l.id === listId ? { ...l, target_count: (l.target_count || 0) + data.length } : l)
             });
+            get().fetchLists(); // Sync counts with DB
             toast.success(`Successfully imported ${data.length} targets`);
         }
     }

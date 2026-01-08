@@ -168,6 +168,74 @@ const consoleLogs = new Map<string, string[]>();
 export function registerWebviewContents(tabId: string, contents: Electron.WebContents) {
   webviewContents.set(tabId, contents);
 
+  // MIMIC CHROME: Set a modern Chrome User-Agent
+  // This ensures social networks see us as a regular browser, not Electron
+  const chromeUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36';
+  contents.setUserAgent(chromeUA);
+
+  // MIMIC CHROME: Mask Electron/Automation signals and Spoof Fingerprinting
+  // We use a high-quality masking script to bypass advanced detection
+  const maskSignalsScript = `
+    (function() {
+      // 1. Hide navigator.webdriver
+      if (Object.getOwnPropertyDescriptor(navigator, 'webdriver')) {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      }
+      
+      // 2. Mock chrome object (essential for "Is Chrome" checks)
+      window.chrome = {
+        runtime: {},
+        loadTimes: function() {},
+        csi: function() {},
+        app: {}
+      };
+
+      // 3. Ensure navigator properties match a real Chrome
+      const chromeUA = '${chromeUA}';
+      Object.defineProperty(navigator, 'userAgent', { get: () => chromeUA, configurable: true });
+      Object.defineProperty(navigator, 'appVersion', { get: () => chromeUA.replace('Mozilla/', ''), configurable: true });
+      Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel', configurable: true });
+      Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.', configurable: true });
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'], configurable: true });
+      
+      // 4. Mock Plugins & Hardware (standard Chrome profiles)
+      if (!navigator.plugins.length) {
+        const mockPlugins = [
+          { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdpjiiglhbhkeicmopidxocgoeb', description: '' },
+          { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: '' }
+        ];
+        Object.defineProperty(navigator, 'plugins', { get: () => mockPlugins, configurable: true });
+      }
+      
+      // Hardware Concurrency & Memory (standard high-end Mac)
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true });
+      if (navigator.deviceMemory === undefined) {
+        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true });
+      }
+
+      // 5. Spoof Screen & Dimensions (Avoid "Headless" signatures)
+      Object.defineProperty(Screen.prototype, 'colorDepth', { get: () => 24, configurable: true });
+      Object.defineProperty(Screen.prototype, 'pixelDepth', { get: () => 24, configurable: true });
+
+      // 6. Hide common automation properties and Electron leaks
+      try {
+        delete window.process;
+        delete window.electron;
+        delete window.__REAVION_RECORDER_ACTIVE__;
+      } catch(e) {}
+      
+      // Ensure specific global checks for Electron fail
+      window.process = undefined;
+      window.ipcRenderer = undefined;
+    })();
+  `;
+
+  // MIMIC CHROME: Inject mask signals as early as possible on every load
+  contents.on('dom-ready', () => {
+    contents.executeJavaScript(maskSignalsScript).catch(() => { });
+  });
+
   // Inject black and white border cursor styles and recorder script if needed
   contents.on('did-finish-load', () => {
     contents.insertCSS(`
@@ -194,6 +262,24 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
       });
     }
   });
+
+  // LinkedIn Redirect Protector: Blocks tracking syncs from hijacking the main frame
+  contents.on('will-navigate', (event: any, url: string) => {
+    if (url.includes('ns1p.net')) {
+      event.preventDefault();
+      sendDebugLog('info', 'Blocked will-navigate tracking redirect: ' + url);
+    }
+  });
+
+  // Aggressive Network-level Block: Prevents any resources or redirects to tracking domains
+  // This is the most robust way to block trick redirects that skip will-navigate
+  contents.session.webRequest.onBeforeRequest(
+    { urls: ['*://*.ns1p.net/*', '*://*.scorecardresearch.com/*'] },
+    (details, callback) => {
+      sendDebugLog('info', 'Network-level block for tracking domain: ' + details.url);
+      callback({ cancel: true });
+    }
+  );
 
   // Initialize logs
   if (!consoleLogs.has(tabId)) {
@@ -448,6 +534,16 @@ function getContents(): Electron.WebContents {
   return contents;
 }
 
+export async function resetBrowser(): Promise<void> {
+  try {
+    const contents = getContents();
+    await contents.loadURL('about:blank');
+    console.log('[Browser Tools] Resetting browser context to about:blank');
+  } catch (e) {
+    console.error('[Browser Tools] Failed to reset browser:', e);
+  }
+}
+
 async function ensureSpeedMultiplier(getSpeed: () => 'slow' | 'normal' | 'fast'): Promise<void> {
   const speed = getSpeed();
   const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.2 : 1.0;
@@ -459,7 +555,7 @@ async function ensureSpeedMultiplier(getSpeed: () => 'slow' | 'normal' | 'fast')
   }
 }
 
-export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal' | 'fast' }): DynamicStructuredTool[] {
+export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal' | 'fast', workspaceId?: string, scrollWait?: number }): DynamicStructuredTool[] {
   const getSpeed = options?.getSpeed || (() => 'normal');
 
   const navigateTool = new DynamicStructuredTool({
@@ -514,7 +610,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         const result = await contents.executeJavaScript(`
           (async function() {
             ${SCRIPT_HELPERS}
-            const selectorStr = "${selector.replace(/"/g, '\\"').replace(/'/g, "\\'")}";
+            const selectorStr = ${JSON.stringify(selector)};
             const targetIndex = ${index || 0};
             
             let element = null;
@@ -545,7 +641,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             
             // Human-like scroll
             element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-            await wait(500);
+            await wait(${options?.scrollWait || 500});
             
             const rect = element.getBoundingClientRect();
             const x = rect.left + rect.width / 2;
@@ -563,13 +659,23 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
               setTimeout(() => ripple.remove(), 500);
             }, 50);
 
-            // Dispatch events
-            const eventOptions = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, buttons: 1 };
-            element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-            // Removed redundant element.focus() here to prevent window focus theft
-            element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-            element.dispatchEvent(new MouseEvent('click', eventOptions));
+            const common = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y };
             
+            // Sequence: PointerDown -> MouseDown -> Focus -> PointerUp -> MouseUp -> Click
+            element.dispatchEvent(new PointerEvent('pointerdown', { ...common, pointerType: 'mouse', button: 0, buttons: 1, isPrimary: true }));
+            element.dispatchEvent(new MouseEvent('mousedown', { ...common, button: 0, buttons: 1 }));
+            
+            if (element.focus) element.focus({ preventScroll: true });
+
+            await wait(40);
+
+            element.dispatchEvent(new PointerEvent('pointerup', { ...common, pointerType: 'mouse', button: 0, buttons: 0, isPrimary: true }));
+            element.dispatchEvent(new MouseEvent('mouseup', { ...common, button: 0, buttons: 0 }));
+            
+            const clickEv = new MouseEvent('click', { ...common, button: 0, buttons: 0, detail: 1 });
+            element.dispatchEvent(clickEv);
+            
+            // Always attempt fallback click() if available, regardless of defaultPrevented
             if (typeof element.click === 'function') {
                 try { element.click(); } catch(e) {}
             }
@@ -599,32 +705,80 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         const result = await contents.executeJavaScript(`
           (async function() {
             ${SCRIPT_HELPERS}
-            const selectorStr = "${selector.replace(/"/g, '\\"').replace(/'/g, "\\'")}";
-            const typeText = "${text.replace(/"/g, '\\"').replace(/'/g, "\\'")}";
+            const selectorStr = ${JSON.stringify(selector)};
+            const typeText = ${JSON.stringify(text)};
             
             let element = findAnyElement(selectorStr);
             if (!element) return { success: false, error: 'Element not found: ' + selectorStr };
             
             element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await wait(500);
-            element.focus({ preventScroll: true });
+            await wait(200);
             
-            const isEditable = element.getAttribute('contenteditable') === 'true' || element.tagName === 'DIV' || element.tagName === 'P';
+            // Activate editor
+            const commonMouse = { bubbles: true, cancelable: true, view: window };
+            element.dispatchEvent(new MouseEvent('mousedown', commonMouse));
+            await wait(50);
+            element.dispatchEvent(new MouseEvent('mouseup', commonMouse));
+            element.click();
+            element.focus({ preventScroll: true });
+            await wait(200);
+            
+            const isEditable = element.isContentEditable || element.getAttribute('role') === 'textbox' || element.tagName === 'INPUT' || element.tagName === 'TEXTAREA';
             
             if (isEditable) {
-                element.innerHTML = '';
-                element.dispatchEvent(new InputEvent('beforeinput', { inputType: 'insertText', data: typeText, bubbles: true }));
-                document.execCommand('insertText', false, typeText);
-                if (!element.textContent || element.textContent.length < 1) {
-                    element.textContent = typeText;
+                // Clear existing
+                try {
+                    document.execCommand('selectAll', false, null);
+                    document.execCommand('delete', false, null);
+                } catch(e) {}
+                await wait(200);
+
+                // Type character by character to trigger listeners
+                for (let i = 0; i < typeText.length; i++) {
+                    const char = typeText[i];
+                    const common = { bubbles: true, cancelable: true, composed: true, view: window };
+                    const keyInit = { ...common, key: char, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0) };
+                    
+                    element.dispatchEvent(new KeyboardEvent('keydown', keyInit));
+                    
+                    const beforeInput = new InputEvent('beforeinput', { ...common, inputType: 'insertText', data: char });
+                    element.dispatchEvent(beforeInput);
+                    
+                    if (!beforeInput.defaultPrevented) {
+                        try {
+                            document.execCommand('insertText', false, char);
+                        } catch(e) {
+                             const selection = window.getSelection();
+                             if (selection && selection.rangeCount) {
+                                  const range = selection.getRangeAt(0);
+                                  range.deleteContents();
+                                  range.insertNode(document.createTextNode(char));
+                                  range.collapse(false);
+                             }
+                        }
+                    }
+                    
+                    element.dispatchEvent(new InputEvent('input', { ...common, inputType: 'insertText', data: char }));
+                    element.dispatchEvent(new KeyboardEvent('keyup', keyInit));
+                    
+                    if (Math.random() > 0.8) await wait(10 + Math.random() * 20);
                 }
+                
+                // Final commitment nudge for rich editors like Lexical/React
+                try {
+                    document.execCommand('insertText', false, ' ');
+                    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ' ' }));
+                    await wait(20);
+                    document.execCommand('delete', false, null);
+                    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+                } catch(e) {}
             } else {
-                element.value = '';
                 element.value = typeText;
             }
             
             element.dispatchEvent(new Event('input', { bubbles: true }));
             element.dispatchEvent(new Event('change', { bubbles: true }));
+            element.dispatchEvent(new Event('blur', { bubbles: true }));
             
             return { success: true, message: 'Typed into ' + selectorStr };
           })()
@@ -1286,7 +1440,8 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         el.setAttribute(attrName, i.toString());
         const label = document.createElement('div');
         label.innerText = i.toString();
-        label.style.cssText = 'position:fixed;background:rgba(139,92,246,0.95);color:white;padding:2px 4px;font-size:11px;font-family:sans-serif;border-radius:3px;z-index:1000000;pointer-events:none;font-weight:bold;box-shadow:0 2px 4px rgba(0,0,0,0.3);border:1px solid white;';
+        // Reavion Blue: #2563eb (hsl(221, 83%, 53%))
+        label.style.cssText = 'position:fixed;background:rgba(37,99,235,0.7);color:white;padding:1px 3px;font-size:9px;font-family:sans-serif;border-radius:2px;z-index:1000000;pointer-events:none;font-weight:bold;backdrop-filter:blur(2px);box-shadow:0 1px 2px rgba(0,0,0,0.2);';
         label.style.left = Math.max(0, rect.left) + 'px';
         label.style.top = Math.max(0, rect.top) + 'px';
         container.appendChild(label);
@@ -1341,11 +1496,11 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
               let html = '';
               // Draw vertical lines
               for (let x = 0; x <= width; x += step) {
-                html += \`<div style="position:absolute;left:\${x}px;top:0;bottom:0;width:1px;background:rgba(244,63,94,\${finalOpacity});"><span style="position:absolute;top:5px;left:2px;font-size:10px;color:#f43f5e;">\${x}</span></div>\`;
+                html += \`<div style="position:absolute;left:\${x}px;top:0;bottom:0;width:1px;background:rgba(37,99,235,\${finalOpacity});"><span style="position:absolute;top:5px;left:2px;font-size:10px;color:#2563eb;">\${x}</span></div>\`;
               }
               // Draw horizontal lines
               for (let y = 0; y <= height; y += step) {
-                html += \`<div style="position:absolute;top:\${y}px;left:0;right:0;height:1px;background:rgba(244,63,94,\${finalOpacity});"><span style="position:absolute;left:5px;top:2px;font-size:10px;color:#f43f5e;">\${y}</span></div>\`;
+                html += \`<div style="position:absolute;top:\${y}px;left:0;right:0;height:1px;background:rgba(37,99,235,\${finalOpacity});"><span style="position:absolute;left:5px;top:2px;font-size:10px;color:#2563eb;">\${y}</span></div>\`;
               }
               
               grid.innerHTML = html;
@@ -1531,7 +1686,8 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
     ...createSiteTools({
       getContents,
-      getSpeed: (options?.getSpeed || (() => 'normal'))
+      getSpeed: (options?.getSpeed || (() => 'normal')),
+      workspaceId: options?.workspaceId
     }),
   ];
 }

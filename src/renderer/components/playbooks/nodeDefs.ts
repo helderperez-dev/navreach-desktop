@@ -6,7 +6,7 @@ import {
     Cpu, Webhook, MousePointer,
     CheckCircle, PauseCircle,
     Heart, Reply, Send, UserPlus, MessagesSquare, MoveDown, Wand2, Users, User,
-    Eye, Terminal, Layers
+    Eye, Terminal, Layers, Download
 } from 'lucide-react';
 import { PlaybookNodeType } from '@/types/playbook';
 
@@ -121,6 +121,16 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         inputs: 1,
         outputs: 1
     },
+    capture_leads: {
+        type: 'capture_leads',
+        label: 'Capture Leads',
+        category: NODE_CATEGORIES.TARGET,
+        icon: Download,
+        description: 'Save found leads to database',
+        color: 'bg-secondary text-secondary-foreground',
+        inputs: 1,
+        outputs: 1
+    },
     navigate: {
         type: 'navigate',
         label: 'Navigate',
@@ -151,16 +161,6 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         category: NODE_CATEGORIES.BROWSER,
         icon: MoveDown,
         description: 'Scroll the page',
-        color: 'bg-blue-500/10 text-blue-500',
-        inputs: 1,
-        outputs: 1
-    },
-    engage: {
-        type: 'engage',
-        label: 'Engage',
-        category: NODE_CATEGORIES.ACTION,
-        icon: MessageCircle,
-        description: 'Interact/Comment/DM',
         color: 'bg-blue-500/10 text-blue-500',
         inputs: 1,
         outputs: 1
@@ -522,16 +522,7 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         inputs: 1,
         outputs: 1
     },
-    humanize: {
-        type: 'humanize',
-        label: 'Humanize',
-        category: NODE_CATEGORIES.CAPABILITY,
-        icon: Wand2,
-        description: 'Make text undetectable by AI detectors',
-        color: 'bg-purple-500/10 text-purple-500',
-        inputs: 1,
-        outputs: 1
-    },
+
     approval: {
         type: 'approval',
         label: 'Approval',

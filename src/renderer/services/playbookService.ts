@@ -38,7 +38,7 @@ export const playbookService = {
             .insert([{
                 ...playbook,
                 user_id: user.id,
-                version: '1.0.0',
+                version: playbook.version || '1.0.0',
                 visibility: 'private'
             }])
             .select()

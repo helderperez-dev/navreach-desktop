@@ -6,7 +6,7 @@ import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
 import type { ModelProvider, ModelConfig, Message } from '../../shared/types';
-import { createBrowserTools, getWebviewContents } from './browser-tools';
+import { createBrowserTools, getWebviewContents, resetBrowser } from './browser-tools';
 import { createTargetTools } from './target-tools';
 import { createPlaybookTools } from './playbook-tools';
 import { createSiteTools } from './site-tools';
@@ -17,7 +17,7 @@ import { supabase } from '../lib/supabase';
 import Store from 'electron-store';
 import type { AppSettings } from '../../shared/types';
 
-const store = new Store<AppSettings>({
+export const store = new Store<AppSettings>({
     name: 'settings',
 });
 
@@ -44,13 +44,13 @@ interface ChatRequest {
     };
 }
 
-interface ChatModelOptions {
+export interface ChatModelOptions {
     streaming?: boolean;
     safeMode?: boolean; // Disables extra kwargs like parallel_tool_calls OR extra params like reasoning
     disableReasoning?: boolean; // Specifically disables reasoning but keeps tools if possible
 }
 
-function createChatModel(provider: ModelProvider, model: ModelConfig, options: ChatModelOptions | boolean = true) {
+export function createChatModel(provider: ModelProvider, model: ModelConfig, options: ChatModelOptions | boolean = true) {
     // Backwards compatibility for the third argument being 'streaming' boolean
     const streaming = typeof options === 'boolean' ? options : options.streaming ?? true;
     const safeMode = typeof options === 'object' ? options.safeMode : (arguments.length > 3 ? arguments[3] : false);
@@ -219,28 +219,25 @@ You can navigate **ANY** website, even those you've never seen.
     *   If standard \`browser_click\` is risky or ambiguous, use \`browser_mark_page\`.
     *   This draws numeric IDs on everything. **ONCE MARKED, YOU MUST PREFER** calling \`browser_click\` with that numeric ID (e.g., "42"). This is significantly more reliable than CSS selectors for dynamic platforms.
 
-**TOOL HIERARCHY**
-1.  **SPECIALIZED TOOLS (Highest Priority)**
-    *   If executing a Playbook node or working on X.com/Reddit/LinkedIn, use the specific tools (\`x_like\`, \`reddit_comment\`, etc.).
-    *   They are optimized for those platforms.
+**TOOL HIERARCHY & SELECTION**
+1.  **PLATFORM-SPECIFIC TOOLS (TOP PRIORITY)**
+    *   If you are on **LinkedIn**, you MUST use tools starting with \`linkedin_\` (e.g., \`linkedin_scan_posts\`, \`linkedin_search\`).
+    *   If you are on **Reddit**, you MUST use tools starting with \`reddit_\` (e.g., \`reddit_scan_posts\`, \`reddit_search\`).
+    *   If you are on **X.com**, you MUST use tools starting with \`x_\` (e.g., \`x_scan_posts\`, \`x_advanced_search\`).
+    *   **CRITICAL**: NEVER use a tool from one platform (e.g. reddit) on a different platform (e.g. linkedin) even if the action name sounds similar.
 
-2.  **UNIVERSAL BROWSER TOOLS (The "Skeleton Key")**
+2.  **UNIVERSAL BROWSER TOOLS (FALLBACK)**
+    *   Use these ONLY if a specialized tool for the current site does not exist or has failed.
     *   \`browser_navigate\`: Go to URL.
     *   \`browser_dom_snapshot\`: **YOUR EYES**. Use \`only_visible: true\` by default.
-    *   \`browser_move_to_element\`: **VISUAL MOTION**. Use this to scroll smoothly to an element and move the pointer helper. **Highly recommended to show the user what you are focusing on.**
-    *   \`browser_extract\`: "Read" the page. summaries, finding specific data points.
-    *   \`browser_mark_page\`: **PRECISION AIM**. Use when selectors are complex.
-    *   \`browser_click\`: Click things.
-    *   \`browser_type\`: Type things.
-    *   \`browser_scroll\`: Reveal more content.
+    *   \`browser_move_to_element\`: **VISUAL MOTION**. Smoothly focus on elements.
+    *   \`browser_mark_page\`: **PRECISION AIM**. Use to assign numeric IDs for clicking/typing.
 
 **PLATFORMS & SPECIALIZED STRATEGY**: 
-*   **X (Twitter)**: 
-    *   Always prefer \`x_advanced_search\` for discovery. **DO NOT** use generic \`browser_navigate\` with search queries.
-    *   **X SCAN SUPERPOWER**: Use \`x_scan_posts\` immediately after searching to get 10-15 posts at once. It captures engagement state, authors, and content in one go.
-    *   **ENGAGEMENT**: Always use the \`expected_author\` parameter in \`x_engage\`/\`x_reply\` to verify the target.
-    *   **BE HUMAN**: Vary your engagement types (like vs reply vs follow). Don't just "reply all".
-*   **LINKEDIN/REDDIT**: Use platform-specific tools first, then fallback to \`browser_mark_page\` + \`browser_click\` for high precision.
+*   **X (Twitter)**: Use \`x_advanced_search\` followed by \`x_scan_posts\`.
+*   **LinkedIn**: Use \`linkedin_search\` followed by \`linkedin_scan_posts\` to find and identify targets.
+    *   **SMART SEARCH (NEW)**: The \`linkedin_search\` tool now accepts an \`instruction\` parameter (e.g., "Find SaaS founders in NY"). ALWAYS prefer using this \`instruction\` field over raw keywords if the user's request is natural language. The tool will auto-generate the optimal boolean search query.
+*   **Reddit**: Use \`reddit_search\` or \`reddit_scout_community\` followed by \`reddit_scan_posts\`.
 
 
 **ERROR RECOVERY & RESILIENCE**
@@ -262,7 +259,14 @@ If running a Playbook ({{playbooks.ID}}):
 3.  **Variable Resolution**: **CRITICAL**: You must resolve all variables like {{scout-1.topics}}, {{search-1.items[0].url}}, etc. BEFORE calling any tool.
     *   Look at the tool outputs from previous nodes in the chat history.
     *   If a node output is a list, pick the current item correctly.
-4.  **Visualization (MANDATORY)**: The user's ONLY way to see progress is through your reports.
+4.  **CONTROL NODES & LOOPS**:
+    *   **Loop Node**: This controls iteration.
+        *   **Infinite Loop**: If configured with \`infinite: true\`, you MUST continue the loop indefinitely (start body -> finish body -> restart body) until a critical failure occurs (e.g. "Next Page" button not found) or the user stops it.
+        *   **Count Loop**: If \`count: N\`, execute the body exactly N times.
+        *   **List Loop**: If iterating over a list, run once for each item.
+    *   **Condition Node**: Evaluate logic. True -> Output 1. False -> Output 2.
+
+5.  **Visualization (MANDATORY)**: The user's ONLY way to see progress is through your reports.
     *   **RULE**: YOU MUST call \`report_playbook_node_status(nodeId = "...", status = "running")\` IMMEDIATELY upon starting a node.
     *   **RULE**: YOU MUST call \`report_playbook_node_status(nodeId = "...", status = "success")\` IMMEDIATELY after finalizing a node's logic.
     *   **NEVER SKIP A NODE**: Even if a node is simple (like "Start" or "End"), report it.
@@ -278,10 +282,14 @@ If running a Playbook ({{playbooks.ID}}):
     *   **{{agent.decide}}**: YOU MUST GENERATE FINAL TEXT. Be creative and context-aware.
     *   **{{target.url}}**: Extract the actual URL from your state/context.
 
-**DATA COLLECTION RULES**
-*   **Tasks**: "Find leads", "Scrape", "Create list".
-*   **Action**: Use \`db_create_target\` or \`db_create_target_list\`.
-*   **Constraint**: Do NOT engage (like/reply) during data collection unless explicitly told.
+**DATA COLLECTION & LEAD GENERATION RULES**
+*   **Goal**: "Find leads", "Scrape people", "Create list", "Capture targets".
+*   **Universal Strategy**:
+    1. Use the platform-specific search tool (e.g., \`linkedin_advanced_search\`, \`x_search\`, or \`reddits_search\`) to find targets.
+    2. Use the platform-specific extraction tool (e.g., \`linkedin_extract_people\` or \`x_extract_profiles\`) to scan the results page.
+    3. Use \`capture_leads_bulk\` to save ALL results to a target list in a single turn. **NEVER use \`db_create_target\` for search results; always batch them.**
+*   **Strategic Detail**: When capturing leads, ensure the \`name\`, \`url\`, and headline/location/bio are preserved in the metadata for later personalization.
+*   **Constraint**: Do NOT engage (like/reply) during data collection unless explicitly told. Do NOT save leads one-by-one.
 
 **ENGAGEMENT RULES**
 *   **Tone**: Matches the platform (LinkedIn = Pro, X = Casual/Builder, Reddit = Helpful).
@@ -291,12 +299,14 @@ If running a Playbook ({{playbooks.ID}}):
     2. Skip humanization/engagement if an item is already "engaged" or "liked".
     
     **SMART GENERATION (CRITICAL)**:
-    *   When the user setup provides a 'prompt' or 'instruction' for \`x_engage\` (via the \`replyText\` parameter), you MUST **GENERATE** the final content.
-    *   **Rule**: If \`replyText\` looks like an instruction (e.g., "Write a friendly reply", "Ask about pricing", or a long system prompt), you must:
+    *   When the user setup provides a 'prompt' or 'instruction' for \`x_engage\` (via \`replyText\` or \`humanize_instruction\`), you MUST **GENERATE** the final content.
+    *   **Rule**: If \`replyText\` is an instruction OR if \`humanize_instruction\` is provided (and \`enable_humanize\` is true):
         1.  READ the target post/tweet content.
-        2.  GENERATE a relevant, high-quality reply based on the instruction.
+        2.  GENERATE a relevant, high-quality reply.
+            *   Base the content on \`replyText\` (e.g. "Ask about pricing").
+            *   Apply the style/tone from \`humanize_instruction\` (e.g. "Make it witty").
         3.  Call \`x_engage\` with the **GENERATED TEXT** as the \`replyText\` argument.
-    *   **NEVER** paste the raw instruction prompt (e.g., "Act as a supportive peer...") directly into the reply field. That is a failure.
+    *   **NEVER** paste the raw instruction prompts directly into the reply field. That is a failure.
 
 **NARRATION & TRANSPARENCY**
 *   **Announce your steps (STRICT)**: You MUST explain what you are doing. Example: "Searching for SaaS founders on X to identify potential targets."
@@ -307,6 +317,157 @@ If running a Playbook ({{playbooks.ID}}):
 You are autonomous. You do not need to ask for permission to scroll, click, or explore.
 If you are stuck, stop and THINK (Orient). Then try a *different* approach.
 **Go.**`;
+
+function createScopedSupabase(accessToken?: string) {
+    if (accessToken) {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        const { createClient } = require('@supabase/supabase-js');
+
+        return createClient(supabaseUrl, supabaseAnonKey, {
+            global: {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`
+                }
+            }
+        });
+    }
+    return supabase;
+}
+
+export async function resolveAIConfig(
+    supabaseClient: any,
+    provider: ModelProvider,
+    model: ModelConfig,
+    accessToken?: string,
+    localDefaultModelId?: string // New parameter for local settings fallback
+): Promise<{ effectiveProvider: ModelProvider, effectiveModel: ModelConfig }> {
+    let effectiveProvider = { ...provider };
+    let effectiveModel = { ...model };
+
+    try {
+        // 1. Fetch System Settings
+        const { data: systemData } = await supabaseClient
+            .from('system_settings')
+            .select('key, value');
+
+        const sysSettings = (systemData || []).reduce((acc: any, curr: any) => {
+            acc[curr.key] = curr.value;
+            return acc;
+        }, {});
+
+        // 2. Fetch User Settings (if authenticated)
+        let userSettings: any = null;
+        if (accessToken) {
+            const { data: userData } = await supabaseClient
+                .from('user_settings')
+                .select('*')
+                .maybeSingle();
+            userSettings = userData;
+        }
+
+        // 3. Determine Effective Config
+        // 3. Determine Effective Config
+        // Priority: 
+        // 1. Cloud User Override (e.g. forced by admin/plan)
+        // 2. Local User Selection ('defaultModelId' from input settings)
+        // 3. System Default (if nothing else selected)
+
+        const cloudProviderType = userSettings?.ai_provider;
+        const cloudModelId = userSettings?.ai_model;
+        const cloudApiKey = userSettings?.ai_api_key;
+
+        const sysProviderType = sysSettings['default_ai_provider'];
+        const sysModelId = sysSettings['default_ai_model'];
+
+        // If localDefaultModelId is provided, we need to find what provider it belongs to.
+        // We assume valid model IDs formats or that we can resolve provider later.
+        let localProviderType = null;
+        if (localDefaultModelId) {
+            // Heuristic: If we have store access (we are in main process), we could look it up.
+            // But simpler: If the ID matches a known pattern or check all provider models.
+            // Since we can't easily access the full provider list here without passing it, 
+            // we rely on the caller to have handled some of this or we do basic checks.
+            // OR: We check if the 'localDefaultModelId' matches the requested provider's models first.
+        }
+
+        const targetProviderType = cloudProviderType || (localDefaultModelId ? undefined : sysProviderType);
+        const targetModelId = cloudModelId || localDefaultModelId || sysModelId;
+        const targetApiKey = cloudApiKey || sysSettings['system_ai_api_key'];
+
+        // If we have a local model ID but no provider override from cloud, 
+        // we need to set the provider type correctly for that model.
+        // If the 'localDefaultModelId' is set, we trust the caller (createChatModel) 
+        // or we need to find the provider for this model ID.
+        // However, resolveAIConfig is usually called with prompt-specific provider/model.
+        // If ModelProvidersSettings set a default, it's globally stored.
+
+        // Revised Logic:
+        // If User Cloud Settings exist -> USE THEM (They are overrides)
+        // Else If Local Default exists -> USE IT
+        // Else If System Default exists -> USE IT
+
+        let finalModelId = targetModelId;
+        let finalProviderType = targetProviderType;
+
+        // If we are using local default, we need to infer provider if not set
+        if (!cloudProviderType && localDefaultModelId && !finalProviderType) {
+            // We don't have the provider mapping here easily unless we pass all providers.
+            // BUT, usually the 'provider' arg passed to this function is the 'start' point.
+            // If the localDefaultModelId is inside the passed 'provider', we are good.
+            // If it's a cross-provider switch (e.g. OpenAI -> Anthropic), we have a problem 
+            // unless we fetch the full list.
+
+            // To fix properly: We need to search all providers for this model ID.
+            const providers = store.get('modelProviders') || [];
+            const managedSystemProvider: ModelProvider[] = sysProviderType && sysModelId ? [{
+                id: 'system-default',
+                name: 'Reavion',
+                type: sysProviderType as any,
+                apiKey: 'managed-by-system',
+                models: [{ id: sysModelId, name: 'Reavion Flash', providerId: 'system-default', contextWindow: 4096, enabled: true }],
+                enabled: true
+            }] : [];
+
+            const allProviders = [...providers, ...managedSystemProvider];
+            const foundProvider = allProviders.find((p: any) =>
+                p.models?.some((m: any) => m.id === localDefaultModelId)
+            );
+
+            if (foundProvider) {
+                finalProviderType = foundProvider.type;
+                effectiveProvider = { ...foundProvider, apiKey: foundProvider.apiKey || effectiveProvider.apiKey };
+            }
+        } else if (!finalProviderType && sysProviderType) {
+            finalProviderType = sysProviderType;
+        }
+
+        if (finalProviderType) {
+            effectiveProvider.type = finalProviderType as any;
+            effectiveProvider.id = finalProviderType;
+            if (finalProviderType === 'openrouter' && !effectiveProvider.baseUrl) {
+                effectiveProvider.baseUrl = 'https://openrouter.ai/api/v1';
+            }
+        }
+
+        if (finalModelId) {
+            effectiveModel.id = finalModelId;
+            effectiveModel.providerId = effectiveProvider.id;
+            effectiveModel.name = finalModelId;
+        }
+
+        if (targetApiKey && targetApiKey.trim() !== '') {
+            effectiveProvider.apiKey = targetApiKey;
+        } else if (effectiveProvider.type !== provider.type && (!effectiveProvider.apiKey || effectiveProvider.apiKey.trim() === '')) {
+            console.warn(`[AI Service] Provider switched to ${effectiveProvider.type} but no API Key found in settings!`);
+        }
+
+    } catch (e) {
+        console.error('[AI Service] Error resolving AI config:', e);
+    }
+
+    return { effectiveProvider, effectiveModel };
+}
 
 export function setupAIHandlers(ipcMain: IpcMain): void {
     const browserTools = createBrowserTools();
@@ -369,12 +530,20 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
                 messages,
                 model,
                 provider,
-                initialUserPrompt
+                initialUserPrompt,
+                accessToken
             } = request;
+
+            const scopedSupabase = createScopedSupabase(accessToken);
+            // Retrieve local default model ID from store
+            const localDefaultModelId = store.get('defaultModelId');
+
+            // Resolve Config
+            const { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken, localDefaultModelId);
 
             const isDiscovery = !initialUserPrompt || initialUserPrompt.trim().length < 2;
             // Using Safe Mode (no reasoning/tools-prep) for suggestions to ensure maximum compatibility
-            const chatModel = createChatModel(provider, model, { streaming: false, safeMode: true });
+            const chatModel = createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
 
             // Extract context for better suggestions
             const playbookContext = request.playbooks?.map(p => `- ${p.name}: ${p.description}`).join('\n') || 'No active playbooks.';
@@ -453,6 +622,18 @@ CRITICAL:
         }
     });
 
+    ipcMain.handle('ai:reset-context', async (event, workspaceId?: string) => {
+        try {
+            console.log(`[AI Service] Resetting context for workspace: ${workspaceId || 'current'}`);
+            await resetBrowser();
+            // Optional: clear any other state if needed (e.g. mcp cache)
+            return { success: true };
+        } catch (error) {
+            console.error('Reset Context Error:', error);
+            return { success: false, error: String(error) };
+        }
+    });
+
     ipcMain.handle('ai:chat', async (event, request: ChatRequest) => {
         try {
             const {
@@ -478,28 +659,88 @@ CRITICAL:
             }
 
             // Create a scoped Supabase client for this request using the access token
-            // This avoids the "AuthSessionMissingError" by setting the Authorization header directly
-            let scopedSupabase = supabase;
+            const scopedSupabase = createScopedSupabase(accessToken);
             if (accessToken) {
-                // We use the createClient from the library, but we need to import it.
-                // Since we can't easily import it here without changing imports, we'll try to use the global one but
-                // it's safer to create a new one. The best way is to rely on the fact that if we just want to query,
-                // we can create a client with the token.
-                const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-                const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-                const { createClient } = require('@supabase/supabase-js');
-
-                scopedSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-                    global: {
-                        headers: {
-                            Authorization: `Bearer ${accessToken}`
-                        }
-                    }
-                });
                 console.log('[AI Service] Created scoped Supabase client with access token');
             } else {
                 console.warn('[AI Service] No access token provided, using anonymous client');
             }
+
+            // Retrieve local default model ID from store
+            const localDefaultModelId = store.get('defaultModelId');
+
+            // Resolve AI Configuration
+            const { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken, localDefaultModelId);
+
+            if (effectiveProvider.id !== provider.id || effectiveModel.id !== model.id) {
+                console.log(`[AI Service] Using Resolved Config: ${effectiveProvider.type}/${effectiveModel.id}`);
+            }
+
+            /* 
+            // --- Resolve AI Configuration (System Defaults & User Overrides) ---
+            let effectiveProvider = { ...provider };
+            let effectiveModel = { ...model };
+
+            try {
+                // 1. Fetch System Settings
+                const { data: systemData } = await scopedSupabase
+                    .from('system_settings')
+                    .select('key, value');
+
+                const sysSettings = (systemData || []).reduce((acc: any, curr: any) => {
+                    acc[curr.key] = curr.value;
+                    return acc;
+                }, {});
+
+                // 2. Fetch User Settings (if authenticated)
+                let userSettings: any = null;
+                if (accessToken) {
+                    const { data: userData } = await scopedSupabase
+                        .from('user_settings')
+                        .select('*')
+                        .maybeSingle();
+                    userSettings = userData;
+                }
+
+                // 3. Determine Effective Config
+                // Priority: User Override > System Default > Request Original
+
+                const targetProviderType = userSettings?.ai_provider || sysSettings['default_ai_provider'];
+                const targetModelId = userSettings?.ai_model || sysSettings['default_ai_model'];
+                const targetApiKey = userSettings?.ai_api_key || sysSettings['system_ai_api_key'];
+
+                if (targetProviderType) {
+                    console.log(`[AI Service] Applying Provider Override: ${targetProviderType}`);
+                    effectiveProvider.type = targetProviderType as any;
+                    effectiveProvider.id = targetProviderType; // Ensure ID matches type for consistency
+
+                    // Specific fix for OpenRouter base URL if not present
+                    if (targetProviderType === 'openrouter' && !effectiveProvider.baseUrl) {
+                        effectiveProvider.baseUrl = 'https://openrouter.ai/api/v1';
+                    }
+                }
+
+                if (targetModelId) {
+                    console.log(`[AI Service] Applying Model Override: ${targetModelId}`);
+                    effectiveModel.id = targetModelId;
+                    effectiveModel.providerId = effectiveProvider.id;
+                    effectiveModel.name = targetModelId; // Fallback name
+                }
+
+                if (targetApiKey && targetApiKey.trim() !== '') {
+                    console.log('[AI Service] Applying API Key Override (Hidden)');
+                    effectiveProvider.apiKey = targetApiKey;
+                } else if (effectiveProvider.type !== provider.type && (!effectiveProvider.apiKey || effectiveProvider.apiKey.trim() === '')) {
+                    // If we switched provider type via override, but didn't have a key override, 
+                    // and the original request key is likely for the WRONG provider, we warn.
+                    console.warn(`[AI Service] Provider switched to ${effectiveProvider.type} but no API Key found in settings! Using request key as fallback (may fail).`);
+                }
+
+            } catch (configError) {
+                console.error('[AI Service] Error resolving AI configuration:', configError);
+                // Fallback to original request on error
+            } */
+
 
             console.log('[AI Service] Context received:', {
                 playbooksCount: playbooks?.length,
@@ -522,11 +763,12 @@ CRITICAL:
             }
 
             // Re-create tools with context AND the scoped supabase client
-            const requestBrowserTools = createBrowserTools({ getSpeed });
-            const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase });
+            const requestBrowserTools = createBrowserTools({ getSpeed, workspaceId: request.workspaceId });
+            const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase, workspaceId: request.workspaceId });
             let requestPlaybookTools = createPlaybookTools({
                 playbooks,
                 supabaseClient: scopedSupabase,
+                workspaceId: request.workspaceId,
                 onPlaybookLoaded: (playbook) => {
                     if (playbook.execution_defaults?.speed) {
                         currentSessionSpeed = playbook.execution_defaults.speed;
@@ -541,8 +783,8 @@ CRITICAL:
             }
 
 
-            const requestIntegrationTools = createIntegrationTools(workspaceSettings);
-            const requestUtilityTools = createUtilityTools({ provider, model });
+            const requestIntegrationTools = createIntegrationTools(workspaceSettings, request.workspaceId);
+            const requestUtilityTools = createUtilityTools({ provider: effectiveProvider, model: effectiveModel, workspaceId: request.workspaceId });
 
             const requestToolsRaw = [
                 ...requestBrowserTools,
@@ -626,10 +868,19 @@ CRITICAL:
 
             // 1. Playbooks
             try {
-                const { data: playbooks } = await scopedSupabase.from('playbooks').select('id, name, description, graph').limit(20);
-                if (playbooks && playbooks.length > 0) {
+                let query = scopedSupabase
+                    .from('playbooks')
+                    .select('id, name, description, graph')
+                    .limit(20);
+
+                if (request.workspaceId) {
+                    query = query.eq('workspace_id', request.workspaceId);
+                }
+
+                const { data: playbooksData } = await query;
+                if (playbooksData && playbooksData.length > 0) {
                     contextInjection += "\n**Playbooks ({{playbooks.ID}}):**\n";
-                    playbooks.forEach(p => {
+                    playbooksData.forEach((p: any) => {
                         // Extract Node IDs for context context suggestion
                         const nodeIds = (p.graph as any)?.nodes?.map((n: any) => `"${n.label || n.id}" (${n.id})`).join(', ') || 'No nodes';
                         contextInjection += `- ${p.name}: {{playbooks.${p.id}}}\n  Description: ${p.description || 'None'}\n  Nodes: ${nodeIds}\n`;
@@ -639,10 +890,19 @@ CRITICAL:
 
             // 2. Target Lists
             try {
-                const { data: lists } = await scopedSupabase.from('target_lists').select('id, name').limit(20);
+                let query = scopedSupabase
+                    .from('target_lists')
+                    .select('id, name')
+                    .limit(20);
+
+                if (request.workspaceId) {
+                    query = query.eq('workspace_id', request.workspaceId);
+                }
+
+                const { data: lists } = await query;
                 if (lists && lists.length > 0) {
                     contextInjection += "\n**Target Lists ({{lists.ID}}):**\n";
-                    lists.forEach(l => contextInjection += `- ${l.name}: {{lists.${l.id}}}\n`);
+                    lists.forEach((l: any) => contextInjection += `- ${l.name}: {{lists.${l.id}}}\n`);
                 }
             } catch (e) { console.error('Error fetching lists context:', e); }
 
@@ -672,12 +932,12 @@ CRITICAL:
             const timeContext = `\n**TEMPORAL CONTEXT:**\n- Current Date: ${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n- Current Time: ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}\n- ISO Timestamp: ${now.toISOString()}\n- Note: Use this "Current Date" as the anchor for all relative date calculations (e.g., "last week", "yesterday", "30 days ago").\n`;
 
             const nonVisionModels = ['glm-4.7', 'glm-4-9b', 'deepseek-chat', 'llama-3', 'mistral-large'];
-            const modelLower = model.id.toLowerCase();
+            const modelLower = effectiveModel.id.toLowerCase();
             const isKnownNonVision = nonVisionModels.some(m => modelLower.includes(m)) ||
                 (modelLower.startsWith('glm-') && !modelLower.includes('v'));
 
             const visionDirective = isKnownNonVision
-                ? `\n\n**CRITICAL: NO VISION CAPABILITIES**\nYour current model (${model.id}) CANNOT see images or screenshots. 
+                ? `\n\n**CRITICAL: NO VISION CAPABILITIES**\nYour current model (${effectiveModel.id}) CANNOT see images or screenshots. 
 - **DO NOT** use 'browser_screenshot' or 'browser_vision_snapshot'.
 - **USE 'browser_dom_snapshot'** exclusively to see the page content via text/DOM.
 - If you need to find something on the screen, rely on the DOM tree and IDs.`
@@ -704,7 +964,7 @@ You are in FAST mode.
                 : systemPrompt;
 
             if (enableTools) {
-                let chatModel = createChatModel(provider, model, false);
+                let chatModel = createChatModel(effectiveProvider, effectiveModel, false);
                 console.log('Registering AI Tools:', deduplicatedTools.map(t => t.name).join(', '));
                 // Bind tools without strict mode to avoid "all fields must be required" warning
                 // The strict mode requires all schema fields to be required, which conflicts with optional tool parameters
@@ -782,7 +1042,7 @@ You are in FAST mode.
                         let errorMessage = 'Model call failed';
                         if (invokeError instanceof Error) {
                             errorMessage = invokeError.message;
-                        } else if (typeof invokeError === 'object' && invokeError !== null) {
+                        } else if (invokeError && typeof invokeError === 'object') {
                             errorMessage = invokeError.message || invokeError.error || JSON.stringify(invokeError);
                         } else if (typeof invokeError === 'string') {
                             errorMessage = invokeError;
@@ -799,34 +1059,39 @@ You are in FAST mode.
 
                         // AUTO-RECOVERY LOGIC
                         // If model rejects tools or specific config (400 Bad Request / Schema validation), try a staged downgrade
-                        if (errorMessage.includes('400') || errorMessage.toLowerCase().includes('not support') || errorMessage.toLowerCase().includes('schema') || errorMessage.toLowerCase().includes('validation')) {
+                        const isToolIncompatible = errorMessage.toLowerCase().includes('not support') || errorMessage.toLowerCase().includes('tool use is not supported');
+
+                        if (errorMessage.includes('400') || isToolIncompatible || errorMessage.toLowerCase().includes('schema') || errorMessage.toLowerCase().includes('validation')) {
                             console.log(`[Auto-Recovery] Model invocation failed (${errorMessage}). Attempting downgrade...`);
 
                             let success = false;
 
                             // Stage 1: Attempt without Reasoning BUT WITH tools
-                            try {
-                                console.log('[Auto-Recovery] Stage 1: Retrying with reasoning DISABLED...');
-                                if (window && !window.isDestroyed()) {
-                                    window.webContents.send('ai:stream-chunk', {
-                                        content: `⚠️ Model config error. Retrying with reasoning disabled...\n`,
-                                        done: false,
-                                        isNarration: true,
-                                    });
+                            // Skip Stage 1 if tools are explicitly not supported
+                            if (!isToolIncompatible) {
+                                try {
+                                    console.log('[Auto-Recovery] Stage 1: Retrying with reasoning DISABLED...');
+                                    if (window && !window.isDestroyed()) {
+                                        window.webContents.send('ai:stream-chunk', {
+                                            content: `⚠️ Model config error. Retrying with reasoning disabled...\n`,
+                                            done: false,
+                                            isNarration: true,
+                                        });
+                                    }
+
+                                    const downgradedModel = createChatModel(provider, model, { streaming: false, disableReasoning: true });
+                                    const bindedDowngraded = downgradedModel.bindTools(deduplicatedTools, { strict: false } as any);
+
+                                    response = await bindedDowngraded.invoke(langchainMessages);
+
+                                    // If success, update the context for subsequent turns so we don't keep failing
+                                    chatModel = downgradedModel;
+                                    modelWithTools = bindedDowngraded;
+                                    success = true;
+                                    console.log('[Auto-Recovery] Stage 1 Success: Continuing without reasoning.');
+                                } catch (stage1Error: any) {
+                                    console.error('[Auto-Recovery] Stage 1 Failed:', stage1Error?.message || stage1Error);
                                 }
-
-                                const downgradedModel = createChatModel(provider, model, { streaming: false, disableReasoning: true });
-                                const bindedDowngraded = downgradedModel.bindTools(deduplicatedTools, { strict: false } as any);
-
-                                response = await bindedDowngraded.invoke(langchainMessages);
-
-                                // If success, update the context for subsequent turns so we don't keep failing
-                                chatModel = downgradedModel;
-                                modelWithTools = bindedDowngraded;
-                                success = true;
-                                console.log('[Auto-Recovery] Stage 1 Success: Continuing without reasoning.');
-                            } catch (stage1Error: any) {
-                                console.error('[Auto-Recovery] Stage 1 Failed:', stage1Error.message);
                             }
 
                             // Stage 2: Safe Mode (No tools at all)
@@ -848,8 +1113,9 @@ You are in FAST mode.
                                     success = true;
                                     console.log('[Auto-Recovery] Stage 2 Success: Continuing in safe mode.');
                                 } catch (stage2Error: any) {
-                                    console.error('[Auto-Recovery] Stage 2 Failed:', stage2Error.message);
-                                    errorMessage = `Recovery failed: ${stage2Error.message || stage2Error}`;
+                                    const stage2ErrorMsg = stage2Error?.message || String(stage2Error);
+                                    console.error('[Auto-Recovery] Stage 2 Failed:', stage2ErrorMsg);
+                                    errorMessage = `Recovery failed: ${stage2ErrorMsg}`;
                                 }
                             }
                         }
@@ -1239,8 +1505,12 @@ You are in FAST mode.
 
     ipcMain.handle('ai:chat-sync', async (_event, request: ChatRequest) => {
         try {
-            const { messages, model, provider, systemPrompt } = request;
-            const chatModel = createChatModel(provider, model, false);
+            const { messages, model, provider, systemPrompt, accessToken } = request;
+
+            const scopedSupabase = createScopedSupabase(accessToken);
+            const { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken);
+
+            const chatModel = createChatModel(effectiveProvider, effectiveModel, false);
             const langchainMessages = convertMessages(messages, systemPrompt);
 
             const response = await chatModel.invoke(langchainMessages);
@@ -1327,3 +1597,5 @@ You are in FAST mode.
         }
     });
 }
+
+// Redundant tool functions removed. Using imported versions instead.

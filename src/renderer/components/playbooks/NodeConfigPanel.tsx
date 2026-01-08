@@ -255,15 +255,31 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                         </Field>
 
                         {config.source === 'number' ? (
-                            <Field label="Iterations">
-                                <Input
-                                    type="number"
-                                    value={config.count || 1}
-                                    onChange={(e) => handleConfigChange('count', parseInt(e.target.value))}
-                                    placeholder="e.g. 5"
-                                    className="h-9 text-xs"
-                                />
-                            </Field>
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between px-1">
+                                    <Label className="text-[12px] text-muted-foreground">Infinite Loop</Label>
+                                    <Switch
+                                        checked={config.infinite === true}
+                                        onCheckedChange={(v) => handleConfigChange('infinite', v)}
+                                    />
+                                </div>
+                                {config.infinite && (
+                                    <p className="text-[10px] text-muted-foreground bg-muted p-2 rounded">
+                                        Tip: Ensure your loop contains a "Navigate" or "Click" action (e.g. Next Page) to avoid processing the same data forever.
+                                    </p>
+                                )}
+                                {!config.infinite && (
+                                    <Field label="Iterations">
+                                        <Input
+                                            type="number"
+                                            value={config.count || 1}
+                                            onChange={(e) => handleConfigChange('count', parseInt(e.target.value))}
+                                            placeholder="e.g. 5"
+                                            className="h-9 text-xs"
+                                        />
+                                    </Field>
+                                )}
+                            </div>
                         ) : (
                             <Field label="Array Variable">
                                 <Select
@@ -471,59 +487,6 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                 />
                             </Field>
                         )}
-                    </div>
-                );
-            case 'engage':
-                return (
-                    <div className="space-y-4">
-                        <Field label="Channel">
-                            <Select
-                                value={config.channel || 'dm'}
-                                onValueChange={(v) => handleConfigChange('channel', v)}
-                            >
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="dm">Direct Message</SelectItem>
-                                    <SelectItem value="comment">Comment</SelectItem>
-                                    <SelectItem value="x_reply">X Reply</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </Field>
-                        <Field label="Tone">
-                            <Select
-                                value={config.tone || 'direct'}
-                                onValueChange={(v) => handleConfigChange('tone', v)}
-                            >
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="direct">Direct</SelectItem>
-                                    <SelectItem value="curious">Curious</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </Field>
-                        <Field label="Length">
-                            <Select
-                                value={config.length || 'medium'}
-                                onValueChange={(v) => handleConfigChange('length', v)}
-                            >
-                                <SelectTrigger><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="short">Short</SelectItem>
-                                    <SelectItem value="medium">Medium</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </Field>
-                        <div className="flex items-center justify-between">
-                            <Field>
-                                <div className="flex items-center justify-between">
-                                    <Label>Personalization</Label>
-                                    <Switch
-                                        checked={config.personalization || false}
-                                        onCheckedChange={(c) => handleConfigChange('personalization', c)}
-                                    />
-                                </div>
-                            </Field>
-                        </div>
                     </div>
                 );
             case 'x_scout':
@@ -996,6 +959,55 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                             </div>
                         )}
 
+                        <div className="space-y-3 pt-2 border-t border-border/40">
+                            <div className="flex items-center justify-between px-1">
+                                <Label className="text-[12px] text-muted-foreground">Humanize / Rewrite Content</Label>
+                                <Switch
+                                    checked={config.enable_humanize === true}
+                                    onCheckedChange={(v) => handleConfigChange('enable_humanize', v)}
+                                />
+                            </div>
+
+                            {config.enable_humanize && (
+                                <div className="space-y-3 pl-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <Field label="Rewrite Instruction">
+                                        <Textarea
+                                            value={config.humanize_instruction || ''}
+                                            onChange={(e) => handleConfigChange('humanize_instruction', e.target.value)}
+                                            placeholder="e.g. Make it witty, professional, and under 280 chars..."
+                                            className="min-h-[80px] text-xs resize-none"
+                                        />
+                                    </Field>
+                                </div>
+                            )}
+                        </div>
+
+                        {(() => {
+                            const currentMs = config.wait_between_ms || 2000;
+                            let bestUnit = 'ms';
+                            let bestVal = currentMs;
+
+                            if (currentMs >= 3600000 && currentMs % 3600000 === 0) { bestUnit = 'h'; bestVal = currentMs / 3600000; }
+                            else if (currentMs >= 60000 && currentMs % 60000 === 0) { bestUnit = 'm'; bestVal = currentMs / 60000; }
+                            else if (currentMs >= 1000 && currentMs % 1000 === 0) { bestUnit = 's'; bestVal = currentMs / 1000; }
+
+                            return (
+                                <div className="space-y-1">
+                                    <WaitNodeConfig
+                                        label="Wait between actions"
+                                        valueMs={currentMs}
+                                        onChange={(val) => handleConfigChange('wait_between_ms', val)}
+                                        initialUnit={bestUnit}
+                                        initialValue={bestVal}
+                                        key={`${selectedNode.id}-wait`}
+                                    />
+                                    <p className="text-[10px] text-muted-foreground mt-[-8px] px-1 pb-2">
+                                        Adds a delay between likes, follows, and replies to appear more human.
+                                    </p>
+                                </div>
+                            );
+                        })()}
+
                         <div className="pt-4 pb-2 border-t border-border">
                             <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1">Skip Filters</Label>
                         </div>
@@ -1286,14 +1298,36 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
             case 'linkedin_search':
                 return (
                     <div className="space-y-4">
-                        <Field label="Query">
+                        <Field label="Search Query (Keywords)">
                             <MentionInput
                                 value={config.query || ''}
                                 onChange={(e) => handleConfigChange('query', e.target.value)}
-                                placeholder="Search LinkedIn..."
+                                placeholder="e.g. CEO AND SaaS"
                                 variableGroups={variableGroups}
                             />
                         </Field>
+
+                        <div className="relative">
+                            <div className="absolute inset-0 flex items-center">
+                                <span className="w-full border-t" />
+                            </div>
+                            <div className="relative flex justify-center text-xs uppercase">
+                                <span className="bg-background px-2 text-muted-foreground">OR</span>
+                            </div>
+                        </div>
+
+                        <Field label="AI Instruction (Smart Generation)">
+                            <Textarea
+                                value={config.instruction || ''}
+                                onChange={(e) => handleConfigChange('instruction', e.target.value)}
+                                placeholder="e.g. Find founders building in public with 10k+ followers..."
+                                className="min-h-[80px] bg-background"
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                                If set, the Agent will generate the optimal search query for you.
+                            </p>
+                        </Field>
+
                         <Field label="Type">
                             <Select value={config.type || 'people'} onValueChange={(v) => handleConfigChange('type', v)}>
                                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -1573,24 +1607,83 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                         </div>
                     </div>
                 );
-            case 'humanize':
+            case 'extract':
                 return (
                     <div className="space-y-4">
-                        <Field label="Text to Humanize">
+                        <Field label="Instruction">
+                            <Textarea
+                                value={config.instruction || ''}
+                                onChange={(e) => handleConfigChange('instruction', e.target.value)}
+                                placeholder="Describe what data to extract... (e.g. 'Get the price and product name')"
+                                className="min-h-[100px] text-xs"
+                            />
+                        </Field>
+                        <Field label="Selector (Optional)">
                             <MentionInput
-                                value={config.text || ''}
-                                onChange={(e) => handleConfigChange('text', e.target.value)}
-                                placeholder="{{item.content}}"
+                                value={config.selector || ''}
+                                onChange={(e) => handleConfigChange('selector', e.target.value)}
+                                placeholder="Scope to element (e.g. .product-card)"
                                 variableGroups={variableGroups}
                             />
                         </Field>
-                        <Field label="Tone">
-                            <Input
-                                value={config.tone || ''}
-                                onChange={(e) => handleConfigChange('tone', e.target.value)}
-                                placeholder="Casual, professional, witty..."
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            The AI will analyze the page (or the selected element) and extract the structured data you requested.
+                        </div>
+                    </div>
+                );
+            case 'capture_leads':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Destination List">
+                            <Select
+                                value={config.targetListId || ''}
+                                onValueChange={(v) => handleConfigChange('targetListId', v)}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a list..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="new_list">
+                                        <div className="flex items-center gap-2">
+                                            <Sparkles className="h-3 w-3 text-primary" />
+                                            <span>+ Create New List</span>
+                                        </div>
+                                    </SelectItem>
+                                    {lists.map((list: any) => (
+                                        <SelectItem key={list.id} value={list.id}>
+                                            {list.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </Field>
+
+                        <Field label="Leads Source (Variable)">
+                            <MentionInput
+                                value={config.leads || ''}
+                                onChange={(e) => handleConfigChange('leads', e.target.value)}
+                                placeholder="{{x_scout.accounts}} or leave empty for Auto"
+                                variableGroups={variableGroups}
                             />
                         </Field>
+
+                        <Field label="Default Type">
+                            <Select
+                                value={config.defaultType || 'person'}
+                                onValueChange={(v) => handleConfigChange('defaultType', v)}
+                            >
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="person">Person</SelectItem>
+                                    <SelectItem value="company">Company</SelectItem>
+                                    <SelectItem value="post">Post</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            Saves the leads found in the specified source variable (or from context) into the selected Target List.
+                        </div>
                     </div>
                 );
             // Add more cases as needed for other nodes
@@ -1671,9 +1764,10 @@ interface WaitNodeConfigProps {
     onChange: (ms: number) => void;
     initialUnit: string;
     initialValue: number;
+    label?: string;
 }
 
-function WaitNodeConfig({ valueMs, onChange, initialUnit, initialValue }: WaitNodeConfigProps) {
+function WaitNodeConfig({ valueMs, onChange, initialUnit, initialValue, label = "Duration" }: WaitNodeConfigProps) {
     const [unit, setUnit] = React.useState(initialUnit);
     const [val, setVal] = React.useState(initialValue);
 
@@ -1690,7 +1784,7 @@ function WaitNodeConfig({ valueMs, onChange, initialUnit, initialValue }: WaitNo
 
     return (
         <div className="space-y-4">
-            <Field label="Duration">
+            <Field label={label}>
                 <div className="flex gap-2">
                     <Input
                         type="number"

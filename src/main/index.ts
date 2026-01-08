@@ -26,10 +26,16 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient('reavion');
 }
 
+let pendingAuthHash: string | null = null;
+
 function handleAuthRedirect(url: string): void {
   const hash = url.split('#')[1];
-  if (hash && mainWindow) {
-    mainWindow.webContents.send('supabase:auth-callback', hash);
+  if (hash) {
+    if (mainWindow) {
+      mainWindow.webContents.send('supabase:auth-callback', hash);
+    } else {
+      pendingAuthHash = hash;
+    }
   }
 }
 
@@ -55,6 +61,7 @@ function createWindow(): void {
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
+      partition: 'persist:main',
     },
   });
 
@@ -64,6 +71,12 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow?.maximize();
     mainWindow?.show();
+
+    // Handle pending auth hash from cold start
+    if (pendingAuthHash && mainWindow) {
+      mainWindow.webContents.send('supabase:auth-callback', pendingAuthHash);
+      pendingAuthHash = null;
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler((details) => {

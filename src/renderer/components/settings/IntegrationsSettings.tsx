@@ -137,8 +137,8 @@ export function IntegrationsSettings() {
                 <div className="p-6 rounded-2xl bg-muted/30 border border-border shadow-sm space-y-4">
                     <div className="flex items-center justify-between mb-2">
                         <div className="flex gap-4">
-                            <div className="w-12 h-12 rounded-xl bg-purple-500/10 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform">
-                                <Key className="h-6 w-6 text-purple-600 dark:text-purple-400" />
+                            <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center flex-shrink-0 group-hover:bg-muted/80 transition-all border border-border/50">
+                                <Key className="h-6 w-6 text-muted-foreground/70" />
                             </div>
                             <div>
                                 <h4 className="text-sm font-medium text-foreground mb-1">Secret API Key</h4>

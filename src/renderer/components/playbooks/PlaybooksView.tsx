@@ -64,6 +64,7 @@ export function PlaybooksView() {
         setSelectedPlaybookId(null);
         setView('list');
         setShowPlaybookBrowser(false);
+        loadPlaybooks(); // Refresh list to reflect changes
     };
 
     const handleRefresh = () => {

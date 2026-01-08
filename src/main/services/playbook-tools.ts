@@ -5,11 +5,13 @@ import { supabase } from '../lib/supabase';
 export interface PlaybookToolsContext {
     playbooks?: any[];
     supabaseClient?: any;
+    workspaceId?: string;
     onPlaybookLoaded?: (playbook: any) => void;
 }
 
 export function createPlaybookTools(context?: PlaybookToolsContext): DynamicStructuredTool[] {
     const supabaseClient = context?.supabaseClient || supabase;
+    const currentWorkspaceId = context?.workspaceId;
 
     const getPlaybooksTool = new DynamicStructuredTool({
         name: 'db_get_playbooks',
@@ -33,9 +35,15 @@ export function createPlaybookTools(context?: PlaybookToolsContext): DynamicStru
                     return JSON.stringify({ success: true, playbooks: context.playbooks });
                 }
 
-                const { data, error } = await supabaseClient
+                let query = supabaseClient
                     .from('playbooks')
-                    .select('id, name, description, capabilities, created_at, updated_at')
+                    .select('id, name, description, capabilities, created_at, updated_at');
+
+                if (currentWorkspaceId) {
+                    query = query.eq('workspace_id', currentWorkspaceId);
+                }
+
+                const { data, error } = await query
                     .order('updated_at', { ascending: false });
 
                 if (error) {
@@ -75,11 +83,16 @@ export function createPlaybookTools(context?: PlaybookToolsContext): DynamicStru
                     }
                 }
 
-                const { data, error } = await supabaseClient
+                let query = supabaseClient
                     .from('playbooks')
                     .select('*')
-                    .eq('id', id)
-                    .maybeSingle();
+                    .eq('id', id);
+
+                if (currentWorkspaceId) {
+                    query = query.eq('workspace_id', currentWorkspaceId);
+                }
+
+                const { data, error } = await query.maybeSingle();
 
                 if (error) {
                     console.error('[Tool: db_get_playbook_details] DB Error:', error);
@@ -127,15 +140,22 @@ export function createPlaybookTools(context?: PlaybookToolsContext): DynamicStru
                     capabilities: JSON.parse(payload.capabilities_json || '{}'),
                     execution_defaults: JSON.parse(payload.execution_defaults_json || '{}'),
                     user_id: user.id,
+                    workspace_id: currentWorkspaceId,
                     updated_at: new Date().toISOString(),
                 };
 
                 let result;
                 if (payload.id && payload.id !== '') {
-                    result = await supabaseClient
+                    let updateQuery = supabaseClient
                         .from('playbooks')
                         .update(playbookData)
-                        .eq('id', payload.id)
+                        .eq('id', payload.id);
+
+                    if (currentWorkspaceId) {
+                        updateQuery = updateQuery.eq('workspace_id', currentWorkspaceId);
+                    }
+
+                    result = await updateQuery
                         .select()
                         .single();
                 } else {
@@ -166,10 +186,16 @@ export function createPlaybookTools(context?: PlaybookToolsContext): DynamicStru
         }),
         func: async ({ id }) => {
             try {
-                const { error } = await supabaseClient
+                let deleteQuery = supabaseClient
                     .from('playbooks')
                     .delete()
                     .eq('id', id);
+
+                if (currentWorkspaceId) {
+                    deleteQuery = deleteQuery.eq('workspace_id', currentWorkspaceId);
+                }
+
+                const { error } = await deleteQuery;
 
                 if (error) throw error;
                 return JSON.stringify({ success: true });

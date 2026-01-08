@@ -287,11 +287,11 @@ export function TargetTable({
                                     <td className="px-6 py-4 overflow-hidden">
                                         <span className={cn(
                                             "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider shrink-0",
-                                            target.type === 'profile' && "bg-muted text-foreground/80 border border-border",
-                                            target.type === 'company' && "bg-purple-500/10 dark:text-purple-400 text-purple-600 border border-purple-500/20",
-                                            target.type === 'post' && "bg-green-500/10 dark:text-green-400 text-green-600 border border-green-500/20",
-                                            target.type === 'lead' && "bg-orange-500/10 dark:text-orange-400 text-orange-600 border border-orange-500/20",
-                                            target.type === 'other' && "bg-slate-500/10 dark:text-slate-400 text-slate-500 border border-slate-500/20"
+                                            target.type === 'profile' && "bg-muted text-muted-foreground border border-border/50",
+                                            target.type === 'company' && "bg-muted/60 text-muted-foreground border border-border/50",
+                                            target.type === 'post' && "bg-muted/60 text-muted-foreground border border-border/50",
+                                            target.type === 'lead' && "bg-muted/60 text-muted-foreground border border-border/50",
+                                            target.type === 'other' && "bg-muted/60 text-muted-foreground border border-border/50"
                                         )}>
                                             {target.type}
                                         </span>

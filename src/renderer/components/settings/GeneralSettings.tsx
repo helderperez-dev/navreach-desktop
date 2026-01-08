@@ -22,7 +22,7 @@ export function GeneralSettings() {
 
                 <div className="space-y-4 p-4 rounded-xl bg-muted/40 border border-border transition-all hover:bg-muted/60">
                     <div className="flex items-center gap-4 mb-2">
-                        <div className="p-2 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                        <div className="p-2 rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-muted/80">
                             <Palette className="h-5 w-5" />
                         </div>
                         <div>
@@ -43,8 +43,8 @@ export function GeneralSettings() {
                                 className={`
                                     flex flex-col items-center gap-2 p-3 rounded-lg border transition-all duration-200
                                     ${theme === item.value
-                                        ? 'bg-primary/10 border-primary text-primary shadow-sm'
-                                        : 'bg-background/30 border-border text-muted-foreground hover:bg-muted/50 hover:border-border hover:text-foreground'
+                                        ? 'bg-muted border-primary/50 text-foreground shadow-sm ring-1 ring-primary/10'
+                                        : 'bg-background/30 border-border text-muted-foreground hover:bg-muted/50 hover:border-border/80 hover:text-foreground'
                                     }
                                 `}
                             >
@@ -66,7 +66,7 @@ export function GeneralSettings() {
 
                 <div className="flex items-center justify-between p-4 rounded-xl bg-muted/40 border border-border group transition-all hover:bg-muted/60">
                     <div className="flex items-center gap-4">
-                        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
+                        <div className="p-2 rounded-lg bg-muted text-muted-foreground transition-all group-hover:bg-muted/80">
                             <Monitor className="h-5 w-5" />
                         </div>
                         <div>
@@ -91,7 +91,7 @@ export function GeneralSettings() {
 
                 <div className="space-y-4 p-4 rounded-xl bg-muted/40 border border-border">
                     <div className="flex items-center gap-4 mb-2">
-                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        <div className="p-2 rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-muted/80">
                             <PlayCircle className="h-5 w-5" />
                         </div>
                         <div>
@@ -134,8 +134,8 @@ export function GeneralSettings() {
                         )}
                     </div>
 
-                    <div className="mt-4 p-3 rounded-lg bg-primary/5 border border-primary/10">
-                        <p className="text-[11px] text-muted-foreground leading-relaxed italic">
+                    <div className="mt-4 p-3 rounded-lg bg-muted/30 border border-border/50">
+                        <p className="text-[11px] text-muted-foreground/80 leading-relaxed italic">
                             Note: Indefinite mode will continue execution cycles until manually stopped or a system error occurs.
                             Always ensure you have sufficient API credits.
                         </p>

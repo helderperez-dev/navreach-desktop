@@ -18,10 +18,11 @@ const POINTER_HELPERS = `
     if (!indicator) {
       indicator = document.createElement('div');
       indicator.id = 'reavion-pointer';
-      indicator.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);';
-      document.body.appendChild(indicator);
+      // Use max z-index to ensure visibility, black/white styling
+      indicator.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;width:32px;height:32px;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);display:block !important;opacity:1 !important;';
+      document.documentElement.appendChild(indicator);
     }
-    // Always update visual style to clear any cached purple versions
+    // Standard high-contrast pointer (black with white border)
     indicator.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
     indicator.style.left = x + 'px';
     indicator.style.top = y + 'px';
@@ -48,9 +49,9 @@ const BASE_SCRIPT_HELPERS = `
   function wait(ms) {
     const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
     const isFast = multiplier < 1.0;
-    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter, but scale down for FAST mode
-    const randomFactor = isFast ? (0.9 + Math.random() * 0.2) : (0.75 + (Math.random() * 0.5)); 
-    const jitter = Math.random() * (isFast ? 50 : 200);
+    // HUMAN BEHAVIOR: Add +/- 40% randomness + small base jitter
+    const randomFactor = isFast ? (0.8 + Math.random() * 0.4) : (0.7 + (Math.random() * 0.6)); 
+    const jitter = Math.random() * (isFast ? 100 : 300);
     const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
     
     return new Promise((resolve, reject) => {
@@ -63,11 +64,104 @@ const BASE_SCRIPT_HELPERS = `
         if (Date.now() - start >= adjustedMs) {
           resolve();
         } else {
-          setTimeout(checking, 20); // Faster check interval
+          setTimeout(checking, 20);
         }
       };
       checking();
     });
+  }
+
+  async function humanType(el, text) {
+    if (!el) return;
+    
+    // Activation move - Tool will handle the actual activation click if needed
+    // Aggressive activation for Lexical editor
+    const r = el.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    
+    if (typeof movePointer === 'function') movePointer(x, y);
+    
+    // Dispatch activation sequence if not already focused
+    if (document.activeElement !== el) {
+        el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 }));
+        el.focus({ preventScroll: true });
+        el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 0 }));
+        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 0, detail: 1 }));
+        await wait(100);
+    }
+
+    // Selection cleanup/setup
+    try {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+    } catch(e) {}
+    await wait(200); 
+
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const delay = 25 + Math.random() * 30;
+        await wait(delay);
+        
+        const common = { bubbles: true, cancelable: true, composed: true, view: window };
+        const keyInit = { ...common, key: char, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0) };
+        
+        // 1. KeyDown
+        el.dispatchEvent(new KeyboardEvent('keydown', keyInit));
+        
+        // 2. BeforeInput
+        const beforeInputEvent = new InputEvent('beforeinput', {
+          ...common,
+          inputType: 'insertText',
+          data: char
+        });
+        el.dispatchEvent(beforeInputEvent);
+        
+        // 3. Actual character insertion
+        if (!beforeInputEvent.defaultPrevented) {
+          try {
+            document.execCommand('insertText', false, char);
+          } catch(e) {
+             const selection = window.getSelection();
+             if (selection && selection.rangeCount) {
+                 const range = selection.getRangeAt(0);
+                 range.deleteContents();
+                 range.insertNode(document.createTextNode(char));
+                 range.collapse(false);
+             }
+          }
+        }
+        
+        // 4. Input & KeyUp
+        el.dispatchEvent(new InputEvent('input', { ...common, inputType: 'insertText', data: char }));
+        el.dispatchEvent(new KeyboardEvent('keyup', keyInit));
+
+        if (['.', ',', '!', '?'].includes(char)) await wait(100 + Math.random() * 100);
+    }
+    
+    // Final signals & Lexical update "nudge"
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    
+    // Force Lexical state commit by adding a space and removing it
+    try {
+        document.execCommand('insertText', false, ' ');
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ' ' }));
+        await wait(50);
+        document.execCommand('delete', false, null);
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+    } catch(e) {}
+    
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+    await wait(100);
+    el.focus({ preventScroll: true });
+    await wait(300);
   }
 
   async function safeClick(el, label, options = {}) {
@@ -92,17 +186,36 @@ const BASE_SCRIPT_HELPERS = `
          clickable.click();
       } else {
          // Dispatch realistic event chain
-         const common = { bubbles: true, cancelable: true, view: window };
+         const common = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y };
+         
+         // Hover phase
+         clickable.dispatchEvent(new MouseEvent('mouseenter', common));
+         clickable.dispatchEvent(new MouseEvent('mouseover', common));
+         clickable.dispatchEvent(new MouseEvent('mousemove', common));
+         await wait(20);
+
+         // Press phase
          clickable.dispatchEvent(new MouseEvent('mousedown', common));
+         if (clickable.focus) clickable.focus({ preventScroll: true });
+         
+         await wait(50 + Math.random() * 50);
+
+         // Release phase
          clickable.dispatchEvent(new MouseEvent('mouseup', common));
-         clickable.click();
+         
+         // Click phase
+         const clickEv = new MouseEvent('click', { ...common, detail: 1 });
+         clickable.dispatchEvent(clickEv);
+         
+         // Always attempt fallback click()
+         if (typeof clickable.click === 'function') {
+           try { clickable.click(); } catch(e) {}
+         }
       }
     } catch (e) {
-      log('Native click failed on ' + label, { error: e.toString() });
-      throw e;
+      log('Click failed', { error: e.toString() });
     }
-    
-    await wait(options.afterWait || 800); // Increased default wait
+    await wait(options.afterWait || 500);
   }
 
   function getTweetAuthor(tweet) {
@@ -1270,8 +1383,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       only_verified: z.boolean().default(false).describe('Only engage with verified users (blue/gold/grey check).'),
       skip_keywords: z.string().default('').describe('Comma-separated keywords to avoid.'),
       expected_author: z.string().optional().describe('Optional handle (without @) to verify the correct tweet is targeted.'),
+      wait_between_ms: z.number().default(2000).describe('Wait time between multiple actions in milliseconds (default 2000).'),
     }),
-    func: async ({ targetIndex, actions, replyText, skip_self, skip_verified, only_verified, skip_keywords, expected_author }: {
+    func: async ({ targetIndex, actions, replyText, skip_self, skip_verified, only_verified, skip_keywords, expected_author, wait_between_ms }: {
       targetIndex: number | string | null;
       actions: string;
       replyText: string | null;
@@ -1280,12 +1394,14 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       only_verified?: boolean | null;
       skip_keywords: string | null;
       expected_author: string | null;
+      wait_between_ms?: number;
     }) => {
       const contents = ctx.getContents();
       const finalSkipSelf = skip_self ?? true;
       const finalSkipVerified = skip_verified ?? false;
       const finalOnlyVerified = only_verified ?? false;
       const finalSkipKeywords = skip_keywords || '';
+      const finalWaitBetween = wait_between_ms ?? 2000;
       const rIndex = parseInt(String(targetIndex ?? 0), 10);
       try {
         const result = await contents.executeJavaScript(`
@@ -1293,6 +1409,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             try {
               ${POINTER_HELPERS}
               ${BASE_SCRIPT_HELPERS}
+ 
+              const waitBetween = ${finalWaitBetween};
+              let actionCount = 0;
 
               // 1. Find Tweet Robustly
               const findResult = await findTweetRobustly(${rIndex}, ${JSON.stringify(expected_author)});
@@ -1346,6 +1465,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 if (b && isVisible(b)) {
                   await safeClick(b, 'Like', { afterWait: 400 });
                   results.push('Liked');
+                  actionCount++;
                 } else if (u && isVisible(u)) {
                   results.push('Already Liked');
                 } else {
@@ -1354,11 +1474,14 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               }
 
               if (actionsList.includes('follow')) {
+                if (actionCount > 0) await wait(waitBetween);
                 const res = await followAuthorOfTweet(tweet, 'follow');
                 results.push(res.success ? (res.already ? 'Already Followed' : 'Followed') : 'Follow Failed: ' + res.error);
+                if (res.success && !res.already) actionCount++;
               }
 
               if (actionsList.includes('retweet')) {
+                if (actionCount > 0) await wait(waitBetween);
                 const b = tweet.querySelector('[data-testid="retweet"]');
                 if (b && isVisible(b)) {
                   await safeClick(b, 'Retweet Menu');
@@ -1367,6 +1490,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                   if (confirm && isVisible(confirm)) {
                     await safeClick(confirm, 'Retweet Action');
                     results.push('Retweeted');
+                    actionCount++;
                   } else {
                     await safeClick(b, 'Close Retweet Menu');
                     results.push('Retweet Confirm Button Not Found');
@@ -1375,6 +1499,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               }
 
               if (actionsList.includes('reply') && ${JSON.stringify(replyText || '')}) {
+                if (actionCount > 0) await wait(waitBetween);
                 const b = tweet.querySelector('[data-testid="reply"]');
                 if (b && isVisible(b)) {
                   await safeClick(b, 'Reply');
@@ -1395,6 +1520,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                     if (s) {
                       await safeClick(s, 'Send Reply');
                       results.push('Replied to ' + engagedTweetHandle);
+                      actionCount++;
                     } else {
                       results.push('Reply Send Button Not Found');
                     }
@@ -1405,6 +1531,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               }
 
               if (actionsList.includes('dm') && replyText) {
+                 if (actionCount > 0) await wait(waitBetween);
                  const userLink = tweet.querySelector('[data-testid="User-Name"] a');
                  if (userLink) {
                     // Hover to show card
@@ -1433,6 +1560,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                                  if (sendBtn) {
                                      await safeClick(sendBtn, 'Send DM');
                                      results.push('DM Sent');
+                                     actionCount++;
                                  } else {
                                      results.push('DM Send Button Not Found');
                                  }
@@ -1551,6 +1679,56 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     }
   });
 
+  const extractProfilesTool = new DynamicStructuredTool({
+    name: 'x_extract_profiles',
+    description: 'Extract visible profile information from X.com (Twitter) search results (People tab) or any list of users. Returns structured data with name, handle, bio, and profile URL.',
+    schema: z.object({
+      limit: z.number().nullable().default(10),
+    }),
+    func: async ({ limit }: { limit: number | null }) => {
+      const contents = ctx.getContents();
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            const userCells = Array.from(document.querySelectorAll('[data-testid="UserCell"]')).slice(0, ${limit || 10});
+            
+            const data = userCells.map((cell, i) => {
+               const nameEl = cell.querySelector('[data-testid="User-Name"]');
+               const name = nameEl ? (nameEl.querySelector('span')?.innerText || '').trim() : '';
+               const handle = nameEl ? (nameEl.querySelector('div[dir="ltr"] span')?.innerText || '').replace('@', '').trim() : '';
+               
+               const bioEl = cell.querySelector('div[dir="auto"]'); // Usually the bio text
+               const bio = bioEl ? bioEl.innerText.trim() : '';
+               
+               const profileLink = cell.querySelector('a')?.getAttribute('href');
+               const url = profileLink ? 'https://x.com' + profileLink : '';
+
+               return { 
+                 index: i, 
+                 name, 
+                 handle, 
+                 headline: bio, 
+                 url,
+                 type: 'person'
+               };
+            });
+            
+            return { 
+              success: true, 
+              count: data.length, 
+              profiles: data,
+              message: 'Extracted ' + data.length + ' profiles from results.'
+            };
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
   const engagingTool = new DynamicStructuredTool({
     name: 'Engaging',
     description: 'Perform multiple actions (like, follow, retweet, reply) on a tweet. Alias: x_engage.',
@@ -1558,5 +1736,5 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     func: engageTool.func,
   });
 
-  return [advancedSearchTool, likeTool, replyTool, postTool, followTool, scoutTool, profileTool, engageTool, checkEngagementTool, scanPostsTool, engagingTool];
+  return [advancedSearchTool, likeTool, replyTool, postTool, followTool, scoutTool, profileTool, engageTool, checkEngagementTool, scanPostsTool, extractProfilesTool, engagingTool];
 }

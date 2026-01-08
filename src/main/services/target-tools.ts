@@ -2,8 +2,15 @@ import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { supabase } from '../lib/supabase';
 
-export function createTargetTools(context?: { targetLists?: any[], supabaseClient?: any }): DynamicStructuredTool[] {
+export interface TargetToolsContext {
+    targetLists?: any[];
+    supabaseClient?: any;
+    workspaceId?: string;
+}
+
+export function createTargetTools(context?: TargetToolsContext): DynamicStructuredTool[] {
     const supabaseClient = context?.supabaseClient || supabase;
+    const currentWorkspaceId = context?.workspaceId;
 
     const getTargetsTool = new DynamicStructuredTool({
         name: 'db_get_targets',
@@ -16,17 +23,27 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
         func: async ({ list_id, limit, offset }) => {
             try {
                 let query = supabaseClient.from('targets').select('*', { count: 'exact' });
+
+                if (currentWorkspaceId) {
+                    query = query.eq('workspace_id', currentWorkspaceId);
+                }
+
                 let listName = null;
 
                 if (list_id && list_id.trim() !== '') {
                     query = query.eq('list_id', list_id);
 
                     // Fetch list name for friendly display
-                    const { data: listData } = await supabaseClient
+                    let listQuery = supabaseClient
                         .from('target_lists')
                         .select('name')
-                        .eq('id', list_id)
-                        .single();
+                        .eq('id', list_id);
+
+                    if (currentWorkspaceId) {
+                        listQuery = listQuery.eq('workspace_id', currentWorkspaceId);
+                    }
+
+                    const { data: listData } = await listQuery.single();
 
                     if (listData) {
                         listName = listData.name;
@@ -68,9 +85,15 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
                     return JSON.stringify({ success: true, lists: context.targetLists });
                 }
 
-                const { data, error } = await supabaseClient
+                let query = supabaseClient
                     .from('target_lists')
-                    .select('*')
+                    .select('*');
+
+                if (currentWorkspaceId) {
+                    query = query.eq('workspace_id', currentWorkspaceId);
+                }
+
+                const { data, error } = await query
                     .order('created_at', { ascending: false });
 
                 if (error) throw error;
@@ -95,7 +118,7 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
 
                 const { data, error } = await supabaseClient
                     .from('target_lists')
-                    .insert([{ name, description, user_id: user.id }])
+                    .insert([{ name, description, user_id: user.id, workspace_id: currentWorkspaceId }])
                     .select()
                     .single();
 
@@ -126,7 +149,7 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
 
                 const { data, error } = await supabaseClient
                     .from('targets')
-                    .insert([{ ...rest, metadata, user_id: user.id }])
+                    .insert([{ ...rest, metadata, user_id: user.id, workspace_id: currentWorkspaceId }])
                     .select()
                     .single();
 
@@ -160,10 +183,16 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
                     updates.metadata = { ...(existing?.metadata || {}), ...metadata };
                 }
 
-                const { data, error } = await supabaseClient
+                let updateQuery = supabaseClient
                     .from('targets')
                     .update(updates)
-                    .eq('id', id)
+                    .eq('id', id);
+
+                if (currentWorkspaceId) {
+                    updateQuery = updateQuery.eq('workspace_id', currentWorkspaceId);
+                }
+
+                const { data, error } = await updateQuery
                     .select()
                     .single();
 
@@ -175,5 +204,45 @@ export function createTargetTools(context?: { targetLists?: any[], supabaseClien
         },
     });
 
-    return [getTargetsTool, getTargetListsTool, createTargetListTool, createTargetTool, updateTargetMetadataTool];
+    const captureLeadsBulkTool = new DynamicStructuredTool({
+        name: 'capture_leads_bulk',
+        description: 'Save multiple leads (people, posts, or companies) from any social network (X, LinkedIn, Reddit, etc.) into a target list in a single operation.',
+        schema: z.object({
+            targetListId: z.string().describe('The ID of the target list where leads will be saved'),
+            leads: z.array(z.object({
+                name: z.string().describe('The name of the person, company, or post title'),
+                url: z.string().describe('The direct URL to the profile or content'),
+                type: z.enum(['person', 'post', 'company', 'other']).describe('The category of this target').default('person'),
+                metadata: z.record(z.any()).optional().describe('Strategic details like headline, location, description, follower count, etc.').default({}),
+            })).describe('The list of leads to capture')
+        }),
+        func: async ({ targetListId, leads }) => {
+            try {
+                const { data: { user } } = await supabaseClient.auth.getUser();
+                if (!user) throw new Error('Not authenticated');
+
+                const dataToInsert = leads.map(l => ({
+                    list_id: targetListId,
+                    name: l.name,
+                    url: l.url,
+                    type: l.type,
+                    metadata: l.metadata,
+                    user_id: user.id,
+                    workspace_id: currentWorkspaceId
+                }));
+
+                const { data, error } = await supabaseClient
+                    .from('targets')
+                    .insert(dataToInsert)
+                    .select();
+
+                if (error) throw error;
+                return JSON.stringify({ success: true, count: data?.length || 0, message: `Successfully captured ${data?.length} leads.` });
+            } catch (error: any) {
+                return JSON.stringify({ success: false, error: error.message || String(error) });
+            }
+        }
+    });
+
+    return [getTargetsTool, getTargetListsTool, createTargetListTool, createTargetTool, updateTargetMetadataTool, captureLeadsBulkTool];
 }

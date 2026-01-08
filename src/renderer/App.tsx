@@ -23,29 +23,47 @@ export function App() {
     }
 
     // Initial session check
-    supabase.auth.getSession().then(({ data: { session } }: any) => {
-      setSession(session);
-    }).catch((err: any) => {
-      console.error('[App] Session check failed:', err);
-      setSession(null);
-    });
+    const checkSession = async () => {
+      try {
+        console.log('[App] Checking initial session...');
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+
+        if (session) {
+          console.log('[App] Session found on startup:', session.user.email);
+          setSession(session);
+        } else {
+          console.log('[App] No session found on startup');
+          // We wait for onAuthStateChange to confirm before setting to null
+          // to avoid flickering if it's just taking a moment to load from storage
+        }
+      } catch (err: any) {
+        console.error('[App] Initial session check failed:', err);
+        setSession(null);
+      }
+    };
+
+    checkSession();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
+      console.log('[App] Auth state change event:', event, session?.user?.email || 'no-user');
       setSession(session);
     });
 
     // Listen for deep link auth callbacks (Google login)
-    const unsubscribeAuth = (window as any).api?.auth?.onAuthCallback((hash: string) => {
+    const unsubscribeAuth = (window as any).api?.auth?.onAuthCallback(async (hash: string) => {
+      console.log('[App] Auth callback received from main process');
       const params = new URLSearchParams(hash);
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
 
       if (accessToken && refreshToken) {
-        supabase.auth.setSession({
+        const { error } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
         });
+        if (error) console.error('[App] Failed to set session from callback:', error);
       }
     });
 

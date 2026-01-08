@@ -13,6 +13,7 @@ import {
 import { playbookService } from '@/services/playbookService';
 import { Playbook } from '@/types/playbook';
 import { toast } from 'sonner';
+import { useWorkspaceStore } from '@/stores/workspace.store';
 
 interface PlaybookListViewProps {
     onCreate: () => void;
@@ -63,29 +64,52 @@ export function PlaybookListView({ onCreate, onSelect, playbooks, loading, onRef
         toast.success('Playbook exported');
     }
 
+    const { currentWorkspace } = useWorkspaceStore();
+
     const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
+
+        if (!currentWorkspace?.id) {
+            toast.error('No active workspace');
+            return;
+        }
 
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
                 const json = JSON.parse(event.target?.result as string);
-                // Basic validation
+
+                // Validate required fields
                 if (!json.graph || !json.capabilities) {
-                    throw new Error('Invalid playbook format');
+                    throw new Error('Invalid playbook format: Missing graph or capabilities');
                 }
 
-                await playbookService.createPlaybook({
-                    ...json,
-                    name: `${json.name} (Imported)`,
-                    visibility: 'private'
-                });
-                toast.success('Playbook imported');
+                // Explicitly construct the payload to avoid passing invalid/extra fields to Supabase
+                const playbookPayload = {
+                    name: `${json.name || 'Untitled Playbook'} (Imported)`,
+                    description: json.description || '',
+                    graph: json.graph,
+                    capabilities: json.capabilities,
+                    execution_defaults: json.execution_defaults || {
+                        mode: 'observe',
+                        require_approval: true,
+                        speed: 'normal'
+                    },
+                    workspace_id: currentWorkspace.id,
+                    version: json.version || '1.0.0',
+                    visibility: 'private' as const // Enforce type
+                };
+
+                // Remove user_id/id if they accidentally snuck in, though strict construction above prevents it.
+                // We cast to any to satisfy the CreatePlaybookDTO which might be strict about types
+                await playbookService.createPlaybook(playbookPayload as any);
+
+                toast.success('Playbook imported successfully');
                 onRefresh();
-            } catch (error) {
-                toast.error('Failed to import playbook');
-                console.error(error);
+            } catch (error: any) {
+                console.error('Import failed:', error);
+                toast.error(`Failed to import: ${error.message || 'Unknown error'}`);
             }
         };
         reader.readAsText(file);
@@ -213,7 +237,12 @@ export function PlaybookListView({ onCreate, onSelect, playbooks, loading, onRef
                                 onClick={() => onSelect(playbook.id)}
                             >
                                 <div className="flex items-start justify-between gap-4">
-                                    <h3 className="font-semibold truncate flex-1">{playbook.name}</h3>
+                                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                                        <h3 className="font-semibold truncate">{playbook.name}</h3>
+                                        <span className="shrink-0 text-[9px] bg-muted px-1.5 py-0.5 rounded border border-border text-muted-foreground font-mono">
+                                            v{playbook.version || '1.0.0'}
+                                        </span>
+                                    </div>
                                     <DropdownMenu>
                                         <DropdownMenuTrigger asChild>
                                             <Button

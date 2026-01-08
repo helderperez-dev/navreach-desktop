@@ -256,7 +256,7 @@ export function TargetListView() {
                                                 <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">{label}</span>
                                                 <div className={cn(
                                                     "w-8 h-4 rounded-full transition-all relative flex items-center px-1",
-                                                    visibleColumns[key] ? "bg-primary" : "bg-muted"
+                                                    visibleColumns[key] ? "bg-muted-foreground/40" : "bg-muted"
                                                 )}>
                                                     <div className={cn(
                                                         "w-2.5 h-2.5 bg-white rounded-full transition-all",
@@ -278,7 +278,7 @@ export function TargetListView() {
                                                         <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors capitalize">{key.replace(/_/g, ' ')}</span>
                                                         <div className={cn(
                                                             "w-8 h-4 rounded-full transition-all relative flex items-center px-1",
-                                                            visibleColumns[key] ? "bg-primary" : "bg-muted"
+                                                            visibleColumns[key] ? "bg-muted-foreground/40" : "bg-muted"
                                                         )}>
                                                             <div className={cn(
                                                                 "w-2.5 h-2.5 bg-white rounded-full transition-all",
@@ -294,7 +294,7 @@ export function TargetListView() {
 
                                 <div className="space-y-4">
                                     <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Display Density</label>
-                                    <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 text-xs text-muted-foreground leading-relaxed italic">
+                                    <div className="p-4 rounded-xl bg-muted/40 border border-border/50 text-xs text-muted-foreground leading-relaxed italic">
                                         Note: These options only affect your current view session. Global table settings can be adjusted in the application settings.
                                     </div>
                                 </div>

@@ -56,6 +56,7 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
     const [playbookName, setPlaybookName] = useState('New Playbook');
     const [description, setDescription] = useState('');
+    const [version, setVersion] = useState('1.0.0');
     const [capabilities, setCapabilities] = useState<PlaybookCapabilities>(initialCapabilities);
     const [defaults, setDefaults] = useState<PlaybookExecutionDefaults>(initialDefaults);
 
@@ -408,7 +409,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
             const data = await playbookService.getPlaybookById(id);
             if (data) {
                 setPlaybookName(data.name);
-                setDescription(data.description);
+                setDescription(data.description || '');
+                setVersion(data.version || '1.0.0');
                 setCapabilities(data.capabilities);
                 setDefaults({
                     ...data.execution_defaults,
@@ -754,12 +756,25 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         setTimeout(() => reactFlowInstance?.fitView({ duration: 800 }), 50);
     }, [nodes, edges, reactFlowInstance, setNodes, setEdges]);
 
-    const savePlaybook = async (): Promise<string | null> => {
-        // Validate
-        const startNode = nodes.find(n => n.type === 'start');
-        const endNode = nodes.find(n => n.type === 'end');
-        if (!startNode || !endNode) {
-            toast.error('Playbook must have a Start and End node.');
+    const savePlaybook = async (overrides?: Partial<Playbook>): Promise<string | null> => {
+        // Validate with current state OR overrides
+        const currentNodes = overrides?.graph?.nodes || nodes;
+        const currentEdges = overrides?.graph?.edges || edges;
+        const currentDescription = overrides?.description !== undefined ? overrides.description : description;
+        const currentVersion = overrides?.version !== undefined ? overrides.version : version;
+        const currentDefaults = overrides?.execution_defaults || defaults;
+        const currentCapabilities = overrides?.capabilities || capabilities;
+
+        const startNode = currentNodes.find(n => n.type === 'start');
+        const endNode = currentNodes.find(n => n.type === 'end');
+
+        if (!startNode) {
+            toast.error('Playbook must have a Start node.');
+            return null;
+        }
+
+        if (!endNode && currentDefaults.mode !== 'auto') {
+            toast.error('Playbook must have an End node (or set Mode to Autonomous).');
             return null;
         }
 
@@ -767,10 +782,11 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         try {
             const payload = {
                 name: playbookName,
-                description,
-                graph: { nodes, edges },
-                capabilities,
-                execution_defaults: defaults,
+                description: currentDescription,
+                version: currentVersion,
+                graph: { nodes: currentNodes, edges: currentEdges },
+                capabilities: currentCapabilities,
+                execution_defaults: currentDefaults,
                 workspace_id: useWorkspaceStore.getState().currentWorkspace?.id // Inject Workspace ID
             };
 
@@ -782,7 +798,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                 const created = await playbookService.createPlaybook({
                     ...payload,
                     name: playbookName,
-                    description: description || '',
+                    description: currentDescription || '',
+                    version: currentVersion || '1.0.0'
                 } as any);
                 toast.success('Playbook created');
                 return created?.id || null;
@@ -796,8 +813,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         }
     };
 
-    const handleSaveClick = async () => {
-        const id = await savePlaybook();
+    const handleSaveClick = async (meta?: Partial<Playbook>) => {
+        const id = await savePlaybook(meta);
         if (id && !playbookId) {
             onBack();
         }
@@ -935,9 +952,11 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
     }, [isRunning, resetNodeStatuses]);
 
     const playbookMeta = useMemo(() => ({
+        description,
+        version,
         capabilities,
         execution_defaults: defaults
-    }), [capabilities, defaults]);
+    }), [description, version, capabilities, defaults]);
 
     return (
         <div className="flex flex-col h-full bg-background no-drag">
@@ -946,6 +965,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                 onNameChange={setPlaybookName}
                 playbook={playbookMeta}
                 onMetadataChange={(meta) => {
+                    if (meta.description !== undefined) setDescription(meta.description || '');
+                    if (meta.version !== undefined) setVersion(meta.version || '1.0.0');
                     if (meta.capabilities) setCapabilities(meta.capabilities);
                     if (meta.execution_defaults) setDefaults(meta.execution_defaults);
                 }}
@@ -1025,11 +1046,11 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                         snapToGrid
                         selectionOnDrag={!isRunning}
                         selectionMode={SelectionMode.Partial}
-                        className="bg-muted/5"
+                        className="bg-zinc-100 dark:bg-zinc-900/20"
                         proOptions={{ hideAttribution: true }}
                     >
 
-                        <Background color="currentColor" className="opacity-[0.03] dark:opacity-[0.07]" gap={16} />
+                        <Background color="currentColor" className="opacity-[0.15] dark:opacity-[0.25]" gap={16} />
                         <Controls />
                     </ReactFlow>
 

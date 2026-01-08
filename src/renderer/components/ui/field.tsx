@@ -14,7 +14,7 @@ export function Field({ label, error, containerClassName, children }: FieldProps
     return (
         <div className={cn("space-y-2 w-full", containerClassName)}>
             {label && (
-                <Label className="text-[10px] font-semibold text-white/40 uppercase tracking-wider ml-1 block">
+                <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider ml-1 block">
                     {label}
                 </Label>
             )}

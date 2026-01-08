@@ -728,6 +728,7 @@ export function ChatPanel() {
                 onClick={() => {
                   createConversation();
                   setHasStarted(false);
+                  window.api.ai.resetContext(currentWorkspace?.id);
                 }}
                 title="New chat"
               >
@@ -977,7 +978,7 @@ export function ChatPanel() {
               }}
               onKeyDown={handleKeyDown}
               variableGroups={getGlobalVariables()}
-              placeholder="Message Reavion... (Use @ for variables)"
+              placeholder="Message Reavion..."
               className="w-full min-h-[44px] max-h-[200px] px-4 pt-3 pb-2 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0 scrollbar-thin scrollbar-thumb-muted-foreground/20"
             />
             <div className="px-3 py-2.5 flex items-end justify-between gap-2 border-t border-border/5">

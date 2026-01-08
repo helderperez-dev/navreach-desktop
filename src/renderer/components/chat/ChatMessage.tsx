@@ -224,7 +224,7 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
     } else {
       // Check for message or direct result
       const res = toolResult.result;
-      if (res && typeof res === 'object') {
+      if (res && typeof res === 'object' && res !== null) {
         if (res.message) resultDisplay = res.message;
         else resultDisplay = JSON.stringify(res, null, 2);
       } else {

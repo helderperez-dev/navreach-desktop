@@ -11,6 +11,7 @@ export const nodeTypes: Record<string, any> = {
     use_target_list: BaseNode,
     generate_targets: BaseNode,
     filter_targets: BaseNode,
+    capture_leads: BaseNode,
     navigate: BaseNode,
     analyze: BaseNode,
     scroll: BaseNode,

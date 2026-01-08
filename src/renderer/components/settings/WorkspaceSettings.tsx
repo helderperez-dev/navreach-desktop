@@ -111,7 +111,7 @@ export function WorkspaceSettings() {
             <Card>
                 <CardHeader>
                     <div className="flex items-center gap-2">
-                        <Wrench className="h-5 w-5 text-primary" />
+                        <Wrench className="h-5 w-5 text-muted-foreground/70" />
                         <CardTitle>API Tools</CardTitle>
                     </div>
                     <CardDescription>
@@ -146,7 +146,7 @@ export function WorkspaceSettings() {
             <Card>
                 <CardHeader>
                     <div className="flex items-center gap-2">
-                        <Server className="h-5 w-5 text-primary" />
+                        <Server className="h-5 w-5 text-muted-foreground/70" />
                         <CardTitle>MCP Servers</CardTitle>
                     </div>
                     <CardDescription>

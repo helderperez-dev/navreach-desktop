@@ -417,7 +417,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="What would you like me to do? (Use @ for variables)"
+                placeholder="How can Reavion help you today?"
                 variableGroups={getGlobalVariables()}
                 autoFocus
                 className="w-full min-h-[50px] max-h-[150px] px-4 pt-4 pb-3 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0"

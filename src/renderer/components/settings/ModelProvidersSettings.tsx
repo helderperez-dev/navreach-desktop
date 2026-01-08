@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Check, X, ChevronDown, ChevronRight, Sparkles, RefreshCw, Loader2, Wifi } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, X, ChevronDown, ChevronRight, Sparkles, RefreshCw, Loader2, Wifi, Star } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -120,9 +120,8 @@ async function fetchOpenRouterModels(): Promise<ModelConfig[]> {
     if (data.data && Array.isArray(data.data)) {
       return data.data
         .filter((m: OpenRouterModel) => {
-          if (!m.id || !m.name) return false;
-          // Only include models that explicitly support tools according to OpenRouter metadata
-          return m.supported_parameters && m.supported_parameters.includes('tools');
+          // Allow all models, but we'll mark them if they support tools later
+          return true;
         })
         .map((m: OpenRouterModel) => ({
           id: m.id,
@@ -130,6 +129,7 @@ async function fetchOpenRouterModels(): Promise<ModelConfig[]> {
           providerId: '',
           contextWindow: m.context_length || 4096,
           enabled: false,
+          // Store capabilities if needed, for now we assume basic chat works
         }))
         .sort((a: ModelConfig, b: ModelConfig) => a.name.localeCompare(b.name));
     }
@@ -141,7 +141,7 @@ async function fetchOpenRouterModels(): Promise<ModelConfig[]> {
 }
 
 export function ModelProvidersSettings() {
-  const { modelProviders, loadSettings, addModelProvider, updateModelProvider, deleteModelProvider } = useSettingsStore();
+  const { settings, updateSetting, modelProviders, loadSettings, addModelProvider, updateModelProvider, deleteModelProvider } = useSettingsStore();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showModels, setShowModels] = useState(true);
@@ -537,6 +537,22 @@ export function ModelProvidersSettings() {
                           <div className="text-xs text-muted-foreground">
                             {(model.contextWindow / 1000).toFixed(0)}K ctx
                           </div>
+
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={cn(
+                              "h-8 w-8 ml-2",
+                              settings.defaultModelId === model.id ? "text-yellow-400 hover:text-yellow-500" : "text-muted-foreground/30 hover:text-yellow-400"
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateSetting('defaultModelId', model.id);
+                            }}
+                            title="Set as default model"
+                          >
+                            <Star className="h-4 w-4" fill={settings.defaultModelId === model.id ? "currentColor" : "none"} />
+                          </Button>
                         </div>
                       ))
                     )}
@@ -593,6 +609,7 @@ export function ModelProvidersSettings() {
         </div>
       )}
 
+
       <div className="space-y-3">
         {modelProviders.map((provider) => (
           <div
@@ -604,29 +621,69 @@ export function ModelProvidersSettings() {
                 className={`w-2 h-2 rounded-full ${provider.enabled ? 'bg-green-500' : 'bg-muted'}`}
               />
               <div>
-                <h3 className="font-medium">{provider.name}</h3>
+                <h3 className="font-medium">{provider.id === 'system-default' ? 'Reavion' : provider.name}</h3>
                 <p className="text-xs text-muted-foreground">
-                  {provider.type} · {provider.models.length} models
+                  {provider.id === 'system-default' ? `${provider.models.length} model` : `${provider.type} · ${provider.models.length} models`}
                 </p>
+                {provider.models.find(m => m.id === settings.defaultModelId) ? (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 px-2 py-0.5 rounded font-medium border border-yellow-500/20">
+                      <Star className="w-3 h-3" fill="currentColor" />
+                      {provider.id === 'system-default' ? 'Default' : `Default: ${provider.models.find(m => m.id === settings.defaultModelId)?.name}`}
+                    </span>
+                  </div>
+                ) : (
+                  provider.enabled && provider.models.length > 0 && !settings.defaultModelId && (
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className="inline-flex items-center gap-1 text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium border border-border">
+                        <Star className="w-3 h-3 text-muted-foreground/50" />
+                        No default selected
+                      </span>
+                    </div>
+                  )
+                )}
+                {/* Fallback Badge for System Default Provider only implies it is a system-wide default if no local is set anywhere. 
+                    However, finding 'settings.defaultModelId' works globally. 
+                    So the above conditional is correct for specific providers. 
+                    What if we want to show 'System Default' usage badge? 
+                    If !settings.defaultModelId, the system default is implicitly active. 
+                */}
+                {provider.id === 'system-default' && !settings.defaultModelId && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <span className="inline-flex items-center gap-1 text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded font-medium border border-blue-500/20">
+                      <Check className="w-3 h-3" />
+                      Active
+                    </span>
+                  </div>
+                )}
+
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => handleEdit(provider)}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-destructive hover:text-destructive"
-                onClick={() => deleteModelProvider(provider.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {provider.id === 'system-default' ? (
+                <div className="flex items-center px-3 py-1 bg-secondary/50 rounded text-xs text-muted-foreground">
+                  System Managed
+                </div>
+              ) : (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleEdit(provider)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    onClick={() => deleteModelProvider(provider.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         ))}
@@ -638,6 +695,6 @@ export function ModelProvidersSettings() {
           </div>
         )}
       </div>
-    </div>
+    </div >
   );
 }

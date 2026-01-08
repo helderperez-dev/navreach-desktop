@@ -11,7 +11,7 @@ const store = new Store<AppSettings>({
 export function createIntegrationTools(workspaceSettings?: {
     disabledTools?: string[];
     disabledMCPServers?: string[];
-}): DynamicStructuredTool[] {
+}, workspaceId?: string): DynamicStructuredTool[] {
     const getMcpServersTool = new DynamicStructuredTool({
         name: 'db_get_mcp_servers',
         description: 'Fetch all configured MCP (Model Context Protocol) servers.',

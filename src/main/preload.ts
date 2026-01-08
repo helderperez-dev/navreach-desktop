@@ -81,6 +81,7 @@ const aiAPI = {
     ipcRenderer.on('ai:playbook-status', handler);
     return () => ipcRenderer.removeListener('ai:playbook-status', handler);
   },
+  resetContext: (workspaceId?: string) => ipcRenderer.invoke('ai:reset-context', workspaceId),
 };
 
 const debugAPI = {

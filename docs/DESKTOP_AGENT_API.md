@@ -1,6 +1,6 @@
-# Navreach API: Desktop Agent Integration Guide
+# Reavion API: Desktop Agent Integration Guide
 
-This document provides the standard instructions, endpoints, and code examples for integration with the Navreach Web API via external agents, scrapers, or custom tools.
+This document provides the standard instructions, endpoints, and code examples for integration with the Reavion Web API via external agents, scrapers, or custom tools.
 
 ## 1. Credentials & Authorization
 
@@ -11,14 +11,14 @@ Access to the API is authorized via a unique API Key (UUID) assigned to each use
   - **Table**: `public.profiles`
   - **Column**: `api_key` (UUID)
 - **Status Toggle**: The user must have **External Target Collection** enabled in their Integrations Settings.
-- **Base URL**: `https://navreach-web-app.vercel.app/api` (Default Production)
+- **Base URL**: `https://reavion.com/api` (Default Production)
 
 ### Local Configuration (.env)
 If you are developing an integration, you should store the API URL and Key in environment variables:
 
 ```env
-NAVREACH_API_URL=https://navreach-web-app.vercel.app/api
-NAVREACH_API_KEY=your-uuid-api-key
+REAVION_API_URL=https://reavion.com/api
+REAVION_API_KEY=your-uuid-api-key
 ```
 
 ---
@@ -89,12 +89,12 @@ If a match is found, it returns `200 OK` with the existing ID instead of creatin
 
 ```javascript
 /**
- * Save a discovered lead to Navreach
+ * Save a discovered lead to Reavion
  * @param {Object} data - { name, url, email, metadata }
  */
 async function syncLeadToNavreach(data) {
-  const API_KEY = process.env.NAVREACH_API_KEY;
-  const BASE_URL = process.env.NAVREACH_API_URL || "https://navreach-web-app.vercel.app/api";
+  const API_KEY = process.env.REAVION_API_KEY;
+  const BASE_URL = process.env.REAVION_API_URL || "https://reavion.com/api";
 
   try {
     const response = await fetch(`${BASE_URL}/api/targets/event`, {
@@ -118,7 +118,7 @@ async function syncLeadToNavreach(data) {
     const result = await response.json();
     return result;
   } catch (error) {
-    console.error("Navreach Sync Error:", error);
+    console.error("Reavion Sync Error:", error);
     throw error;
   }
 }

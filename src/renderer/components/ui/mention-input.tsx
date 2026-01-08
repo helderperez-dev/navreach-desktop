@@ -331,8 +331,8 @@ export const MentionInput = React.forwardRef<MentionInputRef, MentionInputProps>
                         spellCheck={false}
                         {...props}
                     />
-                    {!value && (
-                        <div className="absolute top-3 left-4 text-muted-foreground/40 pointer-events-none text-sm select-none">
+                    {!(value || '').trim() && (
+                        <div className="absolute top-[15px] left-4 text-muted-foreground/50 pointer-events-none text-sm select-none">
                             {placeholder || 'Type @ to mention...'}
                         </div>
                     )}

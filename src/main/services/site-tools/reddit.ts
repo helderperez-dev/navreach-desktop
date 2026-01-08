@@ -71,32 +71,101 @@ const BASE_SCRIPT_HELPERS = `
   }
 
   async function safeClick(el, label, options = {}) {
-    const clickable = el.closest('button, a, [role="button"]') || el;
-    log('Clicking ' + label, { tagName: clickable.tagName });
+    if(!el) return;
+    const isInteractive = el.matches('button, [role="button"], [role="textbox"], [contenteditable="true"], input, textarea, a');
+    let clickable = isInteractive ? el : (el.closest('button, a, [role="button"]') || el);
+    
+    log('Selecting ' + label, { tagName: clickable.tagName });
     
     const rectBefore = clickable.getBoundingClientRect();
-    if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
-      clickable.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-      await wait(options.scrollWait || 600);
+    if (rectBefore.top < 80 || rectBefore.bottom > window.innerHeight - 80) {
+      clickable.scrollIntoView({ behavior: 'auto', block: 'center' });
+      await wait(options.scrollWait || 200);
     }
 
     const rect = clickable.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
-    if (typeof movePointer === 'function') movePointer(x, y);
+    const x = rect.left + rect.width / 2 + (Math.random() - 0.5) * (rect.width * 0.2);
+    const y = rect.top + rect.height / 2 + (Math.random() - 0.5) * (rect.height * 0.2);
     
-    await wait(options.focusWait || 300);
+    if (typeof movePointer === 'function') {
+      movePointer(x, y);
+      await wait(options.focusWait || 150);
+    }
     
     try {
-      const common = { bubbles: true, cancelable: true, view: window };
-      clickable.dispatchEvent(new MouseEvent('mousedown', common));
-      clickable.dispatchEvent(new MouseEvent('mouseup', common));
-      clickable.click();
+      const common = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y };
+      clickable.dispatchEvent(new PointerEvent('pointerdown', { ...common, pointerType: 'mouse', button: 0, buttons: 1, isPrimary: true }));
+      clickable.dispatchEvent(new MouseEvent('mousedown', { ...common, button: 0, buttons: 1 }));
+      
+      if (clickable.focus) clickable.focus({ preventScroll: true });
+
+      await wait(40 + Math.random() * 40);
+      
+      clickable.dispatchEvent(new PointerEvent('pointerup', { ...common, pointerType: 'mouse', button: 0, buttons: 0, isPrimary: true }));
+      clickable.dispatchEvent(new MouseEvent('mouseup', { ...common, button: 0, buttons: 0 }));
+      
+      const clickEv = new MouseEvent('click', { ...common, button: 0, buttons: 0, detail: 1 });
+      clickable.dispatchEvent(clickEv);
+      
+      if (!clickEv.defaultPrevented && typeof clickable.click === 'function') {
+         try { clickable.click(); } catch(e) {}
+      }
     } catch (e) {
-      log('Native click failed on ' + label, { error: e.toString() });
-      throw e;
+      log('Click failed', { error: e.toString() });
     }
-    await wait(options.afterWait || 800);
+    await wait(options.afterWait || 600);
+  }
+
+  async function humanType(el, text) {
+    if (!el) return;
+    if (typeof movePointer === 'function') {
+        const r = el.getBoundingClientRect();
+        movePointer(r.left + r.width / 2, r.top + r.height / 2);
+    }
+    el.focus({ preventScroll: true });
+    try {
+        document.execCommand('selectAll', false, null);
+        document.execCommand('delete', false, null);
+    } catch(e) {}
+    await wait(200);
+    for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const delay = 35 + Math.random() * 50;
+        await wait(delay);
+        const common = { bubbles: true, cancelable: true, composed: true, view: window };
+        const keyInit = { ...common, key: char, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0) };
+        el.dispatchEvent(new KeyboardEvent('keydown', keyInit));
+        const beforeInput = new InputEvent('beforeinput', { ...common, inputType: 'insertText', data: char });
+        el.dispatchEvent(beforeInput);
+        if (!beforeInput.defaultPrevented) {
+          try {
+            document.execCommand('insertText', false, char);
+          } catch(e) {
+             const selection = window.getSelection();
+             if (selection && selection.rangeCount) {
+                 const range = selection.getRangeAt(0);
+                 range.deleteContents();
+                 range.insertNode(document.createTextNode(char));
+                 range.collapse(false);
+             }
+          }
+        }
+        el.dispatchEvent(new InputEvent('input', { ...common, inputType: 'insertText', data: char }));
+        el.dispatchEvent(new KeyboardEvent('keyup', keyInit));
+        if (['.', ',', '!', '?'].includes(char)) await wait(150 + Math.random() * 100);
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    try {
+        document.execCommand('insertText', false, ' ');
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ' ' }));
+        await wait(20);
+        document.execCommand('delete', false, null);
+        el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
+    } catch(e) {}
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+    await wait(400);
+    el.focus({ preventScroll: true });
   }
 
   function getRedditPostData(p, i) {
@@ -497,76 +566,11 @@ export function createRedditTools(ctx: SiteToolContext): DynamicStructuredTool[]
                     }
 
                     if (editor) {
-                        log('Focusing and clicking editor', { tagName: editor.tagName });
+                        log('Focusing and character typing: ' + ${JSON.stringify(text)});
                         editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        await wait(500);
-
-                        const r = editor.getBoundingClientRect();
-                        const x = r.left + r.width/2;
-                        const y = r.top + r.height/2;
-
-                        if (typeof movePointer === 'function') movePointer(x, y);
+                        await wait(200);
                         
-                        editor.focus({ preventScroll: true });
-                        editor.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: x, clientY: y }));
-                        editor.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: x, clientY: y }));
-                        try { (editor as any).click(); } catch(e) {}
-                        await wait(400);
-                        
-                        log('Clearing existing content if any...');
-                        try {
-                            const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
-                            if (isDiv) {
-                                editor.focus();
-                                const selection = window.getSelection();
-                                const range = document.createRange();
-                                range.selectNodeContents(editor);
-                                selection.removeAllRanges();
-                                selection.addRange(range);
-                                document.execCommand('delete', false, null);
-                                // Absolute clear for Lexical/Shadow DOM
-                                if (editor.textContent.length > 0) {
-                                   editor.textContent = '';
-                                   editor.innerHTML = '';
-                                }
-                            } else {
-                                (editor as any).value = '';
-                                editor.dispatchEvent(new Event('input', { bubbles: true }));
-                            }
-                        } catch (e) { log('Clear failed', e.toString()); }
-
-                        log('Attempting to type text: ' + ${JSON.stringify(text)});
-                        
-                        const typeIntoEditor = (txt) => {
-                             const isDiv = editor.tagName === 'DIV' || editor.getAttribute('contenteditable') === 'true';
-                             if (isDiv) {
-                                 editor.focus();
-                                 document.execCommand('insertText', false, txt);
-                                 // Verification
-                                 if (editor.textContent.indexOf(txt) === -1) {
-                                     log('insertText failed/partial, setting textContent as fallback');
-                                     editor.textContent = txt;
-                                     editor.dispatchEvent(new Event('input', { bubbles: true }));
-                                 }
-                             } else {
-                                 (editor as any).value = txt;
-                                 editor.dispatchEvent(new Event('input', { bubbles: true }));
-                                 editor.dispatchEvent(new Event('change', { bubbles: true }));
-                             }
-                        };
-
-                        typeIntoEditor(${JSON.stringify(text)});
-                        await wait(600);
-                        
-                        // Second pass check
-                        let finalVal = editor.tagName === 'DIV' ? editor.textContent : (editor as any).value;
-                        if (!finalVal || finalVal.trim().length === 0) {
-                            log('Editor value empty after typing, retrying...');
-                            typeIntoEditor(${JSON.stringify(text)});
-                            await wait(500);
-                        }
-
-
+                        await humanType(editor, ${JSON.stringify(text)});
                         await wait(600);
                         
                         // Submit button logic

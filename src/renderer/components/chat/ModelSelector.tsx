@@ -37,7 +37,7 @@ export function ModelSelector() {
 
   const getDisplayName = () => {
     if (!selectedModel) return 'Select model';
-    return selectedModel.name;
+    return selectedModel.providerId === 'system-default' ? 'Reavion Flash' : selectedModel.name;
   };
 
   if (enabledProviders.length === 0) {
@@ -48,16 +48,18 @@ export function ModelSelector() {
 
   return (
     <Select value={selectedModel?.id || ''} onValueChange={handleModelChange}>
-      <SelectTrigger className="h-auto px-0 py-0 text-xs border-0 bg-transparent hover:text-foreground text-muted-foreground gap-0 w-auto focus:ring-0 [&>svg]:hidden">
+      <SelectTrigger className="h-auto px-0 py-0 text-xs border-0 bg-transparent shadow-none hover:text-foreground text-muted-foreground gap-0 w-auto focus:ring-0 [&>svg]:hidden">
         <span className="truncate">{getDisplayName()}</span>
       </SelectTrigger>
       <SelectContent align="start">
         {enabledProviders.map((provider) => (
           <SelectGroup key={provider.id}>
-            <SelectLabel className="text-xs text-muted-foreground">{provider.name}</SelectLabel>
+            <SelectLabel className="text-xs text-muted-foreground">
+              {provider.id === 'system-default' ? 'Reavion' : provider.name}
+            </SelectLabel>
             {provider.models.map((model) => (
               <SelectItem key={model.id} value={model.id} className="text-xs">
-                {model.name}
+                {provider.id === 'system-default' ? 'Reavion Flash' : model.name}
               </SelectItem>
             ))}
           </SelectGroup>
