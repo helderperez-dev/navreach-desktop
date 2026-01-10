@@ -413,8 +413,8 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
   };
 
   const hasStructuredTools = message.toolCalls && message.toolCalls.length > 0;
-  // If use legacy parsing:
-  const blocks = (!isUser && !hasStructuredTools) ? parseMessageContent(message.content) : [];
+  // Always parse content to support Thinking blocks and clean text, even if tools are present.
+  const blocks = (!isUser) ? parseMessageContent(message.content) : [];
 
   // Helper to wrap markdown component children with tag processor
   const withTags = (children: any) => {
@@ -445,26 +445,13 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
           ) : (
             <>
               {/* 1. Structured Tool Executions (Consolidated) */}
-              {/* 1. Text Content (Narration or Answer) */}
-              {message.content && message.content.trim() && (
-                <div className="prose prose-sm max-w-none w-full text-foreground leading-relaxed text-left dark:prose-invert break-words mb-2">
-                  <ReactMarkdown
-                    components={{
-                      p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
-                      ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ol>,
-                      li: ({ children }) => <li className="pl-1">{withTags(children)}</li>,
-                      strong: ({ children }) => <strong className="font-semibold text-foreground">{withTags(children)}</strong>,
-                      code: ({ children }) => <code className="bg-muted/50 px-1.5 py-0.5 rounded-md text-[13px] font-mono text-primary border border-border/30">{withTags(children)}</code>,
-                      pre: ({ children }) => <pre className="bg-muted/30 p-4 rounded-xl border border-border/30 overflow-x-auto my-3 text-xs font-mono shadow-inner custom-scrollbar">{children}</pre>,
-                      a: ({ href, children }) => <a href={href} className="text-primary hover:text-primary/80 hover:underline decoration-primary/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
-                      blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/50 pl-4 py-1 my-3 italic text-muted-foreground">{withTags(children)}</blockquote>,
-                    }}
-                  >
-                    {message.content.trim()}
-                  </ReactMarkdown>
-                </div>
-              )}
+              {/* Content Logic Refactored:
+                    We now ALWAYS use parseMessageContent to separate Thoughts from Text.
+                    This prevents duplication (previously we rendered content + blocks) 
+                    and ensures 'Thinking' blocks are always collapsible. 
+                    Structured tools are rendered separately below.
+                */}
+
 
               {/* 2. Structured Tool Executions (Consolidated) */}
               {hasStructuredTools && (

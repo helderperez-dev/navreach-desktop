@@ -19,7 +19,6 @@ import { cn } from '@/lib/utils';
 import { MentionInput } from '@/components/ui/mention-input';
 import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
-import { ProcessedText } from '@/lib/mention-utils';
 import { supabase } from '@/lib/supabase';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 
@@ -725,7 +724,12 @@ export function ChatPanel() {
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                onClick={() => {
+                onClick={async () => {
+                  try {
+                    await window.api.ai.stop();
+                  } catch (e) {
+                    console.error('Failed to stop AI:', e);
+                  }
                   createConversation();
                   setHasStarted(false);
                   window.api.ai.resetContext(currentWorkspace?.id);
@@ -819,7 +823,7 @@ export function ChatPanel() {
             ))}
             {isStreaming && (
               <div className="space-y-2 mt-2">
-                {/* 1. Narration Text (Streaming) */}
+                {/* 1. Narration Text (Streaming) - HIDDEN to prevent duplication with ChatMessage
                 {streamingContent && (
                   <div className="bg-transparent px-4 py-2 text-sm text-foreground/80 leading-relaxed">
                     <span className="typing-cursor">
@@ -827,6 +831,7 @@ export function ChatPanel() {
                     </span>
                   </div>
                 )}
+                */}
 
                 {/* 2. Live Tool Executions (Cards) */}
                 {currentToolCalls.length > 0 && (

@@ -89,6 +89,8 @@ declare global {
         listWorkflows: () => Promise<{ name: string; path: string }[]>;
         testConnection: (provider: import('@shared/types').ModelProvider, modelId?: string) => Promise<{ success: boolean; message: string; response?: string }>;
         onPlaybookStatus: (callback: (data: { nodeId: string; status: 'running' | 'success' | 'error'; message?: string }) => void) => () => void;
+        suggest: (request: any) => Promise<{ success: boolean; suggestions?: { label: string; prompt: string }[]; error?: string }>;
+        resetContext: (workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
       };
       debug: {
         onLog: (callback: (data: { type: string; message: string; data?: any }) => void) => () => void;
