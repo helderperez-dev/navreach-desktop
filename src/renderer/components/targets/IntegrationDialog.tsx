@@ -113,7 +113,7 @@ print(response.json())`
   body: JSON.stringify({
     list_id: "${listId}",
     name: "Jane Smith",
-    url: "https://linkedin.com/in/janesmith",
+    url: "https://x.com/janesmith",
     type: "x_profile",
     tags: ["lead"],
     metadata: { company: "Acme Inc" }

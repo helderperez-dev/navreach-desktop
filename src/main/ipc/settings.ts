@@ -191,4 +191,124 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
     store.set('apiTools', filtered);
     return { success: true };
   });
+
+  // Platform Knowledge Handlers
+  ipcMain.handle('settings:get-platform-knowledge', async () => {
+    const { data, error } = await supabase
+      .from('platform_knowledge')
+      .select('*')
+      .order('domain', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching platform knowledge:', error);
+      return [];
+    }
+    return data;
+  });
+
+  ipcMain.handle('settings:add-platform-knowledge', async (_event, record: any) => {
+    const { data, error } = await supabase
+      .from('platform_knowledge')
+      .insert(record)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding platform knowledge:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, data };
+  });
+
+  ipcMain.handle('settings:update-platform-knowledge', async (_event, record: any) => {
+    const { id, ...updates } = record;
+    const { data, error } = await supabase
+      .from('platform_knowledge')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating platform knowledge:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true, data };
+  });
+
+  ipcMain.handle('settings:delete-platform-knowledge', async (_event, id: string) => {
+    const { error } = await supabase
+      .from('platform_knowledge')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting platform knowledge:', error);
+      return { success: false, error: error.message };
+    }
+    return { success: true };
+  });
+
+  // Agent Profile Handlers
+  ipcMain.handle('settings:get-agent-profile', async () => {
+    // Check for any existing user settings row
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('agent_profile')
+      .limit(1)
+      .single();
+
+    if (error) {
+      return { persona: '', icp: '', tone: '' };
+    }
+    return data.agent_profile || { persona: '', icp: '', tone: '' };
+  });
+
+  ipcMain.handle('settings:update-agent-profile', async (_event, profile: any) => {
+    // Try to get the first user_id
+    const { data: existing } = await supabase.from('user_settings').select('user_id').limit(1).single();
+
+    if (existing) {
+      const { error } = await supabase
+        .from('user_settings')
+        .update({ agent_profile: profile, updated_at: new Date().toISOString() })
+        .eq('user_id', existing.user_id);
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } else {
+      return { success: false, error: 'No user settings found. Please save general settings first to create a user record.' };
+    }
+  });
+
+  // Dynamic Knowledge Base Handlers
+  ipcMain.handle('settings:get-knowledge-bases', async () => {
+    const { data, error } = await supabase.from('knowledge_bases').select('*').order('name');
+    return error ? [] : data;
+  });
+
+  ipcMain.handle('settings:create-knowledge-base', async (_event, name: string, description?: string) => {
+    const { data, error } = await supabase.from('knowledge_bases').insert({ name, description }).select().single();
+    return error ? { success: false, error: error.message } : { success: true, data };
+  });
+
+  ipcMain.handle('settings:delete-knowledge-base', async (_event, id: string) => {
+    const { error } = await supabase.from('knowledge_bases').delete().eq('id', id);
+    return { success: !error, error: error?.message };
+  });
+
+  ipcMain.handle('settings:get-kb-content', async (_event, kbId: string) => {
+    const { data, error } = await supabase.from('knowledge_content').select('*').eq('kb_id', kbId).order('created_at');
+    return error ? [] : data;
+  });
+
+  ipcMain.handle('settings:add-kb-content', async (_event, kbId: string, content: string, title?: string) => {
+    const { data, error } = await supabase.from('knowledge_content').insert({ kb_id: kbId, content, title }).select().single();
+    return error ? { success: false, error: error.message } : { success: true, data };
+  });
+
+  ipcMain.handle('settings:delete-kb-content', async (_event, id: string) => {
+    const { error } = await supabase.from('knowledge_content').delete().eq('id', id);
+    return { success: !error, error: error?.message };
+  });
 }

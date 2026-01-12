@@ -41,7 +41,7 @@ export function MainLayout() {
       const delta = e.clientX - startX;
       // Use the actual sidebar width if possible, but 400 is the default in store
       // The logic here should simply be: new width = startWidth + delta
-      const newWidth = Math.min(Math.max(startWidth + delta, 500), 700);
+      const newWidth = Math.min(Math.max(startWidth + delta, 350), 1000);
       setChatPanelWidth(newWidth);
     };
 
@@ -104,7 +104,7 @@ export function MainLayout() {
                   display: 'block' // Always render to keep Agent logic alive
                 }}
               >
-                <div className="h-full overflow-hidden w-screen max-w-[500px]" style={{ width: chatPanelWidth }}>
+                <div className="h-full overflow-hidden w-full" style={{ width: chatPanelWidth }}>
                   <ChatPanel />
                 </div>
               </motion.div>
@@ -115,7 +115,7 @@ export function MainLayout() {
                   className="group relative w-px h-full cursor-col-resize flex-shrink-0 z-20 bg-border/20"
                 >
                   {/* Expanded invisible hit area for easier grabbing */}
-                  <div className="absolute inset-y-0 -left-1.5 -right-1.5 cursor-col-resize z-30" />
+                  <div className="absolute inset-y-0 -left-2 -right-2 cursor-col-resize z-30" />
                   {/* Visual hover indicator */}
                   <div className="absolute inset-y-0 -left-[0.5px] -right-[0.5px] bg-primary/0 group-hover:bg-primary/50 transition-colors z-20" />
                 </div>

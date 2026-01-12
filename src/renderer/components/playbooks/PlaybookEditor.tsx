@@ -65,7 +65,6 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [executionLogs, setExecutionLogs] = useState<{ id: string, msg: string, type: 'info' | 'success' | 'error' | 'running', time: string, timestamp: number }[]>([]);
     const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB');
-    const [isRecording, setIsRecording] = useState(false);
     const isRunning = useChatStore(s => s.isStreaming);
     const nodesRef = useRef(nodes);
     useEffect(() => {
@@ -93,8 +92,6 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
     }, [edges]);
 
     const lastActiveNodeRef = useRef<string | null>(null);
-    const lastRecordedNodeRef = useRef<string | null>(null);
-    const lastRecordedSelectorRef = useRef<string | null>(null);
 
     // Playbook Execution Status Listener
     useEffect(() => {
@@ -257,152 +254,6 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         return cleanup;
     }, [isRunning]);
 
-    // Recording Listener
-    useEffect(() => {
-        // We only want to listen for recording events if we are actually recording
-        if (!isRecording) return;
-
-        const removeListener = window.api.browser.onRecordingAction((action: any) => {
-            // Only handle if we have a valid action
-            if (!action || !action.type) return;
-
-            // Determine node type
-            let nodeType: PlaybookNodeType | null = null;
-            let nodeLabel = '';
-            let config: any = {};
-
-            if (action.type === 'click') {
-                nodeType = 'browser_click';
-                nodeLabel = `Click ${action.tagName?.toLowerCase() || 'element'}`;
-                config = { selector: action.selector };
-                if (action.text) nodeLabel += ` "${action.text}"`;
-            } else if (action.type === 'type') {
-                nodeType = 'browser_type';
-                let displayValue = action.value || '';
-
-                // Handle complex editor state (like JSON from shreddit-composer)
-                if (displayValue && typeof displayValue === 'string' && displayValue.startsWith('{')) {
-                    try {
-                        const parsed = JSON.parse(displayValue);
-                        if (parsed.document || parsed.blocks || parsed.root) {
-                            displayValue = action.text || 'Rich Text Content';
-                        }
-                    } catch (e) { }
-                }
-
-                // Truncate for label
-                const truncated = displayValue.length > 25 ? displayValue.slice(0, 22) + '...' : displayValue;
-                nodeLabel = `Type "${truncated}"`;
-                config = { selector: action.selector, text: action.value, value: action.value };
-            } else if (action.type === 'navigation') {
-                nodeType = 'browser_navigate';
-                let host = '';
-                try {
-                    host = action.url ? new URL(action.url).hostname : '';
-                } catch (e) { }
-                nodeLabel = host ? `Navigate to ${host}` : 'Navigate';
-                config = { url: action.url };
-            }
-
-            if (!nodeType) return;
-
-            // MERGE LOGIC: If this is a 'type' action on the same element as the last recorded node,
-            // update that node instead of creating a new one.
-            if (nodeType === 'browser_type' && lastRecordedSelectorRef.current === action.selector) {
-                const lastId = lastRecordedNodeRef.current;
-                if (lastId) {
-                    setNodes((current) => current.map(n => {
-                        if (n.id === lastId) {
-                            // If it's a 'change' event, it's often the most complete/final version
-                            // but we always want the most up to date value anyway.
-                            return {
-                                ...n,
-                                data: {
-                                    ...n.data,
-                                    label: nodeLabel,
-                                    config: {
-                                        ...n.data.config,
-                                        text: action.value,
-                                        value: action.value
-                                    }
-                                }
-                            };
-                        }
-                        return n;
-                    }));
-
-                    // If this was a 'change' event, we can clear the selector ref to force a new node 
-                    // if the user starts typing in the same field again later (rare but cleaner).
-                    if (action.subtype === 'change') {
-                        // lastRecordedSelectorRef.current = null; // optional
-                    }
-
-                    return; // Important: skip adding new node and edge
-                }
-            }
-
-            const newNodeId = uuidv4();
-
-            // Atomically update nodes and edges
-            setNodes((currentNodes) => {
-                // Determine position
-                let position = { x: 100, y: 100 };
-                const prevNodeId = lastRecordedNodeRef.current;
-                const prevNode = currentNodes.find(n => n.id === prevNodeId);
-
-                if (prevNode) {
-                    position = { x: prevNode.position.x, y: prevNode.position.y + 120 };
-                } else {
-                    // Start from the "Start" node if it exists
-                    const startNode = currentNodes.find(n => n.type === 'start');
-                    if (startNode) {
-                        position = { x: startNode.position.x, y: startNode.position.y + 120 };
-                        lastRecordedNodeRef.current = startNode.id;
-                    }
-                }
-
-                const newNode = {
-                    id: newNodeId,
-                    type: nodeType,
-                    position,
-                    data: { label: nodeLabel, config },
-                    selected: true
-                };
-
-                // Track selector for next merge check
-                if (nodeType === 'browser_type') {
-                    lastRecordedSelectorRef.current = config.selector;
-                } else {
-                    lastRecordedSelectorRef.current = null;
-                }
-
-                return currentNodes.map(n => ({ ...n, selected: false })).concat(newNode);
-            });
-
-            setEdges((currentEdges) => {
-                const prevNodeId = lastRecordedNodeRef.current;
-                if (!prevNodeId) {
-                    lastRecordedNodeRef.current = newNodeId;
-                    return currentEdges;
-                }
-
-                const newEdge = {
-                    id: `e-${prevNodeId}-${newNodeId}`,
-                    source: prevNodeId,
-                    target: newNodeId,
-                    type: 'smoothstep',
-                    style: { strokeWidth: 2 }
-                };
-
-                lastRecordedNodeRef.current = newNodeId;
-                return [...currentEdges, newEdge];
-            });
-        });
-
-        return () => {
-            if (removeListener) removeListener();
-        };
-    }, [isRecording, setNodes, setEdges]);
 
     const loadPlaybook = async (id: string) => {
         try {
@@ -871,26 +722,6 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         }
     };
 
-    const toggleRecording = useCallback(async () => {
-        const { tabId, setIsRecording: setBrowserRecording } = useBrowserStore.getState();
-
-        if (!isRecording) {
-            // Start
-            lastRecordedNodeRef.current = null;
-            lastRecordedSelectorRef.current = null;
-            useAppStore.getState().setShowPlaybookBrowser(true);
-            await window.api.browser.startRecording(tabId);
-            setIsRecording(true);
-            setBrowserRecording(true);
-            toast.info('Recording started. Perform actions in the browser.');
-        } else {
-            // Stop
-            await window.api.browser.stopRecording(tabId);
-            setIsRecording(false);
-            setBrowserRecording(false);
-            toast.success('Recording stopped.');
-        }
-    }, [isRecording]);
 
     const resetNodeStatuses = useCallback(() => {
         lastActiveNodeRef.current = null;
@@ -977,8 +808,6 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
                 onBack={onBack}
                 onLayout={onLayout}
                 layoutDirection={layoutDirection}
-                isRecording={isRecording}
-                onToggleRecording={toggleRecording}
                 saving={saving}
             />
 

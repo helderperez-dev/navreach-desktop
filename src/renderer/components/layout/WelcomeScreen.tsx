@@ -48,7 +48,7 @@ interface WelcomeScreenProps {
 
 const STATIC_STARTERS: Suggestion[] = [
   { label: 'X Growth', prompt: 'Search X for people talking about "SaaS marketing", scan their recent posts, and engage with helpful replies.' },
-  { label: 'Lead Sourcing', prompt: 'Search LinkedIn for Founders in the AI niche, scrape their profile details and save them to a new list.' },
+  { label: 'Lead Sourcing', prompt: 'Search for founders in the AI niche, scrape their profile details from any website and save them to a new list.' },
   { label: 'Competitor Intel', prompt: 'Go to a competitor website, extract their pricing and main features, and summarize how I can beat them.' }
 ];
 

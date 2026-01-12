@@ -15,48 +15,11 @@ export const nodeTypes: Record<string, any> = {
     navigate: BaseNode,
     analyze: BaseNode,
     scroll: BaseNode,
-    engage: BaseNode,
     extract: BaseNode,
     x_advanced_search: BaseNode,
     x_scout: BaseNode,
     x_profile: BaseNode,
     x_post: BaseNode,
     x_engage: BaseNode,
-    mcp_call: BaseNode,
-    api_call: BaseNode,
-    browser_action: BaseNode,
-    humanize: BaseNode,
-    approval: BaseNode,
-    pause: BaseNode,
-
-    // Reddit Nodes
-    reddit_search: BaseNode,
-    reddit_scout_community: BaseNode,
-    reddit_vote: BaseNode,
-    reddit_comment: BaseNode,
-    reddit_join: BaseNode,
-    // LinkedIn
-    linkedin_search: BaseNode,
-    linkedin_connect: BaseNode,
-    linkedin_message: BaseNode,
-    // Instagram
-    instagram_post: BaseNode,
-    instagram_engage: BaseNode,
-    // Bluesky
-    bluesky_post: BaseNode,
-    bluesky_reply: BaseNode,
-
-    // Browser Introspection
-    browser_inspect: BaseNode,
-    browser_highlight: BaseNode,
-    browser_accessibility_tree: BaseNode,
-    browser_console_logs: BaseNode,
-    browser_grid: BaseNode,
-    x_scan_posts: BaseNode,
-    reddit_scan_posts: BaseNode,
-    browser_click: BaseNode,
-    browser_type: BaseNode,
-    browser_navigate: BaseNode,
-    browser_scrape: BaseNode,
-    browser_replay: BaseNode,
+    x_scan_posts: BaseNode
 };

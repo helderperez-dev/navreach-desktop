@@ -27,6 +27,13 @@ const browserAPI = {
     ipcRenderer.on('recorder:action', handler);
     return () => ipcRenderer.removeListener('recorder:action', handler);
   },
+  startInspector: (tabId: string) => ipcRenderer.invoke('browser:start-inspector', tabId),
+  stopInspector: (tabId: string) => ipcRenderer.invoke('browser:stop-inspector', tabId),
+  onInspectorAction: (callback: (data: any) => void) => {
+    const handler = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('inspector:action', handler);
+    return () => ipcRenderer.removeListener('inspector:action', handler);
+  },
   registerWebview: (tabId: string, webContentsId: number) => ipcRenderer.invoke('browser:register-webview', tabId, webContentsId),
   unregisterWebview: (tabId: string) => ipcRenderer.invoke('browser:unregister-webview', tabId),
   allowNavigation: (url: string) => ipcRenderer.invoke('browser:allow-navigation', url),
@@ -37,6 +44,24 @@ const settingsAPI = {
   set: <T>(key: string, value: T) => ipcRenderer.invoke('settings:set', key, value),
   getAll: () => ipcRenderer.invoke('settings:get-all'),
   reset: () => ipcRenderer.invoke('settings:reset'),
+
+  // Platform Knowledge
+  getPlatformKnowledge: () => ipcRenderer.invoke('settings:get-platform-knowledge'),
+  addPlatformKnowledge: (record: any) => ipcRenderer.invoke('settings:add-platform-knowledge', record),
+  updatePlatformKnowledge: (record: any) => ipcRenderer.invoke('settings:update-platform-knowledge', record),
+  deletePlatformKnowledge: (id: string) => ipcRenderer.invoke('settings:delete-platform-knowledge', id),
+
+  // Agent Profile
+  getAgentProfile: () => ipcRenderer.invoke('settings:get-agent-profile'),
+  updateAgentProfile: (profile: any) => ipcRenderer.invoke('settings:update-agent-profile', profile),
+
+  // Dynamic Knowledge Bases
+  getKnowledgeBases: () => ipcRenderer.invoke('settings:get-knowledge-bases'),
+  createKnowledgeBase: (name: string, description?: string) => ipcRenderer.invoke('settings:create-knowledge-base', name, description),
+  deleteKnowledgeBase: (id: string) => ipcRenderer.invoke('settings:delete-knowledge-base', id),
+  getKBContent: (kbId: string) => ipcRenderer.invoke('settings:get-kb-content', kbId),
+  addKBContent: (kbId: string, content: string, title?: string) => ipcRenderer.invoke('settings:add-kb-content', kbId, content, title),
+  deleteKBContent: (id: string) => ipcRenderer.invoke('settings:delete-kb-content', id),
 };
 
 const mcpAPI = {

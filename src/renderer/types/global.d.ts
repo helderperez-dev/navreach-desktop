@@ -22,6 +22,9 @@ declare global {
         startRecording: (tabId: string) => Promise<{ success: boolean; error?: string }>;
         stopRecording: (tabId: string) => Promise<{ success: boolean; error?: string }>;
         onRecordingAction: (callback: (data: any) => void) => () => void;
+        startInspector: (tabId: string) => Promise<{ success: boolean; error?: string }>;
+        stopInspector: (tabId: string) => Promise<{ success: boolean; error?: string }>;
+        onInspectorAction: (callback: (data: any) => void) => () => void;
       };
       settings: {
         get: <T>(key: string) => Promise<T>;
@@ -37,6 +40,21 @@ declare global {
         addAPITool: (tool: import('@shared/types').APITool) => Promise<{ success: boolean; tool: import('@shared/types').APITool }>;
         updateAPITool: (tool: import('@shared/types').APITool) => Promise<{ success: boolean; tool?: import('@shared/types').APITool }>;
         deleteAPITool: (id: string) => Promise<{ success: boolean }>;
+
+        getPlatformKnowledge: () => Promise<import('@shared/types').PlatformKnowledge[]>;
+        addPlatformKnowledge: (record: Partial<import('@shared/types').PlatformKnowledge>) => Promise<{ success: boolean; data?: import('@shared/types').PlatformKnowledge; error?: string }>;
+        updatePlatformKnowledge: (record: Partial<import('@shared/types').PlatformKnowledge>) => Promise<{ success: boolean; data?: import('@shared/types').PlatformKnowledge; error?: string }>;
+        deletePlatformKnowledge: (id: string) => Promise<{ success: boolean; error?: string }>;
+
+        getAgentProfile: () => Promise<{ persona: string; icp: string; tone: string }>;
+        updateAgentProfile: (profile: { persona: string; icp: string; tone: string }) => Promise<{ success: boolean; error?: string }>;
+
+        getKnowledgeBases: () => Promise<import('@shared/types').KnowledgeBase[]>;
+        createKnowledgeBase: (name: string, description?: string) => Promise<{ success: boolean; data?: import('@shared/types').KnowledgeBase; error?: string }>;
+        deleteKnowledgeBase: (id: string) => Promise<{ success: boolean; error?: string }>;
+        getKBContent: (kbId: string) => Promise<import('@shared/types').KnowledgeContent[]>;
+        addKBContent: (kbId: string, content: string, title?: string) => Promise<{ success: boolean; data?: import('@shared/types').KnowledgeContent; error?: string }>;
+        deleteKBContent: (id: string) => Promise<{ success: boolean; error?: string }>;
       };
       mcp: {
         connect: (serverId: string) => Promise<{ success: boolean }>;

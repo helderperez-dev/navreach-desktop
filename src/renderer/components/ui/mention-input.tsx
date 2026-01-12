@@ -164,11 +164,10 @@ export const MentionInput = React.forwardRef<MentionInputRef, MentionInputProps>
 
         // Emit change
         onChange({ target: { value: newValue } });
+    };
 
-        // Reset editing lock after a tick to allow external updates again if needed
-        setTimeout(() => {
-            isEditingRef.current = false;
-        }, 0);
+    const handleBlur = () => {
+        isEditingRef.current = false;
     };
 
     const checkTrigger = () => {
@@ -322,6 +321,7 @@ export const MentionInput = React.forwardRef<MentionInputRef, MentionInputProps>
                         ref={inputRef}
                         contentEditable
                         onInput={handleInput}
+                        onBlur={handleBlur}
                         onPaste={handlePaste}
                         onKeyDown={handleKeyDown}
                         className={cn(

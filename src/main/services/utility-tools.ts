@@ -204,7 +204,7 @@ export function createUtilityTools(context?: UtilityToolsContext): DynamicStruct
             schema: z.object({
                 file_path: z.string().describe('The absolute path to the file to write.'),
                 content: z.string().describe('The content to write to the file.'),
-                append: z.boolean().optional().default(false).describe('Whether to append to the file if it exists (true) or overwrite it (false). Defaults to false.'),
+                append: z.boolean().nullable().describe('Whether to append to the file if it exists (true) or overwrite it (false). Defaults to false.'),
             }),
             func: async ({ file_path, content, append }) => {
                 console.log(`[Tool] Writing to file: ${file_path}, append: ${append}`);
@@ -253,8 +253,8 @@ export function createUtilityTools(context?: UtilityToolsContext): DynamicStruct
             description: 'Execute a shell command. Use with extreme caution.',
             schema: z.object({
                 command: z.string().describe('The shell command to execute.'),
-                args: z.array(z.string()).optional().describe('Optional: Arguments for the command.'),
-                cwd: z.string().optional().describe('Optional: The current working directory for the command.'),
+                args: z.array(z.string()).nullable().describe('Optional: Arguments for the command.'),
+                cwd: z.string().nullable().describe('Optional: The current working directory for the command.'),
             }),
             func: async ({ command, args, cwd }) => {
                 console.log(`[Tool] Running shell command: ${command} ${args?.join(' ')}`);

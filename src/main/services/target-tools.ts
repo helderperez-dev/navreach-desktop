@@ -136,7 +136,7 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
         schema: z.object({
             list_id: z.string().describe('The ID of the target list'),
             name: z.string().describe('Name of the target'),
-            url: z.string().describe('URL of the target (e.g., LinkedIn profile URL)'),
+            url: z.string().describe('URL of the target (e.g., profile URL)'),
             type: z.string().describe('Type of target (person, post, company). Use "person" as default.'),
             metadata_json: z.string().nullable().describe('Metadata fields as a JSON string. Pass "{}" if none.').default(null),
         }),
@@ -206,7 +206,7 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
 
     const captureLeadsBulkTool = new DynamicStructuredTool({
         name: 'capture_leads_bulk',
-        description: 'Save multiple leads (people, posts, or companies) from any social network (X, LinkedIn, Reddit, etc.) into a target list in a single operation.',
+        description: 'Save multiple leads (people, posts, or companies) from X (Twitter) or other websites into a target list in a single operation.',
         schema: z.object({
             targetListId: z.string().describe('The ID of the target list where leads will be saved'),
             leads: z.array(z.object({

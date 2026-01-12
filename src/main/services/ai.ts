@@ -60,7 +60,8 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
 
     const baseConfig = {
         modelName: model.id,
-        temperature: 0.7,
+        temperature: 0.1, // Reduced from 0.7 for higher deterministic execution
+        maxTokens: 4096,  // Ensure consistent multi-step thinking/tool generation
         streaming,
     };
 
@@ -141,19 +142,29 @@ function convertMessages(messages: Message[], systemPrompt?: string): BaseMessag
         if (msg.role === 'user') {
             langchainMessages.push(new HumanMessage(msg.content));
         } else if (msg.role === 'assistant') {
-            // Handle tool calls if they exist in the content or metadata
-            const tool_calls = (msg as any).tool_calls;
-            if (tool_calls && tool_calls.length > 0) {
-                langchainMessages.push(new AIMessage({
-                    content: msg.content,
-                    tool_calls: tool_calls
-                }));
-            } else {
-                console.log("Message: ", msg);
-                langchainMessages.push(new AIMessage(msg.content));
+            const toolCalls = (msg as any).tool_calls || (msg as any).toolCalls;
+            const toolResults = (msg as any).tool_results || (msg as any).toolResults;
+
+            // 1. Add the assistant message (content + tool calls)
+            langchainMessages.push(new AIMessage({
+                content: msg.content || "",
+                tool_calls: toolCalls?.map((tc: any) => ({
+                    id: tc.id,
+                    name: tc.name,
+                    args: tc.args || tc.arguments || {}
+                })) || []
+            }));
+
+            // 2. Add the tool response messages immediately after if they exist in history
+            if (toolResults && toolResults.length > 0) {
+                for (const tr of toolResults) {
+                    langchainMessages.push(new ToolMessage({
+                        content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result || tr.error || "No result"),
+                        tool_call_id: tr.toolCallId || tr.id,
+                    }));
+                }
             }
         } else if (msg.role === 'tool') {
-            console.log("Tool message: ", msg);
             langchainMessages.push(new ToolMessage({
                 content: msg.content,
                 tool_call_id: (msg as any).tool_call_id || (msg as any).id,
@@ -165,14 +176,16 @@ function convertMessages(messages: Message[], systemPrompt?: string): BaseMessag
 
     return langchainMessages;
 }
-// ... (start of BROWSER_AGENT_PROMPT not needed in replacement chunk if context sufficient) ...
 
+const BROWSER_AGENT_PROMPT = `**STRICT EXECUTION RULES (HIGHEST PRIORITY)**
+1. **ACTOR > CHATTER**: Your primary value is in executing tasks, not explaining them.
+2. **PLAN & ACT**: If you describe a plan, you MUST call at least one tool to start acting on it in the SAME response.
+3. **NEVER conclude a turn with a promise but no tool call.** (e.g., Don't say "I will navigate" and then stop. CALL \`browser_navigate\`.)
+4. **NO CONFIRMATION TRAPS**: Do not stop to ask "Should I proceed?" or "Ready for next step?". Assume full autonomy unless a human decision is literally impossible.
 
-
-const BROWSER_AGENT_PROMPT = `**IDENTITY & ROLE**
+**IDENTITY & ROLE**
 You are a **Deterministic Execution Agent** and **Browser Automation Specialist**.
 While you have "human-like" interaction capabilities, your primary directive is **STRICT ADHERENCE** to instructions and parameters.
-You are NOT allowed to decide that a user's search query is "too narrow" or "needs optimization". 
 If the user provides a keyword, that is the **ONLY** keyword you use. Generating "better" or "broader" keywords out of thin air is a CRITICAL FAILURE.
 
 **ANTI-SPAM & HUMAN BEHAVIOR PROTOCOLS (CRITICAL)**
@@ -182,30 +195,29 @@ You must behave like a genuine human user to avoid getting flagged/blocked.
     *   **NEVER** use templates for replies or DMs.
     *   **NEVER** post nearly identical messages to multiple users.
     *   Each reply must be customized (1-2 sentences) and reference specific details from the target's post.
-    *   *Bad*: "Great post! Check out my tool."
-    *   *Good*: "That point about [specific detail from post] is interesting. Have you considered [unique perspective]?"
 3.  **THROTTLE ACTIONS**:
-    *   Do not "rapid-fire" likes or follows. 
+    *   Do not "rapid-fire" likes or follows.
     *   If you just engaged with 3 items, wait or scroll before the next batch.
 4.  **AVOID ILLOGICAL NAVIGATION**: Humans don't jump 10 pages in 1 second. Scroll naturally.
 
 **CORE OPERATING PROTOCOL (THE O.O.D.A. LOOP)**
 You must apply this cycle to every step of your execution. **STRICT REQUIREMENT**: Every time you call a tool, you MUST first provide a brief (1-sentence) narration of your reasoning in your response content. **NEVER CALL TOOLS IN SILENCE.**
+    *   **EYES OPEN RULE (CRITICAL)**: You are **BLIND** until you call \`browser_dom_snapshot\`. You MUST call it (snapshot) BEFORE every single interaction (\`browser_click\`, \`browser_write\`). Guessing selectors because you "know how Google works" is a CRITICAL FAILURE. Pages are dynamic; if you haven't seen a snapshot in the current turn/state, you have NO EYES.
 
 1.  **OBSERVE (Current State)**
     *   Where am I? (URL, Page Title)
-    *   What is visible? (Use \`browser_dom_snapshot\` actively)
+    *   What is visible? (You MUST use \`browser_dom_snapshot\` to see. If you don't have a fresh snapshot, TAKE ONE.)
     *   Did my last action succeed? (Check tool output)
 
 2.  **ORIENT (Analysis)**
     *   Does this page match my goal?
-    *   If "Yes": What interactive elements (buttons, inputs) are relevant?
+    *   If "Yes": What interactive elements (buttons, inputs) are relevant? (Extract them from the Snapshot's numeric IDs or aria labels).
     *   If "No": How do I get there? (Navigate, Search, Click Menu)
     *   *Crucial*: If a specific site tool (e.g., \`x_search\`) exists, prefer it. If NOT, use **Universal Browser Tools** immediately.
 
 3.  **DECIDE (Strategy Selection)**
     *   **Happy Path**: Element found -> Call Tool.
-    *   **Ambiguity**: Multiple similar elements -> Use \`browser_mark_page\` to assign IDs -> Click by ID.
+    *   **Ambiguity**: Multiple similar elements -> Try different selectors or use more specific attributes.
     *   **Failure**: Element missing -> Scroll down? Search text? Try different selector?
 
 4.  **ACT (Tool Execution)**
@@ -213,38 +225,51 @@ You must apply this cycle to every step of your execution. **STRICT REQUIREMENT*
 
 **UNIVERSAL NAVIGATION STRATEGY (HOW TO BROWSE ANYTHING)**
 You can navigate **ANY** website, even those you've never seen.
-*   **Initial Landing**: When arriving at a new generic site, ALWAYS call \`browser_dom_snapshot\` (snapshot).
-*   **Semantic Search**: To find a link/button, do not guess selectors. Look at the snapshot text.
-*   **Precision Interaction**:
-    *   If standard \`browser_click\` is risky or ambiguous, use \`browser_mark_page\`.
-    *   This draws numeric IDs on everything. **ONCE MARKED, YOU MUST PREFER** calling \`browser_click\` with that numeric ID (e.g., "42"). This is significantly more reliable than CSS selectors for dynamic platforms.
+1.  **Look Before You Leap (MANDATORY)**: You MUST call \`browser_dom_snapshot\` (snapshot) BEFORE every single interaction (\`browser_click\`, \`browser_write\`). Do NOT assume selectors from previous turns or snapshots are still valid if the page has changed or reloaded.
+2.  **Initial Landing**: When arriving at a new generic site, ALWAYS call \`browser_dom_snapshot\`.
+3.  **Semantic Search**: To find a link/button, do not guess selectors. Look at the snapshot text and use the **aria label** or **text content** for precision.
+4.  **Dynamic Content**: If you expect an element but it's not in the snapshot, use \`browser_wait_for_selector\` or \`browser_scroll\` before snapshotting again.
+5.  **Precision Interaction**:
+    *   If standard \`browser_click\` is risky, try focusing on unique text or attributes.
+    *   **ROBUST SELECTOR STRATEGY (STRICT)**:
+        1. **PRIORITY 1**: Use the \`suggestedSelector\` field provided for each element in the \`browser_dom_snapshot\` output.
+        2. **PRIORITY 2**: Manual Semantic Prefixes. Use \`text/Click Me\` or \`aria/Login\`.
+        3. **PRIORITY 3**: Stable Attributes. Use \`data-testid="submit"\` or \`name="email"\`.
+        *   **PROHIBITED**: NEVER use raw numerical IDs (e.g. "35" or the \`_ref\` field) as selectors in tool calls. They are volatile and will cause failures.
+        *If an interaction fails, you MUST re-snapshot (\`browser_dom_snapshot\`) to find a new stable selector.*
 
 **TOOL HIERARCHY & SELECTION**
 1.  **PLATFORM-SPECIFIC TOOLS (TOP PRIORITY)**
-    *   If you are on **LinkedIn**, you MUST use tools starting with \`linkedin_\` (e.g., \`linkedin_scan_posts\`, \`linkedin_search\`).
-    *   If you are on **Reddit**, you MUST use tools starting with \`reddit_\` (e.g., \`reddit_scan_posts\`, \`reddit_search\`).
     *   If you are on **X.com**, you MUST use tools starting with \`x_\` (e.g., \`x_scan_posts\`, \`x_advanced_search\`).
-    *   **CRITICAL**: NEVER use a tool from one platform (e.g. reddit) on a different platform (e.g. linkedin) even if the action name sounds similar.
 
 2.  **UNIVERSAL BROWSER TOOLS (FALLBACK)**
     *   Use these ONLY if a specialized tool for the current site does not exist or has failed.
     *   \`browser_navigate\`: Go to URL.
-    *   \`browser_dom_snapshot\`: **YOUR EYES**. Use \`only_visible: true\` by default.
-    *   \`browser_move_to_element\`: **VISUAL MOTION**. Smoothly focus on elements.
-    *   \`browser_mark_page\`: **PRECISION AIM**. Use to assign numeric IDs for clicking/typing.
+    *   \`browser_dom_snapshot\`: **YOUR EYES**. Use \`only_visible: true\` by default. This tool returns high-fidelity metadata for interactive elements, including \`ariaLabel\`, \`placeholder\`, \`testId\`, \`nodeId\`, and \`nameAttr\`. Use these for precise targeting in other tools.
+    *   \`browser_wait_for_selector\`: Use to handle dynamic loading before snapshotting.
+    *   \`browser_write\`: Write (insert) text into a field or contenteditable element. Uses native insertion for maximum reliability. You can use CSS selectors, ARIA labels, or the numeric \`id\` from the snapshot.
+        *   **POST-INPUT PROTOCOL (MANDATORY)**: After typing in a search box or form field, you MUST ensure it is submitted. 
+            1. Preferred: Set \`enter: true\` in \`browser_write\` to automatically press Enter.
+            2. Alternative: Call \`browser_click\` on the associated "Search" or "Submit" button immediately after.
+            *Typing text and stopping without submitting is a CRITICAL FAILURE.*
+    *   \`browser_move\`: Move the mouse pointer to an element. Useful for triggering hover effects.
 
 **PLATFORMS & SPECIALIZED STRATEGY**: 
-*   **X (Twitter)**: Use \`x_advanced_search\` followed by \`x_scan_posts\`.
-*   **LinkedIn**: Use \`linkedin_search\` followed by \`linkedin_scan_posts\` to find and identify targets.
-    *   **SMART SEARCH (NEW)**: The \`linkedin_search\` tool now accepts an \`instruction\` parameter (e.g., "Find SaaS founders in NY"). ALWAYS prefer using this \`instruction\` field over raw keywords if the user's request is natural language. The tool will auto-generate the optimal boolean search query.
-*   **Reddit**: Use \`reddit_search\` or \`reddit_scout_community\` followed by \`reddit_scan_posts\`.
+*   **X (Twitter)**: Use \`x_advanced_search\` followed by \`x_scan_posts\`. **STRICT RULE**: Use the user's keywords EXACTLY. If the user provides operators like \`min_likes:50\`, map them to the correct tool parameters. Only refer to your "Advanced X Search" knowledge base for strategic patterns (like excluding replies) when the user's intent matches those strategies or to recover from zero results. NEVER add filters the user did not request. **CONTINUITY**: On timelines or search results, always use \`x_scan_posts(scroll_bottom: true)\` to discover new content until your objective is met. If you have finished all current tasks, output [COMPLETE] to stop.
+*   **X Home Navigation**: If asked for the "Following" tab on home, look for a button or tab with text "Following" near the top. If currently on "For you", click "Following". Do NOT use search to find the following feed.
 
 
 **ERROR RECOVERY & RESILIENCE**
+*   **THOROUGHNESS (CRITICAL)**: If the user asks for "all" results, a summary of a list, or to "Engage/Scrape" a feed:
+    1.  Call \`browser_extract\` or \`x_scan_posts\` to get a structured overview.
+    2.  **INFINITE FEED PROTOCOL**: If the results are on an infinite-scroll page (like X.com timeline or search), you MUST scroll down to load more content BEFORE concluding. 
+    3.  **SCROLL & SNAPSHOT**: If you have processed visible items, call \`browser_scroll\` or \`x_scan_posts(scroll_bottom: true)\` and continue.
+    4.  **NEVER** say "Done" or "I have finished" if you are in a feed and could find more by scrolling, unless you have reached a user-specified limit (e.g. "Find 10").
+    *   Stopping after seeing only 4-5 results in an infinite feed is a FAILURE.
 *   **NEVER** loop the same failed action.
 *   **ERROR**: "Element not found" -> **FIX**:
     1.  Is it just off-screen? -> \`browser_scroll\`.
-    2.  Is the selector wrong? -> \`browser_mark_page\` -> Click by ID.
+    2.  Is the selector wrong? -> Use more specific attributes or text matching.
     3.  Is the page not loaded? -> \`wait\` or \`browser_dom_snapshot\` to verify.
 *   **ERROR**: "Timeout" -> **FIX**: The page might be heavy. Wait longer or stop loading. Check if the *content* you need is valid despite the timeout.
 
@@ -281,18 +306,35 @@ If running a Playbook ({{playbooks.ID}}):
 7. **Placeholders**: Never pass literal {{target.url}} or {{agent.decide}}.
     *   **{{agent.decide}}**: YOU MUST GENERATE FINAL TEXT. Be creative and context-aware.
     *   **{{target.url}}**: Extract the actual URL from your state/context.
+8. **Universal Node Mapping**:
+    *   **navigate** -> Call \`browser_navigate\`.
+    *   **click** -> Call \`browser_click\`.
+    *   **type** -> Call \`browser_type\`.
+    *   **scroll** -> Call \`browser_scroll\`.
+    *   **wait** -> Call \`wait\` (ensure duration matches).
+    *   **extract** -> Call \`browser_get_page_content\` or \`browser_dom_snapshot\`.
+    *   **analyze** -> Perform a step-by-step analysis of the current page state.
+
+**KNOWLEDGE & SELF-LEARNING (MEMORY)**
+You have a "Long-Term Memory" stored in the Supabase database. You MUST use the \`supabase\` MCP server (\`execute_sql\`) to manage this.
+1. **DISCOVER YOUR IDENTITY**: At the start of any new session or when relevant, query the \`knowledge_bases\` and \`knowledge_content\` tables using the \`supabase\` MCP server to retrieve context about your **Persona**, **Ideal Customer Profile (ICP)**, **Tone**, **Business Rules**, and **Advanced Search Strategies**. Look for bases with names like "Identity", "Context", "Agent Profile", or "Advanced X Search". Every message you write and every target you select MUST be filtered through this combined context. 
+2. **PLATFORM EXPERTISE**: Before automating a new domain (e.g., linkedin.com), query \`platform_knowledge\` where \`domain\` matches the hostname. 
+    *   **Instruction Overrides**: If the database contains an \`instruction\` for an element or URL, follow it strictly. It represents "Ground Truth" for that specific page.
+    *   **Selector Overrides**: If a saved \`selector\` exists for a specific element (check \`notes\` or \`element_details\`), prefer it over your default guesses.
+3. **EXPLORE CUSTOM BASES**: You have access to user-curated knowledge in \`knowledge_bases\` and \`knowledge_content\`. If you are unsure about a specific business rule, product detail, or strategy, query these tables to find relevant context.
+4. **ACTIVE CONTRIBUTION**: If you discover a robust, stable selector (Priority 1 or 2) for an element that previously caused errors, or if you find a successful way to interact with a complex UI-component (like a specific modal), you SHOULD "learn" it by inserting/updating a record in \`platform_knowledge\`.
 
 **DATA COLLECTION & LEAD GENERATION RULES**
 *   **Goal**: "Find leads", "Scrape people", "Create list", "Capture targets".
 *   **Universal Strategy**:
-    1. Use the platform-specific search tool (e.g., \`linkedin_advanced_search\`, \`x_search\`, or \`reddits_search\`) to find targets.
-    2. Use the platform-specific extraction tool (e.g., \`linkedin_extract_people\` or \`x_extract_profiles\`) to scan the results page.
+    1. Use the platform-specific search tool (e.g., \`x_search\`) to find targets.
+    2. Use the platform-specific extraction tool (e.g., \`x_extract_profiles\`) to scan the results page.
     3. Use \`capture_leads_bulk\` to save ALL results to a target list in a single turn. **NEVER use \`db_create_target\` for search results; always batch them.**
 *   **Strategic Detail**: When capturing leads, ensure the \`name\`, \`url\`, and headline/location/bio are preserved in the metadata for later personalization.
 *   **Constraint**: Do NOT engage (like/reply) during data collection unless explicitly told. Do NOT save leads one-by-one.
 
 **ENGAGEMENT RULES**
-*   **Tone**: Matches the platform (LinkedIn = Pro, X = Casual/Builder, Reddit = Helpful).
+*   **Tone**: Matches the platform (X = Casual/Professional, Web = Informative).
 *   **Authenticity**: Never sound like a bot. No "Great post!". Be specific to the content.
 *   **X.com Efficiency**: 
     1. Check button \`state\` in \`browser_dom_snapshot\` first. 
@@ -313,10 +355,25 @@ If running a Playbook ({{playbooks.ID}}):
 *   **NO RAW TOOL TAGS**: Never output literal XML-style tags (like 'tool_call', 'function', or 'parameter') in your narration. The system handles tool execution via the structured API. If you use thinking/reasoning blocks, KEEP them as plain text or clean markdown.
 *   **No placeholders**: Never pass literal {{agent.decide}}. Resolve it to creative content.
 
+**EXECUTION VS CONVERSATION**
+- **ACTOR > CHATTER**: Your value is in finishing the task, not explaining it repeatedly.
+- **NO CONFIRMATION TRAPS**: NEVER ask "Should I click?" or "Do you want me to proceed?". If you plan an action, **DO IT** in the same turn.
+- **MAXIMUM MOMENTUM**: Execute as many steps as possible (Search -> Click -> Extract -> Repeat) in a single sequence before yielding.
+- **RESILIENT PROGRESS**: If one approach fails, try another approach IMMEDIATELY without asking.
+
+**THE CLOSING PROTOCOL (MANDATORY)**
+Every time you finish a turn (whether you are done with the task or just yielding), you MUST provide a "Status Summary":
+1. **ACTIONS TAKEN**: A concrete list of tools called.
+2. **RESULTS FOUND**: Key data or insights extracted (e.g., "Found 5 posts", "Extracted bio").
+3. **PLAN**: Exactly what you plan to do next.
+4. **STATUS**: State clearly if the task is **[COMPLETE]**, **[IN PROGRESS]**, or **[BLOCKED]**.
+
 **FINAL INSTRUCTION**
 You are autonomous. You do not need to ask for permission to scroll, click, or explore.
-If you are stuck, stop and THINK (Orient). Then try a *different* approach.
-**Go.**`;
+If you are stuck, stop and THINK. Then try a *different* approach. 
+**NEVER conclude a turn with a promise but no tool call.**
+**Go.**
+`;
 
 function createScopedSupabase(accessToken?: string) {
     if (accessToken) {
@@ -347,9 +404,16 @@ export async function resolveAIConfig(
 
     try {
         // 1. Fetch System Settings
-        const { data: systemData } = await supabaseClient
+        const { data: systemData, error: systemError } = await supabaseClient
             .from('system_settings')
             .select('key, value');
+
+        if (systemError) {
+            console.error('[AI Service] Supabase system_settings fetch failed:', systemError);
+            if (systemError.message?.includes('401')) {
+                console.warn('[AI Service] Auth error detected. Proceeding with local configuration only.');
+            }
+        }
 
         const sysSettings = (systemData || []).reduce((acc: any, curr: any) => {
             acc[curr.key] = curr.value;
@@ -554,7 +618,6 @@ Your goal is to generate 3 BRILLIANT, high-impact suggestions that will WOW the 
 
 COMMANDS & CAPABILITIES:
 - X.com (Twitter): Search, advanced search, scanning posts, multi-step engagement, liking, replying, following.
-- LinkedIn: Researching profiles, lead extraction.
 - Browser: Navigating, clicking, typing, scrolling, extracting data, taking snapshots.
 - Database: Saving leads to Target Lists, running Playbooks.
 
@@ -567,7 +630,7 @@ ${listContext}
 
 INSTRUCTIONS:
 ${isDiscovery
-                    ? "The user is at the start. Suggest 3 'Power Moves'. One for aggressive social growth, one for precise lead generation using LinkedIn/web, and one for competitive analysis or multi-platform research."
+                    ? "The user is at the start. Suggest 3 'Power Moves'. One for aggressive social growth on X, one for precise lead generation from any website, and one for competitive analysis or multi-platform research."
                     : `The user is interested in: "${initialUserPrompt}". Create 3 context-aware suggestions. One should be a direct continuation of their thought, one should be a more advanced version of it, and one should be a related 'cross-platform' synergy (e.g., if they mention X, suggest saving leads from X to a database).`}
 
 Return ONLY a raw JSON array of objects: { "label": string (max 18 chars), "prompt": string (one clear sentence) }.
@@ -575,7 +638,7 @@ Return ONLY a raw JSON array of objects: { "label": string (max 18 chars), "prom
 Example:
 [
   { "label": "X Growth Hack", "prompt": "Find top SaaS influencers on X, scan their recent posts, and engage with high-value replies using my 'Growth' playbook." },
-  { "label": "Sales Intel", "prompt": "Search LinkedIn for tech founders in New York, scrape their details, and save them to my 'Early Adopters' list." }
+  { "label": "Social Intel", "prompt": "Search X for tech founders in New York, scan their profiles, and save them to my 'Early Adopters' list." }
 ]
 
 CRITICAL:
@@ -920,6 +983,24 @@ CRITICAL:
                 }
             } catch (e) { console.error('Error fetching settings context:', e); }
 
+            // 4. Platform-Specific Knowledge Base
+            try {
+                const { data: knowledge } = await (scopedSupabase as any)
+                    .from('platform_knowledge')
+                    .select('domain, url, action, selector, instruction, notes')
+                    .eq('is_active', true);
+
+                if (knowledge && knowledge.length > 0) {
+                    contextInjection += "\n**PLATFORM KNOWLEDGE BASE (Use these overrides!):**\n";
+                    knowledge.forEach((k: any) => {
+                        const pathText = k.url ? ` (Path: ${k.url})` : '';
+                        const instructionText = k.instruction ? ` | INSTRUCTION: "${k.instruction}"` : '';
+                        contextInjection += `- [${k.domain}${pathText}] Action: ${k.action} -> Selector: \`${k.selector}\`${instructionText} (Notes: ${k.notes || 'N/A'})\n`;
+                    });
+                    contextInjection += "\n**NOTE**: When on these domains/paths, prioritize the recommended selectors and instructions above. They are verified by the system owner for maximum reliability.\n";
+                }
+            } catch (e) { console.error('Error fetching platform knowledge:', e); }
+
             contextInjection += "\nUse these IDs when calling tools that require a list_id, playbook_id, etc. The user may write them as tags like 'Run {{playbooks.xyz}}', which translates to the ID 'xyz'.";
 
             // 4. Active Toolkit (Dynamic Capability Awareness)
@@ -959,8 +1040,16 @@ You are in FAST mode.
 - **REUSE CONTEXT**: If you just scanned a page or received results, act on them immediately without re-scanning unless necessary.`
                 : '';
 
+            const generalDirective = `
+**CRITICAL: PROACTIVE EXECUTION**
+- **FINISH WHAT YOU START**: Never end a turn with a "plan" or "promise" without executing at least one tool to advance that plan.
+- **NO CHAT TRAPS**: Do not stop to summarize and wait for instructions unless you are [COMPLETE] or [BLOCKED].
+- **MAXIMUM MOMENTUM**: Perform as many steps as possible in a single turn. 
+- **DETAILED REPORTING**: When you do stop, explain exactly what was achieved and what the remaining steps are.
+`;
+
             const effectiveSystemPrompt = enableTools
-                ? `${contextInjection}\n${timeContext}${visionDirective}${playbookDirective}${speedDirective}\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
+                ? `${contextInjection}\n${timeContext}${visionDirective}${playbookDirective}${speedDirective}${generalDirective}\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
                 : systemPrompt;
 
             if (enableTools) {
@@ -974,6 +1063,9 @@ You are in FAST mode.
                 let langchainMessages = convertMessages(messages, effectiveSystemPrompt);
                 let fullResponse = '';
                 let iteration = 0;
+                let toolExecutionCount = 0;
+                let consecutiveToolFailures = 0;
+                let consecutiveEmptyOutputErrors = 0;
                 const sentNarrations = new Set<string>(); // Track sent narrations to prevent duplicates
 
 
@@ -989,6 +1081,7 @@ You are in FAST mode.
                     }
 
                     iteration++;
+                    toolExecutionCount = 0; // Reset for this specific turn
 
                     // Send a signal that a new autonomous turn is starting to ensure chronological ordering in the UI
                     if (window && !window.isDestroyed()) {
@@ -1010,7 +1103,11 @@ You are in FAST mode.
                                 return result;
                             } catch (e: any) {
                                 // LangChain throws when API returns error - extract useful info
-                                console.error('Raw Model Invoke Error:', e);
+                                if (e?.message?.includes("Cannot read properties of undefined (reading 'message')")) {
+                                    console.debug('Raw Model Invoke Error (Handled):', e);
+                                } else {
+                                    console.error('Raw Model Invoke Error:', e);
+                                }
 
                                 let errorMsg = 'Unknown API error';
                                 if (e instanceof Error) {
@@ -1037,7 +1134,6 @@ You are in FAST mode.
                             timeoutPromise
                         ]) as any;
                     } catch (invokeError: any) {
-                        console.error('Model invoke error:', invokeError);
                         // Extract error message safely
                         let errorMessage = 'Model call failed';
                         if (invokeError instanceof Error) {
@@ -1046,6 +1142,12 @@ You are in FAST mode.
                             errorMessage = invokeError.message || invokeError.error || JSON.stringify(invokeError);
                         } else if (typeof invokeError === 'string') {
                             errorMessage = invokeError;
+                        }
+
+                        if (errorMessage.includes("Cannot read properties of undefined (reading 'message')")) {
+                            console.debug('Model invoke error (Handled):', errorMessage);
+                        } else {
+                            console.error('Model invoke error:', invokeError);
                         }
 
                         // Check if it's a rate limit or API error - retry after delay
@@ -1057,11 +1159,28 @@ You are in FAST mode.
                             continue; // Retry the iteration
                         }
 
+                        // Specific Auto-Recovery for internal LangChain/Model undefined errors
+                        // This prevents the agent from stopping due to transient library errors
+                        if (errorMessage.includes("Cannot read properties of undefined (reading 'message')")) {
+                            console.debug('[AI Service] Suppressing internal LangChain undefined error. Retrying iteration...', errorMessage);
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                            continue;
+                        }
+
                         // AUTO-RECOVERY LOGIC
                         // If model rejects tools or specific config (400 Bad Request / Schema validation), try a staged downgrade
                         const isToolIncompatible = errorMessage.toLowerCase().includes('not support') || errorMessage.toLowerCase().includes('tool use is not supported');
+                        const isEmptyOutput = errorMessage.toLowerCase().includes('model output must contain either output text or tool calls') || errorMessage.toLowerCase().includes('cannot both be empty');
 
-                        if (errorMessage.includes('400') || isToolIncompatible || errorMessage.toLowerCase().includes('schema') || errorMessage.toLowerCase().includes('validation')) {
+                        // Simple Retry for Empty Output (up to 2 times) before downgrading
+                        if (isEmptyOutput && consecutiveEmptyOutputErrors < 2) {
+                            console.log(`[Resilience] Model returned empty output (Attempt ${consecutiveEmptyOutputErrors + 1}/2). Retrying...`);
+                            consecutiveEmptyOutputErrors++;
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                            continue;
+                        }
+
+                        if (errorMessage.includes('400') || errorMessage.includes('401') || errorMessage.includes('403') || isToolIncompatible || isEmptyOutput || errorMessage.toLowerCase().includes('schema') || errorMessage.toLowerCase().includes('validation')) {
                             console.log(`[Auto-Recovery] Model invocation failed (${errorMessage}). Attempting downgrade...`);
 
                             let success = false;
@@ -1147,6 +1266,9 @@ You are in FAST mode.
                         return { success: false, error: 'Model returned empty response' };
                     }
 
+                    // Reset error counters on successful response
+                    consecutiveEmptyOutputErrors = 0;
+
                     const toolCalls = response.tool_calls;
 
                     if (!toolCalls || toolCalls.length === 0) {
@@ -1199,12 +1321,27 @@ You are in FAST mode.
                             break;
                         }
 
-                        if (infiniteMode && baseUserGoal && iteration < hardStopIterations) {
-                            // Let the AI naturally continue without a static message
-                            // The AI will narrate its own continuation based on context
+                        // AUTO-KICK: If the agent is talking but not acting, nudge it.
+                        const isBrowserTask = requestToolsByName.has('browser_navigate');
+                        const responseLower = responseContent.toLowerCase();
+                        const isPromissory = responseLower.includes("i'll") || responseLower.includes("i will") ||
+                            responseLower.includes("let me") || responseLower.includes("i'm going to") ||
+                            responseLower.includes("first, i'll") || responseLower.includes("i will navigate");
+
+                        if (isBrowserTask && isPromissory && iteration < 3 && !isPlaybookRun) {
+                            console.log(`[AI Service] Stalling detected (Turn ${iteration}). Nudging...`);
+                            langchainMessages.push(new HumanMessage("(System: Proceed with your plan. Execute the next action tool immediately. Do not stop to chat.)"));
+                            continue;
+                        }
+
+                        // Only reset iteration for infinite mode if we DID NOT signal completion.
+                        const hasFinishedSignal = responseLower.includes("[complete]") || responseLower.includes("i have finished") || responseLower.includes("mission accomplished");
+
+                        if (infiniteMode && baseUserGoal && iteration < hardStopIterations && !hasFinishedSignal) {
+                            console.log(`[AI Service] Infinite Mode: Autonomous loop continuing.`);
                             langchainMessages.push(
                                 new HumanMessage(
-                                    `Remain in autonomous mode. Goal: "${baseUserGoal}". Immediately plan and execute the next set of actions. \n- If expanding a list, find NEW targets.\n- If engaging, find NEW posts.\n- Do NOT ask for clarification. Do NOT switch tasks (e.g. dont start engaging if the goal is just data collection).\n- Summarize briefly and continue.`
+                                    `Remain in autonomous mode. Goal: "${baseUserGoal}". Immediately plan and execute the next set of actions. \n- If expanding a list, find NEW targets.\n- If engaging, find NEW posts.\n- If you have finished all possible work for now, output [COMPLETE].\n- Summarize briefly and continue.`
                                 )
                             );
                             iteration = 0;
@@ -1287,6 +1424,11 @@ You are in FAST mode.
                     let lastToolErrorDescription = '';
 
                     for (const toolCall of toolCalls) {
+                        toolExecutionCount++; // Increment progress counter
+                        // Reset iteration limit in infinite mode if progress is being made
+                        if (infiniteMode) {
+                            iteration = 0;
+                        }
                         const tool = requestToolsByName.get(toolCall.name);
                         if (!tool) {
                             const errorMsg = new ToolMessage({
@@ -1450,8 +1592,20 @@ You are in FAST mode.
                     }
 
                     if (toolExecutionFailed) {
+                        consecutiveToolFailures++;
+                        if (consecutiveToolFailures >= 3) {
+                            console.log(`[AI Service] Too many consecutive tool failures (${consecutiveToolFailures}). Stopping.`);
+                            if (window && !window.isDestroyed()) {
+                                window.webContents.send('ai:stream-chunk', {
+                                    content: `🛑 Terminating due to repeated tool errors. Final error: ${lastToolErrorDescription}\n`,
+                                    done: true
+                                });
+                            }
+                            return { success: false, error: 'Maximum consecutive tool failures reached' };
+                        }
                         continue;
                     }
+                    consecutiveToolFailures = 0; // Reset on success
                 }
 
                 if (iteration >= hardStopIterations && infiniteMode && window && !window.isDestroyed()) {

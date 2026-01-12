@@ -222,31 +222,7 @@ export function PlaybookToolbar({
                     </SheetContent>
                 </Sheet>
 
-                <div className={cn("h-6 w-px bg-border", showPlaybookBrowser ? "hidden" : "mx-2")} />
 
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant={isRecording ? "secondary" : "outline"}
-                            size="sm"
-                            onClick={onToggleRecording}
-                            className={cn(
-                                isRecording && "bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20",
-                                showPlaybookBrowser && "px-2"
-                            )}
-                        >
-                            {isRecording ? (
-                                <Square className={showPlaybookBrowser ? "h-4 w-4" : "h-4 w-4 mr-2"} fill="currentColor" />
-                            ) : (
-                                <Radio className={showPlaybookBrowser ? "h-4 w-4" : "h-4 w-4 mr-2"} />
-                            )}
-                            {!showPlaybookBrowser && (isRecording ? "Stop Recording" : "Record Actions")}
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">
-                        {isRecording ? "Stop Recording Browser Actions" : "Record Browser Actions to Nodes"}
-                    </TooltipContent>
-                </Tooltip>
 
                 <Tooltip>
                     <TooltipTrigger asChild>

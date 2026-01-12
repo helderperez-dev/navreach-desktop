@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, RotateCw, X, Bug, Disc, StopCircle, Maximize2, Minimize2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, X, Bug, Disc, StopCircle, Maximize2, Minimize2, ScanEye } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBrowserStore } from '@/stores/browser.store';
@@ -26,6 +30,11 @@ export function BrowserView() {
   const [showLoader, setShowLoader] = useState(true);
   const [pageLoaded, setPageLoaded] = useState(false);
   const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+
+  // Inspector State
+  const [isInspecting, setIsInspecting] = useState(false);
+  const [inspectedElement, setInspectedElement] = useState<any>(null);
+  const [instruction, setInstruction] = useState('');
 
   // Minimum 2 second display time
   useEffect(() => {
@@ -204,6 +213,58 @@ export function BrowserView() {
     }
   };
 
+  const toggleInspector = async () => {
+    if (isInspecting) {
+      setIsInspecting(false);
+      await window.api.browser.stopInspector(tabId);
+    } else {
+      setIsInspecting(true);
+      await window.api.browser.startInspector(tabId);
+    }
+  };
+
+  useEffect(() => {
+    const removeListener = window.api.browser.onInspectorAction((data: any) => {
+      // We received an element click from the inspector script
+      setInspectedElement(data);
+      setIsInspecting(false); // Stop inspecting after selection
+      window.api.browser.stopInspector(tabId);
+    });
+    return () => {
+      removeListener();
+      if (isInspecting) window.api.browser.stopInspector(tabId);
+    };
+  }, [tabId, isInspecting]);
+
+  const handleIndexElement = async () => {
+    // Structure the knowledge record to match database schema
+    const knowledgeRecord = {
+      domain: inspectedElement?.hostname,
+      url: inspectedElement?.url,
+      selector: inspectedElement?.selector,
+      instruction: instruction,
+      action: 'interact', // Default action to satisfy not-null constraint
+      element_details: inspectedElement,
+      is_active: true
+    };
+
+    // Save to the knowledge base (Supabase) via main process IPC
+    try {
+      const { error } = await window.api.settings.addPlatformKnowledge(knowledgeRecord);
+      if (error) throw new Error(error);
+
+      toast.success('Element added to Knowledge Base');
+      console.log('[Knowledge Base] Record Saved:', knowledgeRecord);
+    } catch (error: any) {
+      toast.error(`Failed to save: ${error.message}`);
+      console.error('[Knowledge Base] Error Saving:', error);
+    }
+
+    // For now just close
+    setInspectedElement(null);
+    setInstruction('');
+  };
+
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       {!showLoader && (
@@ -244,6 +305,16 @@ export function BrowserView() {
               <Bug className="h-4 w-4" />
             </Button>
           </form>
+
+          <Button
+            variant={isInspecting ? "destructive" : "ghost"}
+            size="icon"
+            className={`h-8 w-8 mr-2 ${isInspecting ? 'animate-pulse' : ''}`}
+            onClick={toggleInspector}
+            title={isInspecting ? "Cancel Inspector" : "Inspect Element"}
+          >
+            <ScanEye className="h-4 w-4" />
+          </Button>
 
           {activeView === 'playbooks' && (
             <div className="flex items-center gap-1 border-l border-border pl-2">
@@ -317,6 +388,47 @@ export function BrowserView() {
           webpreferences="nativeWindowOpen=yes, backgroundThrottling=no"
         />
       </div>
+
+      <Dialog open={!!inspectedElement} onOpenChange={(open) => !open && setInspectedElement(null)}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Index Element & Add Instruction</DialogTitle>
+            <DialogDescription>
+              Teach the agent how to use this element for future tasks.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>Selected Element</Label>
+              <div className="p-2 bg-muted rounded text-xs font-mono break-all max-h-32 overflow-y-auto">
+                <div><strong>Site:</strong> {inspectedElement?.hostname}</div>
+                <div><strong>URL:</strong> {inspectedElement?.url}</div>
+                <div><strong>Tag:</strong> {inspectedElement?.tagName}</div>
+                <div><strong>Selector:</strong> {inspectedElement?.selector}</div>
+                <div><strong>Path:</strong> {inspectedElement?.fullSelector}</div>
+                <div><strong>Text:</strong> {inspectedElement?.innerText}</div>
+                <div><strong>ARIA:</strong> {inspectedElement?.ariaLabel}</div>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="instruction">Agent Instruction</Label>
+              <Textarea
+                id="instruction"
+                placeholder="e.g., Use this button to submit the specific form..."
+                value={instruction}
+                onChange={(e) => setInstruction(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInspectedElement(null)}>Cancel</Button>
+            <Button onClick={handleIndexElement}>Index Element</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

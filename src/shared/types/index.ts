@@ -107,3 +107,37 @@ export interface BrowserState {
   tabs: BrowserTab[];
   activeTabId: string | null;
 }
+
+export interface PlatformKnowledge {
+  id: string;
+  domain: string;
+  url?: string;
+  selector: string;
+  instruction?: string;
+  element_details?: any;
+  is_active: boolean;
+  action?: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface KnowledgeBase {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  user_id?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface KnowledgeContent {
+  id: string;
+  kb_id: string;
+  title?: string;
+  content: string;
+  metadata?: any;
+  created_at?: string;
+  updated_at?: string;
+}

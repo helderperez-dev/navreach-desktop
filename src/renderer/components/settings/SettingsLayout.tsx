@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Server, Wrench, Key, ShieldCheck, Monitor, Settings } from 'lucide-react';
+import { Server, Wrench, Key, ShieldCheck, Monitor, Settings, BrainCircuit } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { GeneralSettings } from './GeneralSettings';
@@ -8,12 +8,14 @@ import { APIToolsSettings } from './APIToolsSettings';
 import { IntegrationsSettings } from './IntegrationsSettings';
 import { ModelProvidersSettings } from './ModelProvidersSettings';
 import { WorkspaceSettings } from './WorkspaceSettings';
+import { KnowledgeSettings } from './KnowledgeSettings';
 
-type SettingsTab = 'general' | 'workspace' | 'mcp' | 'api-tools' | 'model-providers' | 'integrations';
+type SettingsTab = 'general' | 'workspace' | 'mcp' | 'api-tools' | 'model-providers' | 'integrations' | 'knowledge';
 
 const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'general', label: 'General', icon: <Monitor className="h-4 w-4" /> },
   { id: 'workspace', label: 'Workspace', icon: <Settings className="h-4 w-4" /> },
+  { id: 'knowledge', label: 'Knowledge Base', icon: <BrainCircuit className="h-4 w-4" /> },
   { id: 'mcp', label: 'MCP Servers', icon: <Server className="h-4 w-4" /> },
   { id: 'api-tools', label: 'API Tools', icon: <Wrench className="h-4 w-4" /> },
   { id: 'model-providers', label: 'Model Providers', icon: <Key className="h-4 w-4" /> },
@@ -58,7 +60,9 @@ export function SettingsLayout() {
         <ScrollArea className="flex-1">
           <div className="p-8 max-w-4xl mx-auto h-full">
             {activeTab === 'workspace' && <WorkspaceSettings />}
+            {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'general' && <GeneralSettings />}
+            {activeTab === 'knowledge' && <KnowledgeSettings />}
             {activeTab === 'mcp' && <MCPSettings />}
             {activeTab === 'api-tools' && <APIToolsSettings />}
             {activeTab === 'model-providers' && <ModelProvidersSettings />}

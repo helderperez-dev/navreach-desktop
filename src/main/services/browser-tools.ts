@@ -32,6 +32,130 @@ export function isNavigationBlocked(): boolean {
 const recordingTabs = new Set<string>();
 const recordingInitiators = new Map<string, Electron.WebContents>();
 
+// Inspector State
+const inspectorTabs = new Set<string>();
+const inspectorInitiators = new Map<string, Electron.WebContents>();
+
+const INSPECTOR_SCRIPT = `
+(function() {
+  if (window.__REAVION_INSPECTOR_ACTIVE__) return;
+  window.__REAVION_INSPECTOR_ACTIVE__ = true;
+  
+  const overlay = document.createElement('div');
+  overlay.id = 'reavion-inspector-overlay';
+  overlay.style.cssText = 'position:fixed;pointer-events:none;border:2px solid #3b82f6;background:rgba(59,130,246,0.1);z-index:9999999;transition:all 0.1s ease;box-sizing:border-box;';
+  
+  const tooltip = document.createElement('div');
+  tooltip.id = 'reavion-inspector-tooltip';
+  tooltip.style.cssText = 'position:fixed;pointer-events:none;background:#0f172a;color:white;padding:6px 10px;border-radius:6px;font-size:12px;font-family:sans-serif;z-index:10000000;white-space:nowrap;display:none;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);border:1px solid #1e293b;';
+
+  function getRobustSelector(el) {
+    if (el.getAttribute('data-testid')) return '[data-testid="' + el.getAttribute('data-testid') + '"]';
+    
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel) return '[aria-label="' + ariaLabel + '"]';
+    
+    if (el.id && !el.id.match(/^ember\\d+/i) && !el.id.match(/^[a-z0-9]{8,}$/)) return '#' + el.id;
+    if (el.tagName === 'INPUT' && el.getAttribute('name')) return 'input[name="' + el.getAttribute('name') + '"]';
+    
+    return el.tagName.toLowerCase();
+  }
+
+  function onMouseOver(e) {
+    if (!window.__REAVION_INSPECTOR_ACTIVE__) return;
+    const el = e.target;
+    if (el.closest('#reavion-inspector-overlay') || el.closest('#reavion-inspector-tooltip')) return;
+
+    const rect = el.getBoundingClientRect();
+    overlay.style.top = rect.top + 'px';
+    overlay.style.left = rect.left + 'px';
+    overlay.style.width = rect.width + 'px';
+    overlay.style.height = rect.height + 'px';
+    
+    // Tooltip
+    tooltip.style.display = 'block';
+    
+    let label = el.tagName.toLowerCase();
+    if(el.id) label += '#' + el.id;
+    else if(el.className && typeof el.className === 'string' && el.className.length) label += '.' + el.className.split(' ')[0];
+    
+    const aria = el.getAttribute('aria-label');
+    if(aria) label += ' [aria="' + aria + '"]';
+    
+    tooltip.textContent = label;
+    
+    let top = rect.top - 36;
+    let left = rect.left;
+    if (top < 0) top = rect.bottom + 8;
+    
+    if (left + tooltip.offsetWidth > window.innerWidth) {
+        left = window.innerWidth - tooltip.offsetWidth - 8;
+    }
+    
+    tooltip.style.top = top + 'px';
+    tooltip.style.left = left + 'px';
+    
+    if(!overlay.parentNode) document.body.appendChild(overlay);
+    if(!tooltip.parentNode) document.body.appendChild(tooltip);
+  }
+
+  function onClick(e) {
+    if (!window.__REAVION_INSPECTOR_ACTIVE__) return;
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const el = e.target;
+    if (el.closest('#reavion-inspector-overlay') || el.closest('#reavion-inspector-tooltip')) return;
+    
+    const data = {
+      tagName: el.tagName.toLowerCase(),
+      selector: getRobustSelector(el),
+      fullSelector: (function() { // Simple path
+          const path = []; 
+          let curr = el; 
+          while(curr && curr.nodeType === 1 && path.length < 5) {
+             let s = curr.tagName.toLowerCase();
+             if(curr.id) { s += '#' + curr.id; path.unshift(s); break; }
+             if(curr.getAttribute('data-testid')) { s += '[data-testid="' + curr.getAttribute('data-testid') + '"]'; }
+             path.unshift(s);
+             curr = curr.parentNode;
+          }
+          return path.join(' > ');
+      })(),
+      innerText: el.innerText ? el.innerText.slice(0, 200) : '',
+      ariaLabel: (function() {
+          let label = el.getAttribute('aria-label');
+          if (!label && el.getAttribute('aria-labelledby')) {
+              const ids = el.getAttribute('aria-labelledby').split(' ');
+              label = ids.map(id => document.getElementById(id)?.innerText).filter(Boolean).join(' ');
+          }
+          if (!label) label = el.getAttribute('placeholder') || el.getAttribute('aria-placeholder');
+          return label || '';
+      })(),
+      role: el.getAttribute('role') || el.tagName.toLowerCase(),
+      url: window.location.href,
+      hostname: window.location.hostname
+    };
+    
+    console.log('REAVION_INSPECTOR:' + JSON.stringify(data));
+  }
+
+  function cleanUp() {
+     if(overlay.parentNode) overlay.remove();
+     if(tooltip.parentNode) tooltip.remove();
+     document.removeEventListener('mouseover', onMouseOver, true);
+     document.removeEventListener('click', onClick, true);
+     window.__REAVION_INSPECTOR_ACTIVE__ = false;
+  }
+  
+  // Attach safe cleanup
+  window.disableReavionInspector = cleanUp;
+
+  document.addEventListener('mouseover', onMouseOver, true);
+  document.addEventListener('click', onClick, true);
+})();
+`;
+
 const RECORDING_SCRIPT = `
 (function() {
   if (window.__REAVION_RECORDER_ACTIVE__) return;
@@ -155,17 +279,44 @@ export function stopRecording(tabId: string) {
   recordingInitiators.delete(tabId);
   const contents = getWebviewContents(tabId);
   if (contents) {
-    // We can't easily remove event listeners without storing refs in the page context.
-    // For now, checking the Set in the main process is enough to stop forwarding events, 
-    // even if the script continues running (it's lightweight).
-    // Or we could inject a cleanup script if we stored the listener functions globally.
     contents.executeJavaScript('window.__REAVION_RECORDER_ACTIVE__ = false;').catch(() => { });
+  }
+}
+
+export async function startInspector(tabId: string, initiator?: Electron.WebContents) {
+  inspectorTabs.add(tabId);
+  if (initiator) {
+    inspectorInitiators.set(tabId, initiator);
+  }
+  const contents = getWebviewContents(tabId);
+  if (contents) {
+    try {
+      await contents.executeJavaScript(INSPECTOR_SCRIPT);
+    } catch (e) {
+      console.error('Failed to inject inspector script:', e);
+    }
+  }
+}
+
+export function stopInspector(tabId: string) {
+  inspectorTabs.delete(tabId);
+  inspectorInitiators.delete(tabId);
+  const contents = getWebviewContents(tabId);
+  if (contents) {
+    contents.executeJavaScript('if(window.disableReavionInspector) window.disableReavionInspector();').catch(() => { });
   }
 }
 
 const consoleLogs = new Map<string, string[]>();
 
 export function registerWebviewContents(tabId: string, contents: Electron.WebContents) {
+  // Prevent duplicate registration and listener accumulation
+  if ((contents as any).__REAVION_REGISTERED__) {
+    webviewContents.set(tabId, contents); // Ensure the map link is fresh
+    return;
+  }
+  (contents as any).__REAVION_REGISTERED__ = true;
+
   webviewContents.set(tabId, contents);
 
   // MIMIC CHROME: Set a modern Chrome User-Agent
@@ -234,36 +385,53 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
   // MIMIC CHROME: Inject mask signals as early as possible on every load
   contents.on('dom-ready', () => {
     contents.executeJavaScript(maskSignalsScript).catch(() => { });
-  });
 
-  // Inject black and white border cursor styles and recorder script if needed
-  contents.on('did-finish-load', () => {
+    // Inject high-visibility CSS cursor (Black with white border)
     contents.insertCSS(`
       * {
-        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='black' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E") 0 0, auto !important;
+        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='%23000000' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0, auto !important;
       }
-      a, button, [role="button"], input[type="button"], input[type="submit"] {
-        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='black' stroke='white' stroke-width='1.5'/%3E%3C/svg%3E") 0 0, pointer !important;
+      a, button, [role="button"], input, textarea, select {
+        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='%23000000' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0, pointer !important;
       }
-    `);
+      #reavion-pointer-host { 
+        all: initial; 
+        position: fixed !important; 
+        top: 0 !important; 
+        left: 0 !important; 
+        width: 100vw !important; 
+        height: 100vh !important; 
+        z-index: 2147483647 !important; 
+        pointer-events: none !important; 
+      }
+    `).catch(() => { });
+  });
 
+  // Inject recorder and inspector scripts
+  contents.on('did-finish-load', () => {
+    // Send navigation event to initiator
+    const initiator = recordingInitiators.get(tabId);
+    if (initiator && !initiator.isDestroyed()) {
+      initiator.send('recorder:action', {
+        type: 'navigation',
+        url: contents.getURL(),
+        timestamp: Date.now()
+      });
+    }
     if (recordingTabs.has(tabId)) {
-      // Send navigation event to initiator
-      const initiator = recordingInitiators.get(tabId);
-      if (initiator && !initiator.isDestroyed()) {
-        initiator.send('recorder:action', {
-          type: 'navigation',
-          url: contents.getURL(),
-          timestamp: Date.now()
-        });
-      }
       contents.executeJavaScript(RECORDING_SCRIPT).catch(err => {
         console.error(`[Recorder] Failed to re-inject on ${tabId}:`, err);
       });
     }
+
+    if (inspectorTabs.has(tabId)) {
+      contents.executeJavaScript(INSPECTOR_SCRIPT).catch(err => {
+        console.error(`[Inspector] Failed to re-inject on ${tabId}:`, err);
+      });
+    }
   });
 
-  // LinkedIn Redirect Protector: Blocks tracking syncs from hijacking the main frame
+  // Platform Redirect Protector: Blocks tracking syncs from hijacking the main frame
   contents.on('will-navigate', (event: any, url: string) => {
     if (url.includes('ns1p.net')) {
       event.preventDefault();
@@ -312,11 +480,35 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
       return; // Don't log internal recording messages to the generic console log
     }
 
+    // Check for inspector events
+    if (message.startsWith('REAVION_INSPECTOR:')) {
+      if (inspectorTabs.has(tabId)) {
+        try {
+          const jsonStr = message.replace('REAVION_INSPECTOR:', '');
+          const eventData = JSON.parse(jsonStr);
+          const initiator = inspectorInitiators.get(tabId);
+          if (initiator && !initiator.isDestroyed()) {
+            initiator.send('inspector:action', eventData);
+          } else {
+            const windows = BrowserWindow.getAllWindows();
+            if (windows.length > 0) {
+              windows[0].webContents.send('inspector:action', eventData);
+            }
+          }
+        } catch (e) { console.error('Failed to parse inspector event:', e); }
+      }
+      return;
+    }
+
     const logs = consoleLogs.get(tabId) || [];
     const logEntry = `[${level === 0 ? 'LOG' : level === 1 ? 'WARN' : level === 2 ? 'ERROR' : 'INFO'}] ${message}`; // Simplified for token efficiency
     logs.push(logEntry);
     if (logs.length > 50) logs.shift(); // Keep last 50 to save tokens
     consoleLogs.set(tabId, logs);
+
+    if (level === 2) { // ERROR level
+      sendDebugLog('error', `Browser Console Error [${tabId}]: ${message}`, { line, sourceId });
+    }
   });
 
   // Allow all navigation like a regular browser - no blocking
@@ -347,189 +539,239 @@ export function getWebviewContents(tabId: string): Electron.WebContents | undefi
 const TAB_ID = 'main-tab';
 
 const SCRIPT_HELPERS = `
-  const wait = (ms) => {
-    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
-    const isFast = multiplier < 1.0;
-    // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter, but scale down for FAST mode
-    const randomFactor = isFast ? (0.9 + Math.random() * 0.2) : (0.75 + (Math.random() * 0.5)); 
-    const jitter = Math.random() * (isFast ? 30 : 100);
-    const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
-    return new Promise(resolve => setTimeout(resolve, adjustedMs));
+  window.wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  window.ensurePointer = () => {
+    let host = document.getElementById('reavion-pointer-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'reavion-pointer-host';
+      host.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;pointer-events:none;';
+      const shadow = host.attachShadow({ mode: 'open' });
+      const style = document.createElement('style');
+      style.textContent = 
+        '@keyframes reavionFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } } ' +
+        '.pointer { ' +
+          'position: fixed; ' +
+          'z-index: 2147483647; ' +
+          'pointer-events: none; ' +
+          'filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4)); ' +
+          'animation: reavionFloat 3s ease-in-out infinite; ' +
+          'transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1); ' +
+          'width: 32px; height: 32px; ' +
+          'display: block !important; ' +
+          'visibility: visible !important; ' +
+          'opacity: 1 !important; ' +
+        '} ' +
+        '.click-ripple { ' +
+          'position: fixed; ' +
+          'width: 30px; height: 30px; ' +
+          'border: 2px solid #000; ' +
+          'border-radius: 50%; ' +
+          'pointer-events: none; ' +
+          'z-index: 2147483646; ' +
+          'transition: all 0.4s ease-out; ' +
+          'opacity: 1; ' +
+        '}';
+      shadow.appendChild(style);
+      document.documentElement.appendChild(host);
+    }
+    if (host.parentElement !== document.documentElement) document.documentElement.appendChild(host);
+    return host.shadowRoot;
   };
 
-  /** Finds element traversing shadow roots recursively, handling multi-part selectors */
-  const querySelectorPierce = (selector, root = document) => {
-    const parts = selector.split(/[ >]+/).filter(Boolean);
-    let currentRoots = [root];
-    
-    for (const part of parts) {
-      let foundElement = null;
-      let nextRoots = [];
-      
-      for (const r of currentRoots) {
-        // 1. Try direct match in this root
-        const match = r.querySelector(part);
-        if (match) {
-          foundElement = match;
-          // Collect all shadow roots for next step if this part matched multiple things? 
-          // For simplicity, we take the first match that works for the whole path.
-          break; 
-        }
-        
-        // 2. Look into all shadow roots at this level
-        const all = r.querySelectorAll('*');
-        for (const el of all) {
-          if (el.shadowRoot) {
-            const subMatch = el.shadowRoot.querySelector(part);
-            if (subMatch) {
-              foundElement = subMatch;
-              break;
-            }
-            nextRoots.push(el.shadowRoot);
-          }
-        }
-        if (foundElement) break;
-      }
-      
-      if (!foundElement) {
-        // If we didn't find the part yet, maybe it's deeper. 
-        // We'll continue with the collected shadow roots.
-        if (nextRoots.length > 0) {
-          currentRoots = nextRoots;
-          // We need a way to "retry" the same part on the next level...
-          // This is getting complex. Let's use a simpler "deep-match" for the whole selector.
-        } else {
-          return null;
-        }
-      } else {
-        // Found the part, now the next part must be found within this element or its shadow root
-        currentRoots = [foundElement.shadowRoot || foundElement];
-      }
+  window.movePointer = (x, y) => {
+    const root = window.ensurePointer();
+    let p = root.querySelector('.pointer');
+    if (!p) {
+      p = document.createElement('div');
+      p.className = 'pointer';
+      p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
+      root.appendChild(p);
     }
+    p.style.left = x + 'px';
+    p.style.top = y + 'px';
+    p.style.transform = 'scale(1.1)';
+    setTimeout(() => { if (p) p.style.transform = 'scale(1)'; }, 400);
+  };
+
+  window.showVisualClick = (x, y) => {
+    const root = window.ensurePointer();
+    const r = document.createElement('div');
+    r.className = 'click-ripple';
+    r.style.left = (x - 15) + 'px';
+    r.style.top = (y - 15) + 'px';
+    root.appendChild(r);
+    setTimeout(() => {
+      r.style.transform = 'scale(2)';
+      r.style.opacity = '0';
+    }, 10);
+    setTimeout(() => { if (r.parentNode) r.remove(); }, 400);
+  };
+
+  window.safeMoveToElement = async (selector, index = 0) => {
+    const startTime = Date.now();
+    let el = null;
+    while (!el && Date.now() - startTime < 4000) {
+      el = window.findAnyElement(selector, index);
+      if (!el) await window.wait(200);
+    }
+    if (!el) throw new Error('Element not found: ' + selector);
     
-    // Final check - did we find something? 
-    // The loop above is a bit flawed for complex paths. 
-    // Let's use a battle-tested approach: search every shadow root for the FULL selector.
-    const match = root.querySelector(selector);
-    if (match) return match;
+    // For LinkedIn/Google compatibility: find the real clickable target
+    const clickable = el.closest('button, [role="button"], a, input, textarea, select, [onclick]') || el;
+    clickable.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+    await window.wait(400);
     
+    const rect = clickable.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + rect.height / 2);
+    
+    window.movePointer(x, y);
+    await window.wait(300); 
+    
+    // Refresh coordinates one last time to account for scroll settling
+    const finalRect = clickable.getBoundingClientRect();
+    return { 
+      x: Math.round(finalRect.left + finalRect.width / 2), 
+      y: Math.round(finalRect.top + finalRect.height / 2), 
+      element: clickable 
+    };
+  };
+
+  window.querySelectorAllPierce = function(selector, root = document) {
+    const results = [];
     const queue = [root];
     const visited = new Set();
     while (queue.length > 0) {
       const curr = queue.shift();
       if (!curr || visited.has(curr)) continue;
       visited.add(curr);
-      
-      const m = curr.querySelector(selector);
-      if (m) return m;
-      
-      const children = curr.querySelectorAll('*');
-      for (const el of children) {
-        if (el.shadowRoot) queue.push(el.shadowRoot);
-      }
+      try {
+        const matches = curr.querySelectorAll(selector);
+        for (let i = 0; i < matches.length; i++) {
+          if (!results.includes(matches[i])) results.push(matches[i]);
+        }
+      } catch (e) {}
+      const walker = document.createTreeWalker(curr, 1, function(n) { return n.shadowRoot ? 1 : 3; });
+      let host;
+      while (host = walker.nextNode()) if (host.shadowRoot) queue.push(host.shadowRoot);
     }
-    return null;
+    return results;
   };
 
-  /** Finds element by exact or partial text content */
-  const findElementByText = (text, root = document) => {
+  window.querySelectorPierce = (selector, root) => {
+    const all = window.querySelectorAllPierce(selector, root);
+    return all.length > 0 ? all[0] : null;
+  };
+
+  window.querySelectorAria = (ariaLabel, index = 0) => {
+    if (!ariaLabel) return null;
+    const clean = ariaLabel.replace(/['"]/g, '').trim().toLowerCase();
+    const results = [];
+    const queue = [document];
+    const visited = new Set();
+    while (queue.length > 0) {
+      const curr = queue.shift();
+      if (!curr || visited.has(curr)) continue;
+      visited.add(curr);
+      const walker = document.createTreeWalker(curr, 1, null);
+      let el;
+      while (el = walker.nextNode()) {
+        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+        const title = (el.getAttribute('title') || '').toLowerCase();
+        const placeholder = (el.getAttribute('placeholder') || '').toLowerCase();
+        const alt = (el.getAttribute('alt') || '').toLowerCase();
+        const testId = (el.getAttribute('data-testid') || '').toLowerCase();
+        const role = (el.getAttribute('role') || '').toLowerCase();
+        const name = (el.getAttribute('name') || '').toLowerCase();
+        if (aria.includes(clean) || title.includes(clean) || placeholder.includes(clean) || alt.includes(clean) || testId.includes(clean) || role.includes(clean) || name.includes(clean)) {
+           if (!results.includes(el)) results.push(el);
+        }
+        if (el.shadowRoot) queue.push(el.shadowRoot);
+        if (results.length > index + 2) break;
+      }
+      if (results.length > index + 2) break;
+    }
+    return results[index] || results[0] || null;
+  };
+
+  window.findElementByText = (text, root = document) => {
     const clean = text.replace(/['"]/g, '').trim().toLowerCase();
     if (!clean) return null;
-    
     const queue = [root];
     const visited = new Set();
-    
     while (queue.length > 0) {
-      const current = queue.shift();
-      if (!current || visited.has(current)) continue;
-      visited.add(current);
-      
-      // Use TreeWalker for efficient text node search
-      const walker = document.createTreeWalker(current, NodeFilter.SHOW_TEXT, null, false);
+      const curr = queue.shift();
+      if (!curr || visited.has(curr)) continue;
+      visited.add(curr);
+      const walker = document.createTreeWalker(curr, 4, null);
       let node;
       while (node = walker.nextNode()) {
         if (node.textContent.toLowerCase().includes(clean)) {
-          const parent = node.parentElement;
-          if (parent && parent.offsetWidth > 0 && parent.offsetHeight > 0) {
-            return parent;
-          }
+          const p = node.parentElement;
+          if (p && p.offsetWidth > 0) return p;
         }
       }
-      
-      // Check shadow roots
-      const children = current.querySelectorAll('*');
-      for (const el of children) {
-        if (el.shadowRoot) {
-          queue.push(el.shadowRoot);
-        }
-      }
+      const hosts = document.createTreeWalker(curr, 1, function(n) { return n.shadowRoot ? 1 : 3; });
+      let h;
+      while (h = hosts.nextNode()) queue.push(h.shadowRoot);
     }
     return null;
   };
 
-  /** Finds element by ARIA label, title, or placeholder */
-  const querySelectorAria = (ariaLabel) => {
-    const clean = ariaLabel.replace(/['"]/g, '').trim();
-    // 1. Try attribute selectors
-    const attrSelectors = [
-      '[aria-label*="' + clean + '" i]',
-      '[title*="' + clean + '" i]',
-      '[placeholder*="' + clean + '" i]',
-      '[alt*="' + clean + '" i]'
-    ];
-    for (const sel of attrSelectors) {
-      const el = querySelectorPierce(sel);
-      if (el) return el;
+  window.findAnyElement = (selector, index = 0) => {
+    const s = (selector || '').toString().trim();
+    if (s.startsWith('id/')) {
+       const id = s.split('/')[1];
+       const found = window.querySelectorAllPierce('[data-reavion-id="' + id + '"]');
+       if (found[0]) return found[0];
     }
-    // 2. Fallback to text search if no attribute matches
-    return findElementByText(clean);
-  };
-
-  /** Finds element by XPath */
-  const querySelectorXPath = (xpath) => {
+    if (/^\\d+$/.test(s)) {
+      const found = window.querySelectorAllPierce('[data-reavion-id="' + s + '"]');
+      if (found[0]) return found[0];
+    }
+    const cleanSel = s.replace(/^(pierce\\/|aria\\/|xpath\\/|text\\/|id\\/)/, '');
+    if (s.startsWith('aria/')) return window.querySelectorAria(cleanSel, index);
+    if (s.startsWith('text/')) return window.findElementByText(cleanSel);
+    if (s.startsWith('xpath/')) { try { const res = document.evaluate(cleanSel, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null); return res.singleNodeValue; } catch (e) { return null; } }
+    const attrMatch = s.match(/\\[(aria-label|placeholder|title|data-testid|name)=["'](.+?)["']\\]/i);
+    if (attrMatch) {
+       const found = window.querySelectorAria(attrMatch[2], index);
+       if (found) return found;
+    }
     try {
-      // Handle both xpath/ and xpath// prefixes
-      const clean = xpath.replace(/^xpath\/{1,2}/, '');
-      const result = document.evaluate(clean, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-      return result.singleNodeValue;
-    } catch (e) {
-      return null;
-    }
+      const all = window.querySelectorAllPierce(cleanSel);
+      if (all[index] || all[0]) return all[index] || all[0];
+    } catch(e) {}
+    if (!s.startsWith('.') && !s.startsWith('#') && !s.includes('[')) { const textFound = window.findElementByText(s); if (textFound) return textFound; }
+    return null;
   };
 
-  /** Master selector function for Chrome Recorder compatibility */
-  const findAnyElement = (selector) => {
-    if (!selector) return null;
-    
-    // Pierce prefix
-    if (selector.startsWith('pierce/')) {
-      return querySelectorPierce(selector.replace('pierce/', ''));
-    }
-    
-    // ARIA prefix
-    if (selector.startsWith('aria/')) {
-      return querySelectorAria(selector.replace('aria/', ''));
-    }
-    
-    // XPath prefix
-    if (selector.startsWith('xpath/')) {
-      return querySelectorXPath(selector);
-    }
-    
-    // Text prefix
-    if (selector.startsWith('text/')) {
-      return findElementByText(selector.replace('text/', ''));
-    }
-    
-    // Default: try regular Pierce search (covers CSS)
-    return querySelectorPierce(selector);
-  };
+  window.__REAVION_HELPERS_LOADED__ = true;
 `;
+
+/**
+ * Builds a script for executeJavaScript that safely injects SCRIPT_HELPERS
+ * without using eval() to satisfy strict CSP (Content Security Policy) rules.
+ */
+function buildTaskScript(coreLogic: string): string {
+  return '(async function() {\n' +
+    '  try {\n' +
+    '    if (!window.__REAVION_HELPERS_LOADED__) {\n' +
+    SCRIPT_HELPERS + '\n' +
+    '    }\n' +
+    coreLogic + '\n' +
+    '  } catch (err) {\n' +
+    '    return { success: false, error: err.message || String(err), stack: err.stack };\n' +
+    '  }\n' +
+    '})()';
+}
 
 function getContents(): Electron.WebContents {
   const contents = webviewContents.get(TAB_ID);
-  if (!contents) {
-    throw new Error('Browser not ready. Please wait for the page to load.');
+  if (!contents || contents.isDestroyed()) {
+    throw new Error('Browser not ready or has crashed. Please refresh or wait for the page to load.');
   }
   return contents;
 }
@@ -567,18 +809,23 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     func: async ({ url }) => {
       try {
         const contents = getContents();
+        if (contents.isDestroyed()) throw new Error('Browser crashed or closed');
+
         await ensureSpeedMultiplier(getSpeed);
         let targetUrl = url;
         if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
           targetUrl = `https://${targetUrl}`;
         }
 
+        sendDebugLog('info', `Navigating to: ${targetUrl}`);
         try {
           await contents.loadURL(targetUrl);
         } catch (navError: any) {
+          if (contents.isDestroyed()) throw new Error('Browser closed during navigation');
           // ERR_ABORTED (-3) can happen on redirects - check if page actually loaded
           if (navError.code === 'ERR_ABORTED' || navError.errno === -3) {
             await new Promise(resolve => setTimeout(resolve, 500));
+            if (contents.isDestroyed()) return JSON.stringify({ success: false, error: 'Browser closed' });
             const currentUrl = contents.getURL();
             if (currentUrl && currentUrl !== 'about:blank') {
               return JSON.stringify({ success: true, url: currentUrl, message: `Navigated to ${currentUrl}` });
@@ -587,9 +834,11 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
           throw navError;
         }
 
+        if (contents.isDestroyed()) throw new Error('Browser closed after navigation');
         const finalUrl = contents.getURL();
         return JSON.stringify({ success: true, url: finalUrl, message: `Navigated to ${finalUrl}` });
       } catch (error) {
+        sendDebugLog('error', `Navigation failed to ${url}`, { error: String(error) });
         return JSON.stringify({ success: false, error: String(error) });
       }
     },
@@ -599,200 +848,173 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     name: 'browser_click',
     description: 'Click on an element in the browser using a CSS selector.',
     schema: z.object({
-      selector: z.string().describe('CSS selector for the element to click (e.g., "button.submit", "#login-btn", "[data-testid=\\"like\\"]"). Can also be a numeric ID from browser_mark_page.'),
+      selector: z.string().describe('CSS selector (e.g., "button.submit"), ARIA label (e.g., "aria/Login"), or numeric ID from previous snapshot.'),
       index: z.number().describe('0-based index of element to click when multiple elements match the selector. Use 0 for first.'),
     }),
     func: async ({ selector, index }) => {
+      const contents = getContents();
       try {
-        const contents = getContents();
         await ensureSpeedMultiplier(getSpeed);
 
-        const result = await contents.executeJavaScript(`
-          (async function() {
-            ${SCRIPT_HELPERS}
-            const selectorStr = ${JSON.stringify(selector)};
-            const targetIndex = ${index || 0};
-            
-            let element = null;
-            // Handle numeric IDs from browser_mark_page
-            if (/^\\d+$/.test(selectorStr)) {
-               element = document.querySelector('[data-reavion-id="' + selectorStr + '"]');
-            } else {
-               // Full piercing search
-               const matches = [];
-               // Look globally
-               const allMatches = document.querySelectorAll(selectorStr);
-               matches.push(...Array.from(allMatches));
-               
-               // If no light DOM matches, or to be thorough, we can use our pierce helper
-               if (matches.length === 0) {
-                  const pierced = findAnyElement(selectorStr);
-                  if (pierced) matches.push(pierced);
-               }
+        const coreLogic = `
+          const result = await window.safeMoveToElement(${JSON.stringify(selector)}, ${index || 0});
+          const el = result.element;
+          window.showVisualClick(result.x, result.y);
+          
+          // Hybrid click: dispatch events manually + standard click
+          const clickable = el.closest('button, [role="button"], a') || el;
+          try {
+            const common = { bubbles: true, cancelable: true, view: window };
+            clickable.dispatchEvent(new MouseEvent('mousedown', common));
+            await window.wait(50);
+            clickable.dispatchEvent(new MouseEvent('mouseup', common));
+            clickable.click();
+          } catch(e) {}
+          
+          return { success: true, x: result.x, y: result.y };
+        `;
 
-               if (matches.length > targetIndex) {
-                 element = matches[targetIndex];
-               } else if (matches.length > 0) {
-                 element = matches[0];
-               }
-            }
-            
-            if (!element) return { success: false, error: 'Element not found: ' + selectorStr };
-            
-            // Human-like scroll
-            element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-            await wait(${options?.scrollWait || 500});
-            
-            const rect = element.getBoundingClientRect();
-            const x = rect.left + rect.width / 2;
-            const y = rect.top + rect.height / 2;
-            
-            // Visual feedback
-            const ripple = document.createElement('div');
-            ripple.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;width:50px;height:50px;border-radius:50%;background:rgba(139,92,246,0.3);border:2px solid rgba(139,92,246,0.5);transform:translate(-50%,-50%);transition:all 0.5s ease-out;';
-            ripple.style.left = x + 'px';
-            ripple.style.top = y + 'px';
-            document.body.appendChild(ripple);
-            setTimeout(() => {
-              ripple.style.transform = 'translate(-50%,-50%) scale(2)';
-              ripple.style.opacity = '0';
-              setTimeout(() => ripple.remove(), 500);
-            }, 50);
+        const script = buildTaskScript(coreLogic);
 
-            const common = { bubbles: true, cancelable: true, composed: true, view: window, clientX: x, clientY: y };
-            
-            // Sequence: PointerDown -> MouseDown -> Focus -> PointerUp -> MouseUp -> Click
-            element.dispatchEvent(new PointerEvent('pointerdown', { ...common, pointerType: 'mouse', button: 0, buttons: 1, isPrimary: true }));
-            element.dispatchEvent(new MouseEvent('mousedown', { ...common, button: 0, buttons: 1 }));
-            
-            if (element.focus) element.focus({ preventScroll: true });
+        const scriptResult = await contents.executeJavaScript(script).catch(err => {
+          sendDebugLog('error', 'browser_click: Script execution failed', { error: String(err), script: script.slice(0, 500) + '...' });
+          throw err;
+        });
 
-            await wait(40);
+        if (!scriptResult.success) {
+          sendDebugLog('warning', `browser_click: Element search failed: ${scriptResult.error}`, { selector, index });
+          return JSON.stringify(scriptResult);
+        }
 
-            element.dispatchEvent(new PointerEvent('pointerup', { ...common, pointerType: 'mouse', button: 0, buttons: 0, isPrimary: true }));
-            element.dispatchEvent(new MouseEvent('mouseup', { ...common, button: 0, buttons: 0 }));
-            
-            const clickEv = new MouseEvent('click', { ...common, button: 0, buttons: 0, detail: 1 });
-            element.dispatchEvent(clickEv);
-            
-            // Always attempt fallback click() if available, regardless of defaultPrevented
-            if (typeof element.click === 'function') {
-                try { element.click(); } catch(e) {}
-            }
-            
-            return { success: true, message: 'Clicked ' + selectorStr };
-          })()
-        `);
+        const { x, y } = scriptResult;
+        const roundedX = Math.round(x);
+        const roundedY = Math.round(y);
 
-        return JSON.stringify(result);
+        // Native click sequence
+        contents.focus();
+        contents.sendInputEvent({ type: 'mouseMove', x: roundedX, y: roundedY });
+        await new Promise(r => setTimeout(r, 50));
+        contents.sendInputEvent({ type: 'mouseDown', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
+        await new Promise(r => setTimeout(r, 50));
+        contents.sendInputEvent({ type: 'mouseUp', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
+
+        return JSON.stringify({ success: true, message: `Clicked ${selector} at ${roundedX},${roundedY}` });
       } catch (error) {
-        return JSON.stringify({ success: false, error: String(error) });
+        sendDebugLog('error', `browser_click: unexpected failure`, { error: String(error), stack: error instanceof Error ? error.stack : undefined });
+        return JSON.stringify({
+          success: false,
+          error: 'Browser execution error: ' + String(error),
+          details: 'The browser renderer failed to execute the click script.'
+        });
       }
     },
   });
 
-  const typeTool = new DynamicStructuredTool({
-    name: 'browser_type',
-    description: 'Type text into an input field.',
+  const writeTool = new DynamicStructuredTool({
+    name: 'browser_write',
+    description: 'Write (type) text into an input field or contenteditable element. Preserves site state by using native events.',
     schema: z.object({
-      selector: z.string().describe('CSS selector for the input element'),
-      text: z.string().describe('The text to type into the input'),
+      selector: z.string().describe('CSS selector, ARIA label, or numeric ID for the input element'),
+      text: z.string().describe('The direct text to insert. STRICTLY the input value only. NO narration or "I will type..." prefixes.'),
+      index: z.number().optional().default(0).describe('0-based index if multiple elements match'),
+      enter: z.boolean().optional().default(false).describe('Whether to press Enter after typing'),
     }),
-    func: async ({ selector, text }) => {
+    func: async ({ selector, text, index = 0, enter = false }) => {
+      const contents = getContents();
       try {
-        const contents = getContents();
         await ensureSpeedMultiplier(getSpeed);
-        const result = await contents.executeJavaScript(`
-          (async function() {
-            ${SCRIPT_HELPERS}
-            const selectorStr = ${JSON.stringify(selector)};
-            const typeText = ${JSON.stringify(text)};
-            
-            let element = findAnyElement(selectorStr);
-            if (!element) return { success: false, error: 'Element not found: ' + selectorStr };
-            
-            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await wait(200);
-            
-            // Activate editor
-            const commonMouse = { bubbles: true, cancelable: true, view: window };
-            element.dispatchEvent(new MouseEvent('mousedown', commonMouse));
-            await wait(50);
-            element.dispatchEvent(new MouseEvent('mouseup', commonMouse));
-            element.click();
-            element.focus({ preventScroll: true });
-            await wait(200);
-            
-            const isEditable = element.isContentEditable || element.getAttribute('role') === 'textbox' || element.tagName === 'INPUT' || element.tagName === 'TEXTAREA';
-            
-            if (isEditable) {
-                // Clear existing
-                try {
-                    document.execCommand('selectAll', false, null);
-                    document.execCommand('delete', false, null);
-                } catch(e) {}
-                await wait(200);
 
-                // Type character by character to trigger listeners
-                for (let i = 0; i < typeText.length; i++) {
-                    const char = typeText[i];
-                    const common = { bubbles: true, cancelable: true, composed: true, view: window };
-                    const keyInit = { ...common, key: char, charCode: char.charCodeAt(0), keyCode: char.charCodeAt(0) };
-                    
-                    element.dispatchEvent(new KeyboardEvent('keydown', keyInit));
-                    
-                    const beforeInput = new InputEvent('beforeinput', { ...common, inputType: 'insertText', data: char });
-                    element.dispatchEvent(beforeInput);
-                    
-                    if (!beforeInput.defaultPrevented) {
-                        try {
-                            document.execCommand('insertText', false, char);
-                        } catch(e) {
-                             const selection = window.getSelection();
-                             if (selection && selection.rangeCount) {
-                                  const range = selection.getRangeAt(0);
-                                  range.deleteContents();
-                                  range.insertNode(document.createTextNode(char));
-                                  range.collapse(false);
-                             }
-                        }
-                    }
-                    
-                    element.dispatchEvent(new InputEvent('input', { ...common, inputType: 'insertText', data: char }));
-                    element.dispatchEvent(new KeyboardEvent('keyup', keyInit));
-                    
-                    if (Math.random() > 0.8) await wait(10 + Math.random() * 20);
-                }
-                
-                // Final commitment nudge for rich editors like Lexical/React
-                try {
-                    document.execCommand('insertText', false, ' ');
-                    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ' ' }));
-                    await wait(20);
-                    document.execCommand('delete', false, null);
-                    element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'deleteContentBackward' }));
-                } catch(e) {}
-            } else {
-                element.value = typeText;
-            }
-            
-            element.dispatchEvent(new Event('input', { bubbles: true }));
-            element.dispatchEvent(new Event('change', { bubbles: true }));
-            element.dispatchEvent(new Event('blur', { bubbles: true }));
-            
-            return { success: true, message: 'Typed into ' + selectorStr };
-          })()
-        `);
-        return JSON.stringify(result);
+        const coreLogic = `
+          const result = await window.safeMoveToElement(${JSON.stringify(selector)}, ${index});
+          window.showVisualClick(result.x, result.y);
+          return { success: true, x: result.x, y: result.y };
+        `;
+
+        const script = buildTaskScript(coreLogic);
+
+        const scriptResult = await contents.executeJavaScript(script).catch(err => {
+          sendDebugLog('error', 'browser_write: Script execution failed', { error: String(err), script: script.slice(0, 500) + '...' });
+          throw err;
+        });
+
+        if (!scriptResult.success) {
+          sendDebugLog('warning', `browser_write: Element search failed: ${scriptResult.error}`, { selector, index });
+          return JSON.stringify(scriptResult);
+        }
+
+        const { x, y } = scriptResult;
+
+        // 1. Move to element
+        contents.sendInputEvent({ type: 'mouseMove', x, y });
+        await new Promise(r => setTimeout(r, 100));
+
+        // 2. Click to focus
+        contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+        await new Promise(r => setTimeout(r, 50));
+        contents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+        await new Promise(r => setTimeout(r, 200));
+
+        // 3. Clear existing text (Native Select All + Backspace)
+        const isMac = process.platform === 'darwin';
+        const modifier = isMac ? 'meta' : 'control';
+        contents.sendInputEvent({ type: 'keyDown', keyCode: 'a', modifiers: [modifier] });
+        await new Promise(r => setTimeout(r, 30));
+        contents.sendInputEvent({ type: 'keyUp', keyCode: 'a', modifiers: [modifier] });
+        await new Promise(r => setTimeout(r, 30));
+        contents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
+        await new Promise(r => setTimeout(r, 30));
+        contents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
+        await new Promise(r => setTimeout(r, 100));
+
+        // 4. Native insert (Paste-like insertion)
+        contents.insertText(text);
+
+        // 5. Ensure site registers the input (Crucial for React/Lexical editors)
+        try {
+          await contents.executeJavaScript(`
+            (function() {
+              const el = document.activeElement;
+              if (el) {
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+            })()
+          `);
+        } catch (jsError) {
+          sendDebugLog('warning', 'browser_write: Post-write event dispatch failed', { error: String(jsError) });
+        }
+
+        // 6. Press Enter if requested
+        if (enter) {
+          await new Promise(r => setTimeout(r, 200));
+          const submitModifier = process.platform === 'darwin' ? 'meta' : 'control';
+
+          // Try standard Enter first (for regular inputs)
+          contents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+          await new Promise(r => setTimeout(r, 30));
+          contents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
+
+          // Also try Cmd/Ctrl + Enter (common submit shortcut for multiline editors like LinkedIn/X)
+          await new Promise(r => setTimeout(r, 100));
+          contents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter', modifiers: [submitModifier] });
+          await new Promise(r => setTimeout(r, 30));
+          contents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter', modifiers: [submitModifier] });
+        }
+
+        return JSON.stringify({ success: true, message: `Successfully wrote into ${selector}${enter ? ' and pressed Enter' : ''}` });
       } catch (error) {
-        return JSON.stringify({ success: false, error: String(error) });
+        sendDebugLog('error', `browser_write: unexpected failure`, { error: String(error), stack: error instanceof Error ? error.stack : undefined });
+        return JSON.stringify({
+          success: false,
+          error: 'Browser write error: ' + String(error),
+        });
       }
     },
   });
 
   const scrollTool = new DynamicStructuredTool({
     name: 'browser_scroll',
-    description: 'Scroll the page up or down. Automatically detects scrollable areas if the main window is not scrollable (common in SPAs like X.com or Reddit).',
+    description: 'Scroll the page up or down. Automatically detects scrollable areas if the main window is not scrollable (common in complex single-page applications).',
     schema: z.object({
       direction: z.enum(['up', 'down']).describe('Direction to scroll'),
       amount: z.number().describe('Amount to scroll in pixels (e.g., 500)'),
@@ -805,42 +1027,51 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
         const result = await contents.executeJavaScript(`
           (async function() {
-            const amount = ${scrollAmount};
-            const behavior = '${behavior}';
-            
-            // Try window and document root (Nuclear Option: one of these usually works)
-            window.scrollBy({ top: amount, behavior });
-            if (document.documentElement) document.documentElement.scrollBy({ top: amount, behavior });
-            if (document.body) document.body.scrollBy({ top: amount, behavior });
-
-            // Find scrollable containers (Common in complex SPAs like X.com)
-            const elements = Array.from(document.querySelectorAll('div, section, main, [role="main"], article'));
-            const containers = elements.filter(el => {
-                const style = window.getComputedStyle(el);
-                const overflow = style.overflowY || style.overflow || '';
-                // Check if it's explicitly scrollable or has obvious scroll space
-                const isScrollable = (overflow === 'auto' || overflow === 'scroll');
-                const hasSpace = el.scrollHeight > el.clientHeight + 20;
-                const isVisible = el.offsetWidth > 0 && el.offsetHeight > 0;
-                return isVisible && hasSpace && (isScrollable || el.tagName === 'MAIN');
-            });
-
-            // Scroll the largest detected container as well
-            if (containers.length > 0) {
-                containers.sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight));
-                const best = containers[0];
-                best.scrollBy({ top: amount, behavior });
-                
-                // If it's still not moving and behavior is auto, try manual offset
-                if (behavior === 'auto') {
-                  const prev = best.scrollTop;
-                  setTimeout(() => {
-                    if (best.scrollTop === prev) best.scrollTop += amount;
-                  }, 50);
-                }
+            try {
+              const amount = ${scrollAmount};
+              const behavior = '${behavior}';
+              
+              // Try window and document root (Nuclear Option: one of these usually works)
+              window.scrollBy({ top: amount, behavior });
+              if (document.documentElement) document.documentElement.scrollBy({ top: amount, behavior });
+              if (document.body) document.body.scrollBy({ top: amount, behavior });
+  
+              // Find scrollable containers (Common in complex SPAs like X.com)
+              const elements = Array.from(document.querySelectorAll('div, section, main, [role="main"], article'));
+              const containers = elements.filter(el => {
+                  const style = window.getComputedStyle(el);
+                  const overflow = style.overflowY || style.overflow || '';
+                  // Check if it's explicitly scrollable or has obvious scroll space
+                  const isScrollable = (overflow === 'auto' || overflow === 'scroll');
+                  const hasSpace = el.scrollHeight > el.clientHeight + 20;
+                  const isVisible = el.offsetWidth > 0 && el.offsetHeight > 0;
+                  return isVisible && hasSpace && (isScrollable || el.tagName === 'MAIN');
+              });
+  
+              // Scroll the largest detected container as well
+              if (containers.length > 0) {
+                  containers.sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight));
+                  const best = containers[0];
+                  best.scrollBy({ top: amount, behavior });
+                  
+                  // If it's still not moving and behavior is auto, try manual offset
+                  if (behavior === 'auto') {
+                    const prev = best.scrollTop;
+                    setTimeout(() => {
+                      if (best.scrollTop === prev) best.scrollTop += amount;
+                    }, 50);
+                  }
+              }
+              
+              return { success: true, message: 'Scroll command sent to all targets' };
+            } catch (err) {
+              return {
+                success: false,
+                error: err.name + ': ' + (err.message || String(err)),
+                details: 'Inner script failure during scroll operation.',
+                stack: err.stack
+              };
             }
-            
-            return { success: true, message: 'Scroll command sent to all targets' };
           })()
         `);
 
@@ -880,102 +1111,134 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             function isVisible(el) {
                 if (!el) return false;
                 const rect = el.getBoundingClientRect();
-                if (rect.width === 0 || rect.height === 0) return false;
+                
+                // If it has visible children despite 0 size, we might want it, 
+                // but usually the children will be caught anyway.
+                if (rect.width === 0 && rect.height === 0) return false;
                 
                 if (${only_visible !== false}) {
-                    if (rect.bottom < 0 || rect.top > vHeight || rect.right < 0 || rect.left > vWidth) return false;
+                    const buffer = 200; // More focused buffer to avoid off-screen clutter
+                    if (rect.bottom < -buffer || rect.top > vHeight + buffer || rect.right < -buffer || rect.left > vWidth + buffer) return false;
                 }
 
-                // Check visibility using a faster approach
-                if (el.checkVisibility) {
-                   if (!el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })) return false;
-                } else {
-                   const style = window.getComputedStyle(el);
-                   if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-                }
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
                 
                 if (el.getAttribute('aria-hidden') === 'true') return false;
                 return true;
             }
 
-            const candidates = document.querySelectorAll('button, a, input, textarea, select, [role="button"], [role="link"], [role="checkbox"], [role="menuitem"], [data-testid], [tabindex]:not([tabindex="-1"])');
+            const selector = 'button, a, input, textarea, select, summary, [role], [data-testid], [tabindex]:not([tabindex="-1"]), [contenteditable], [onclick]';
             
-            candidates.forEach((node, i) => {
-                if (isVisible(node)) {
-                    const tag = node.tagName.toLowerCase();
-                    const testId = node.getAttribute('data-testid');
-                    const ariaLabel = node.getAttribute('aria-label');
-                    const title = node.getAttribute('title');
-                    const placeholder = node.getAttribute('placeholder');
-                    const innerText = node.innerText?.trim();
-                    const value = node.value?.trim();
-                    const href = node.href;
-                    const type = node.type;
+            function collect(root) {
+                const candidates = root.querySelectorAll(selector);
+                candidates.forEach(node => {
+                    const role = node.getAttribute('role');
+                    const isActuallyInteractive = 
+                        ['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY'].includes(node.tagName) ||
+                        ['button', 'link', 'checkbox', 'menuitem', 'option', 'tab', 'switch', 'textbox', 'combobox', 'searchbox', 'listbox'].includes(role) ||
+                        node.hasAttribute('onclick') ||
+                        node.hasAttribute('contenteditable');
 
-                    // Prioritized Labeling (Heuristic inspired by Chrome MCP & accessibility best practices)
-                    let name = ariaLabel || testId || title || placeholder || innerText || '';
-                    
-                    if (!name && (tag === 'input' || tag === 'textarea' || tag === 'select') && node.id) {
-                        const labelEl = document.querySelector('label[for="' + node.id + '"]');
-                        if (labelEl) name = labelEl.innerText;
-                    }
-
-                    if (!name && (tag === 'button' || tag === 'a')) {
-                        const icon = node.querySelector('svg');
-                        if (icon) {
-                            name = icon.getAttribute('aria-label') || icon.querySelector('title')?.innerText || '';
+                    if (isActuallyInteractive && isVisible(node)) {
+                        const i = elements.length;
+                        const tag = node.tagName.toLowerCase();
+                        const testId = node.getAttribute('data-testid');
+                        
+                        let ariaLabel = node.getAttribute('aria-label');
+                        if (!ariaLabel && node.getAttribute('aria-labelledby')) {
+                            const ids = node.getAttribute('aria-labelledby').split(' ');
+                            ariaLabel = ids.map(id => document.getElementById(id)?.innerText).filter(Boolean).join(' ');
                         }
-                    }
 
-                    name = name.replace(/\\s+/g, ' ').trim().slice(0, 60); // Truncate to 60 chars
-                    
-                    // Extra description if the text content adds more context than the label
-                    let description = null;
-                    if (innerText && name !== innerText) {
-                        description = innerText.replace(/\\s+/g, ' ').trim().slice(0, 80); // Truncate to 80 chars
-                    }
-                    
-                    if (name || tag === 'input' || testId || href) {
+                        const title = node.getAttribute('title');
+                        const placeholder = node.getAttribute('placeholder') || node.getAttribute('aria-placeholder');
+                        const innerText = node.innerText?.trim();
+                        const value = node.value?.trim();
+                        const href = node.getAttribute('href');
+
+                        let name = ariaLabel || testId || title || placeholder || innerText || '';
+                        
+                        if (!name && (tag === 'input' || tag === 'textarea' || tag === 'select') && node.id) {
+                            const labelEl = document.querySelector('label[for="' + node.id + '"]');
+                            if (labelEl) name = labelEl.innerText;
+                        }
+
+                        if (!name) {
+                            // Deep icon search
+                            const icon = node.querySelector('svg, i, img');
+                            if (icon) {
+                                name = icon.getAttribute('aria-label') || icon.getAttribute('title') || icon.getAttribute('alt') || icon.querySelector('title')?.innerText || '';
+                            }
+                        }
+
+                        name = name.replace(/\\s+/g, ' ').trim().slice(0, 80);
+                        let description = (innerText && name !== innerText) ? innerText.replace(/\\s+/g, ' ').trim().slice(0, 120) : undefined;
+                        
+                        // Filter out repetitive boilerplate
+                        if (description && (description.length < 2 || description === name)) description = undefined;
+                        
+                        // Even if it has no name, we include it if it's a button/input/link as it's clearly interactive
                         const rect = node.getBoundingClientRect();
                         const state = [];
                         if (node.getAttribute('aria-expanded') === 'true') state.push('expanded');
                         if (node.getAttribute('aria-selected') === 'true' || node.classList.contains('active')) state.push('selected');
                         if (node.disabled) state.push('disabled');
-                        if (node.required) state.push('required');
                         if (node.checked) state.push('checked');
 
-                        const elData = {
-                            id: i,
-                            role: node.getAttribute('role') || tag,
-                            name: name,
-                            // Remove description if identical to name to save tokens
-                            description: (description && description !== name) ? description : undefined,
-                            selector: testId ? '[data-testid="' + testId + '"]' : undefined,
-                            type: type || undefined,
+                        node.setAttribute('data-reavion-id', i.toString());
+
+                        // Calculate the most robust selector
+                        let suggested = '';
+                        if (testId) suggested = '[data-testid="' + testId + '"]';
+                        else if (ariaLabel && ariaLabel.length < 50) suggested = 'aria/' + ariaLabel;
+                        else if (node.id && !node.id.match(/^ember\d+/i) && !node.id.match(/^[a-z0-9]{8,}$/)) suggested = '#' + node.id;
+                        else if (name && name.length < 50 && (tag === 'button' || tag === 'a' || role === 'button' || role === 'link')) suggested = 'text/' + name;
+                        else if (node.id) suggested = '#' + node.id; 
+                        else if (tag === 'input' && node.getAttribute('name')) suggested = 'input[name="' + node.getAttribute('name') + '"]';
+                        else if (tag === 'textarea' && node.getAttribute('name')) suggested = 'textarea[name="' + node.getAttribute('name') + '"]';
+                        else suggested = 'id/' + i; 
+
+                        elements.push({
+                            _ref: i,
+                            suggestedSelector: suggested || undefined,
+                            role: role || tag,
+                            name: name || (tag === 'button' ? 'Unlabeled button' : tag === 'a' ? 'Unlabeled link' : undefined),
+                            description: description,
+                            ariaLabel: ariaLabel || undefined,
+                            placeholder: placeholder || undefined,
+                            testId: testId || undefined,
+                            nodeId: node.id || undefined,
+                            nameAttr: node.getAttribute('name') || undefined,
                             value: (tag === 'input' || tag === 'textarea') ? value : undefined,
                             href: (tag === 'a') ? href : undefined,
-                            pos: { 
-                                x: Math.round(rect.left + rect.width / 2), 
-                                y: Math.round(rect.top + rect.height / 2) 
-                            },
+                            pos: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
                             state: state.length > 0 ? state.join(', ') : undefined
-                        };
-                        // Clean undefineds
-                        Object.keys(elData).forEach(key => elData[key] === undefined && delete elData[key]);
-                        elements.push(elData);
+                        });
                     }
+                });
+
+                // Traverse Shadow DOM
+                const walker = document.createTreeWalker(root, 1, function(node) { return node.shadowRoot ? 1 : 3; });
+                let host;
+                while (host = walker.nextNode()) {
+                    collect(host.shadowRoot);
                 }
-            });
+            }
+
+            collect(document);
+
             return { 
                 url: window.location.href, 
                 title: document.title, 
                 viewport: { width: vWidth, height: vHeight },
-                elements: elements.slice(0, 75) // Reduced from 150 to 75 for token efficiency 
+                elements: elements.slice(0, 1500) 
             };
           })()
         `);
         return JSON.stringify({ success: true, snapshot: result });
       } catch (error) {
+        sendDebugLog('error', 'browser_dom_snapshot: Tool failure', { error: String(error) });
         return JSON.stringify({ success: false, error: String(error) });
       }
     },
@@ -1056,11 +1319,28 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     func: async ({ x, y }) => {
       try {
         const contents = getContents();
-        contents.sendInputEvent({ type: 'mouseMove', x, y });
-        contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
-        contents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
-        return JSON.stringify({ success: true, message: `Clicked at ${x},${y}` });
+        const logic = `
+          window.movePointer(${x}, ${y});
+          await window.wait(500); 
+          window.showVisualClick(${x}, ${y});
+          return { success: true };
+        `;
+        const result = await contents.executeJavaScript(buildTaskScript(logic));
+        if (!result || !result.success) {
+          return JSON.stringify({ success: false, error: result?.error || 'Script injection failed' });
+        }
+        contents.focus();
+        const roundedX = Math.round(x);
+        const roundedY = Math.round(y);
+
+        contents.sendInputEvent({ type: 'mouseMove', x: roundedX, y: roundedY });
+        await new Promise(r => setTimeout(r, 50));
+        contents.sendInputEvent({ type: 'mouseDown', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
+        await new Promise(r => setTimeout(r, 50));
+        contents.sendInputEvent({ type: 'mouseUp', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
+        return JSON.stringify({ success: true, message: `Clicked at ${roundedX},${roundedY}` });
       } catch (error) {
+        sendDebugLog('error', 'browser_click_coordinates: Tool failure', { error: String(error) });
         return JSON.stringify({ success: false, error: String(error) });
       }
     },
@@ -1092,7 +1372,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                         testId: el.getAttribute('data-testid'),
                         text: (el.innerText || '').slice(0, 100).replace(/\\s+/g, ' ').trim()
                     }))
-                    .slice(0, 10);
+                    .slice(0, 30);
                 return sections;
             }
 
@@ -1101,18 +1381,47 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                 return Array.from(document.querySelectorAll('h1, h2, h3, [role="heading"]'))
                     .filter(el => {
                         const rect = el.getBoundingClientRect();
-                        return rect.top >= 0 && rect.top <= vHeight;
+                        const buffer = 200;
+                        return rect.top >= -buffer && rect.top <= vHeight + buffer;
                     })
                     .map(h => h.innerText.replace(/\\s+/g, ' ').trim())
                     .filter(Boolean)
-                    .slice(0, 15);
+                    .slice(0, 50);
             }
 
             // 3. Extract text "story"
             const bodyText = document.body.innerText.split('\\n')
                 .filter(line => line.trim().length > 30)
-                .slice(0, 15)
+                .slice(0, 40)
                 .join('\\n');
+
+            // 4. Extract Pagination
+            function getPagination() {
+                const navs = Array.from(document.querySelectorAll('nav, [role="navigation"], #navcnt, #foot, .pagination'));
+                return navs.map(n => ({
+                    role: n.getAttribute('role'),
+                    id: n.id,
+                    text: (n.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 200)
+                })).filter(n => n.text.length > 0);
+            }
+
+            // 5. Extract Search Results (Generic)
+            function getSearchResults() {
+                const selectors = ['div.g', 'div[data-sokp]', 'div.result', 'article', '.search-result'];
+                const results = [];
+                for (const s of selectors) {
+                    const found = document.querySelectorAll(s);
+                    if (found.length > 5) {
+                        found.forEach(el => {
+                            const title = el.querySelector('h1, h2, h3, a')?.innerText;
+                            const snippet = el.innerText.replace(title || '', '').replace(/\\s+/g, ' ').trim().slice(0, 200);
+                            if (title) results.push({ title, snippet });
+                        });
+                        break;
+                    }
+                }
+                return results.slice(0, 20);
+            }
 
             return {
                 title: document.title,
@@ -1120,88 +1429,53 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                 viewport: { width: vWidth, height: vHeight },
                 semantics: getSemantics(),
                 headlines: getHeadlines(),
+                searchResults: getSearchResults(),
+                pagination: getPagination(),
                 storySummary: bodyText
             };
           })()
         `);
         return JSON.stringify({ success: true, ...result });
       } catch (e) {
+        sendDebugLog('error', 'browser_extract: Unexpected failure', { error: String(e) });
         return JSON.stringify({ success: false, error: String(e) });
       }
     }
   });
 
-  const moveToElementTool = new DynamicStructuredTool({
-    name: 'browser_move_to_element',
-    description: 'Scroll smoothly to an element and move the pointer indicator to its position. Use this to orient the view and show what the agent is focusing on before taking action.',
+  const moveTool = new DynamicStructuredTool({
+    name: 'browser_move',
+    description: 'Move the mouse pointer to an element. Useful for triggering hover effects or preparing for a click.',
     schema: z.object({
-      selector: z.string().describe('CSS selector for the element to focus on'),
-      index: z.number().nullable().describe('0-based index if multiple elements match'),
+      selector: z.string().describe('CSS selector, ARIA label, or numeric ID'),
+      index: z.number().optional().default(0).describe('0-based index if multiple elements match'),
     }),
     func: async ({ selector, index = 0 }) => {
       try {
         const contents = getContents();
-        const result = await contents.executeJavaScript(`
-          (async function() {
-            const selStr = '${selector.replace(/'/g, "\\'")}';
-            const targetIndex = ${index};
-            const matches = Array.from(document.querySelectorAll(selStr)).filter(el => {
-              const style = window.getComputedStyle(el);
-              return el.offsetParent !== null && style.display !== 'none' && style.visibility !== 'hidden';
-            });
+        await ensureSpeedMultiplier(getSpeed);
+        const logic = `
+          const selectorStr = ${JSON.stringify(selector)};
+          const element = window.findAnyElement(selectorStr, ${index});
+          if (!element) return { success: false, error: 'Element not found: ' + selectorStr };
+          element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+          await window.wait(200);
+          const rect = element.getBoundingClientRect();
+          const x = Math.round(rect.left + rect.width / 2);
+          const y = Math.round(rect.top + rect.height / 2);
+          window.movePointer(x, y);
+          return { success: true, x, y };
+        `;
+        const scriptResult = await contents.executeJavaScript(buildTaskScript(logic));
 
-            const element = matches[targetIndex] || matches[0];
-            if (!element) return { success: false, error: 'Element not found: ' + selStr };
-
-            // Smooth scroll to Center
-            element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-            
-            // Wait for scroll to start/finish
-            await new Promise(resolve => setTimeout(resolve, 400));
-
-            const rect = element.getBoundingClientRect();
-            const x = rect.left + rect.width / 2;
-            const y = rect.top + rect.height / 2;
-
-            // Ensure Pointer Styles
-            if (!document.getElementById('reavion-pointer-styles')) {
-              const style = document.createElement('style');
-              style.id = 'reavion-pointer-styles';
-              style.textContent = '@keyframes reavionFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }';
-              document.head.appendChild(style);
-            }
-
-            // Move or Create Pointer
-            let pointer = document.getElementById('reavion-pointer');
-            if (!pointer) {
-              pointer = document.createElement('div');
-              pointer.id = 'reavion-pointer';
-              pointer.style.cssText = 'position:fixed;z-index:999999;pointer-events:none;filter:drop-shadow(0 4px 12px rgba(0,0,0,0.4));animation:reavionFloat 3s ease-in-out infinite;transition:all 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);';
-              document.body.appendChild(pointer);
-            }
-            // Always update visual style to clear any cached purple versions
-            pointer.innerHTML = \`
-              <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6 4L14 26L17.5 16.5L27 13L6 4Z" fill="black" stroke="white" stroke-width="2"/>
-              </svg>
-            \`;
-
-            pointer.style.left = x + 'px';
-            pointer.style.top = y + 'px';
-            pointer.style.transform = 'scale(1.1)';
-            setTimeout(() => { pointer.style.transform = 'scale(1)'; }, 500);
-
-            // Brief Highlight
-            const originalOutline = element.style.outline;
-            element.style.outline = '2px dashed rgba(255, 255, 255, 0.8)';
-            element.style.outlineOffset = '2px';
-            setTimeout(() => { element.style.outline = originalOutline; }, 1000);
-
-            return { success: true, message: 'Focused on ' + (element.innerText || selector).slice(0, 30) };
-          })()
-        `);
-        return JSON.stringify(result);
+        if (scriptResult.success) {
+          contents.sendInputEvent({ type: 'mouseMove', x: scriptResult.x, y: scriptResult.y });
+        } else {
+          sendDebugLog('warning', `browser_move: Element not found: ${selector}`, { index });
+        }
+        return JSON.stringify(scriptResult);
       } catch (error) {
+        sendDebugLog('error', 'browser_move: Unexpected failure', { error: String(error) });
         return JSON.stringify({ success: false, error: String(error) });
       }
     }
@@ -1210,479 +1484,48 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
   return [
     navigateTool,
     clickTool,
-    typeTool,
+    writeTool,
     scrollTool,
     snapshotTool,
     screenshotTool,
     waitTool,
+    new DynamicStructuredTool({
+      name: 'browser_wait_for_selector',
+      description: 'Wait for a specific element (CSS selector or numeric ID) to appear in the browser. Useful for handling dynamic page loads.',
+      schema: z.object({
+        selector: z.string().describe('CSS selector or numeric ID to wait for'),
+        timeout: z.number().optional().default(5000).describe('Max time to wait in ms')
+      }),
+      func: async ({ selector, timeout = 5000 }) => {
+        try {
+          const contents = getContents();
+          const logic = `
+            const selectorStr = ${JSON.stringify(selector)};
+            const startTime = Date.now();
+            while (Date.now() - startTime < ${timeout}) {
+              if (window.findAnyElement(selectorStr)) return { success: true };
+              await window.wait(300);
+            }
+            return { success: false, error: 'Timeout waiting for ' + selectorStr };
+          `;
+          const result = await contents.executeJavaScript(buildTaskScript(logic));
+          if (!result.success) sendDebugLog('warning', `browser_wait_for_selector: ${result.error}`, { selector, timeout });
+          return JSON.stringify(result);
+        } catch (error) {
+          sendDebugLog('error', 'browser_wait_for_selector: Tool failure', { error: String(error) });
+          return JSON.stringify({ success: false, error: String(error) });
+        }
+      }
+    }),
     clickAtCoordinatesTool,
     getPageContentTool,
-    moveToElementTool,
+    moveTool,
 
 
     // --- MARK PAGE TOOL (MOVED & IMPROVED BELOW) ---
 
     // --- ADVANCED INTROSPECTION TOOLS ---
-    new DynamicStructuredTool({
-      name: 'browser_highlight_elements',
-      description: 'Visually highlight elements on the page matching a selector. Use this to verify your selectors or "see" what you found.',
-      schema: z.object({
-        selector: z.string().describe('CSS selector to highlight'),
-        duration: z.number().nullable().describe('Duration in ms (default 2000)')
-      }),
-      func: async ({ selector, duration }) => {
-        const finalDuration = duration || 2000;
-        const contents = getContents();
-        try {
-          const count = await contents.executeJavaScript(`
-                    (function() {
-                        const els = document.querySelectorAll('${selector.replace(/'/g, "\\'")}');
-                        if (els.length > 0) {
-                            // Only scroll the first element to avoid jitter from multiple smooth scrolls
-                            els[0].scrollIntoView({ behavior: 'instant', block: 'center', inline: 'nearest' });
-                        }
 
-          els.forEach((el, index) => {
-            const originalOutline = el.style.outline;
-            const originalTransition = el.style.transition;
-            const originalBoxShadow = el.style.boxShadow;
-
-            el.style.transition = 'outline 0.1s ease-out';
-            el.style.outline = '3px solid #f43f5e';
-            el.style.boxShadow = '0 0 15px rgba(244, 63, 94, 0.6)';
-
-            setTimeout(() => {
-              // Check if element still exists and is in the DOM
-              if (el && document.body.contains(el)) {
-                el.style.outline = originalOutline;
-                el.style.transition = originalTransition;
-                el.style.boxShadow = originalBoxShadow;
-              }
-            }, ${finalDuration});
-          });
-          return els.length;
-        })()
-      `);
-          return JSON.stringify({ success: true, message: `Highlighted ${count} elements matching "${selector}"` });
-        } catch (e) {
-          return JSON.stringify({ success: false, error: String(e) });
-        }
-      }
-    }),
-
-    new DynamicStructuredTool({
-      name: 'browser_get_console_logs',
-      description: 'Get the recent console logs from the browser page. Useful for debugging errors.',
-      schema: z.object({}),
-      func: async () => {
-        const logs = consoleLogs.get(TAB_ID) || [];
-        return JSON.stringify({
-          success: true,
-          logs: logs.length > 0 ? logs : ['No logs captured yet']
-        });
-      }
-    }),
-
-    new DynamicStructuredTool({
-      name: 'browser_inspect_element',
-      description: 'Get detailed inspection info for an element (computed styles, attributes, visibility). Use this to debug why an element is not clickable or visible.',
-      schema: z.object({
-        selector: z.string().describe('CSS selector for the element to inspect'),
-      }),
-      func: async ({ selector }) => {
-        const contents = getContents();
-        try {
-          const result = await contents.executeJavaScript(`
-            (function() {
-              const el = document.querySelector('${selector.replace(/'/g, "\\'")}');
-              if (!el) return { success: false, error: 'Element not found' };
-              
-              const rect = el.getBoundingClientRect();
-              const style = window.getComputedStyle(el);
-              
-              // Check visibility
-              const isVisible = style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0;
-              
-              // Key attributes
-              const attributes = {};
-              for (const attr of el.attributes) {
-                attributes[attr.name] = attr.value;
-              }
-              
-              // Computed styles of interest
-              const computed = {
-                display: style.display,
-                visibility: style.visibility,
-                opacity: style.opacity,
-                position: style.position,
-                zIndex: style.zIndex,
-                pointerEvents: style.pointerEvents,
-                cursor: style.cursor,
-                width: rect.width + 'px',
-                height: rect.height + 'px',
-                top: rect.top + 'px',
-                left: rect.left + 'px'
-              };
-              
-              // Check for overlapping elements at center
-              const centerX = rect.left + rect.width / 2;
-              const centerY = rect.top + rect.height / 2;
-              const topEl = document.elementFromPoint(centerX, centerY);
-              const isObscured = topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el);
-              
-              return {
-                success: true,
-                tagName: el.tagName,
-                isVisible,
-                isObscured,
-                obscuringElement: isObscured ? (topEl.tagName + (topEl.id ? '#' + topEl.id : '') + (topEl.className ? '.' + topEl.className : '')) : null,
-                text: (el.innerText || '').slice(0, 200),
-                htmlSnippet: el.outerHTML.slice(0, 500),
-                attributes,
-                computedStyles: computed
-              };
-            })()
-          `);
-          return JSON.stringify(result);
-        } catch (e) {
-          return JSON.stringify({ success: false, error: String(e) });
-        }
-      }
-    }),
-
-    new DynamicStructuredTool({
-      name: 'browser_get_accessibility_tree',
-      description: 'Get a simplified accessibility tree of the page. Use this to understand the semantic structure (roles, names, states) like a screen reader.',
-      schema: z.object({}),
-      func: async () => {
-        const contents = getContents();
-        try {
-          const tree = await contents.executeJavaScript(`
-  (function () {
-    function traverse(node, depth = 0) {
-      if (depth > 50) return null; // Safety depth limit
-      if (!node) return null;
-
-      // Skip hidden nodes generally, unless they have aria-hidden="false" explicitly
-      const style = node.nodeType === 1 ? window.getComputedStyle(node) : null;
-      if (style && (style.display === 'none' || style.visibility === 'hidden')) return null;
-
-      const role = node.getAttribute ? node.getAttribute('role') : null;
-      const ariaLabel = node.getAttribute ? node.getAttribute('aria-label') : null;
-      let name = ariaLabel || node.innerText || '';
-
-      // Clean up name
-      if (name && typeof name === 'string') name = name.replace(/\\s+/g, ' ').trim().slice(0, 50);
-
-      const relevantRoles = ['button', 'link', 'textbox', 'checkbox', 'radio', 'combobox', 'listbox', 'menuitem', 'tab', 'heading', 'banner', 'main', 'navigation', 'dialog', 'alert'];
-      const isInteractive = relevantRoles.includes(role) || (node.tagName === 'BUTTON') || (node.tagName === 'A' && node.href) || (node.tagName === 'INPUT');
-
-      const children = [];
-      for (const child of node.childNodes) {
-        if (child.nodeType === 1) { // Element
-          const childNode = traverse(child, depth + 1);
-          if (childNode) children.push(childNode);
-        }
-      }
-
-      // Only return node if it is interactive, has a role, or has interesting children
-      if (isInteractive || role || children.length > 0) {
-        return {
-          role: role || node.tagName.toLowerCase(),
-          name: name,
-          children: children.length > 0 ? children : undefined
-        };
-      }
-
-      return null;
-    }
-
-    // Start from body
-    return traverse(document.body);
-  })()
-  `);
-          return JSON.stringify({ success: true, tree: tree });
-        } catch (e) {
-          return JSON.stringify({ success: false, error: String(e) });
-        }
-      }
-    }),
-
-    new DynamicStructuredTool({
-      name: 'browser_mark_page',
-      description: 'Overlay numeric labels on all interactive elements. This provides you with exact numeric IDs (e.g., "7") to use in the "selector" field of browser_click or browser_type. Use this for 100% precision on complex sites.',
-      schema: z.object({}),
-      func: async () => {
-        const contents = getContents();
-        try {
-          await ensureSpeedMultiplier(getSpeed);
-          const count = await contents.executeJavaScript(`
-  (function () {
-    const containerId = 'reavion-marks-container';
-    const attrName = 'data-reavion-id';
-    
-    // Cleanup existing
-    const existing = document.getElementById(containerId);
-    if (existing) existing.remove();
-    document.querySelectorAll('[' + attrName + ']').forEach(el => el.removeAttribute(attrName));
-
-    const container = document.createElement('div');
-    container.id = containerId;
-    container.style.cssText = 'position:fixed;inset:0;z-index:999999;pointer-events:none;';
-
-    const candidates = document.querySelectorAll('button, a, input, textarea, select, [role="button"], [role="link"], [data-testid], [tabindex]:not([tabindex="-1"])');
-    let count = 0;
-
-    candidates.forEach((el, i) => {
-      const rect = el.getBoundingClientRect();
-      // Check if in viewport
-      if (rect.width > 0 && rect.height > 0 && rect.top >= 0 && rect.top <= window.innerHeight && rect.left >= 0 && rect.left <= window.innerWidth) {
-        el.setAttribute(attrName, i.toString());
-        const label = document.createElement('div');
-        label.innerText = i.toString();
-        // Reavion Blue: #2563eb (hsl(221, 83%, 53%))
-        label.style.cssText = 'position:fixed;background:rgba(37,99,235,0.7);color:white;padding:1px 3px;font-size:9px;font-family:sans-serif;border-radius:2px;z-index:1000000;pointer-events:none;font-weight:bold;backdrop-filter:blur(2px);box-shadow:0 1px 2px rgba(0,0,0,0.2);';
-        label.style.left = Math.max(0, rect.left) + 'px';
-        label.style.top = Math.max(0, rect.top) + 'px';
-        container.appendChild(label);
-        count++;
-      }
-    });
-
-    document.body.appendChild(container);
-
-    // Auto-remove after 60 seconds
-    setTimeout(() => {
-      const el = document.getElementById(containerId);
-      if (el) el.remove();
-    }, 60000);
-    return count;
-  })()
-  `);
-          return JSON.stringify({ success: true, message: `Labeled ${count} interactive elements. You can now use numeric IDs (e.g. "42") as the selector in browser_click or browser_type tools.` });
-        } catch (e) {
-          return JSON.stringify({ success: false, error: String(e) });
-        }
-      }
-    }),
-
-    new DynamicStructuredTool({
-      name: 'browser_draw_grid',
-      description: 'Draw a numbered coordinate grid overlay on the page. Use this to find precise coordinates for browser_click_coordinates.',
-      schema: z.object({
-        opacity: z.number().nullable().describe('Grid opacity (0.1 to 1.0, default 0.3)').default(null)
-      }),
-      func: async ({ opacity }) => {
-        const finalOpacity = opacity ?? 0.3;
-        const contents = getContents();
-        try {
-          await ensureSpeedMultiplier(getSpeed);
-          await contents.executeJavaScript(`
-            (function () {
-              const existing = document.getElementById('reavion-grid-overlay');
-              if (existing) {
-                existing.remove();
-                return;
-              }
-
-              const grid = document.createElement('div');
-              grid.id = 'reavion-grid-overlay';
-              grid.style.cssText = 'position:fixed;inset:0;z-index:999999;pointer-events:none;background:transparent;';
-
-              const width = window.innerWidth;
-              const height = window.innerHeight;
-              const step = 100;
-
-              let html = '';
-              // Draw vertical lines
-              for (let x = 0; x <= width; x += step) {
-                html += \`<div style="position:absolute;left:\${x}px;top:0;bottom:0;width:1px;background:rgba(37,99,235,\${finalOpacity});"><span style="position:absolute;top:5px;left:2px;font-size:10px;color:#2563eb;">\${x}</span></div>\`;
-              }
-              // Draw horizontal lines
-              for (let y = 0; y <= height; y += step) {
-                html += \`<div style="position:absolute;top:\${y}px;left:0;right:0;height:1px;background:rgba(37,99,235,\${finalOpacity});"><span style="position:absolute;left:5px;top:2px;font-size:10px;color:#2563eb;">\${y}</span></div>\`;
-              }
-              
-              grid.innerHTML = html;
-              document.body.appendChild(grid);
-              
-              // Auto-remove after 30 seconds
-              setTimeout(() => {
-                 const el = document.getElementById('reavion-grid-overlay');
-                 if (el) el.remove();
-              }, 30000);
-            })()
-          `);
-          return JSON.stringify({ success: true, message: 'Grid overlay drawn. Use coordinates to click.' });
-        } catch (e) {
-          return JSON.stringify({ success: false, error: String(e) });
-        }
-      }
-    }),
-
-
-
-    new DynamicStructuredTool({
-      name: 'browser_scrape_html',
-      description: 'Scrape the current page HTML using Cheerio. Use this for rigorous data extraction, analyzing the full DOM structure, or finding specific information that might be hidden or complex.',
-      schema: z.object({
-        selector: z.string().describe('CSS selector to target specific elements. Default is "body".').default('body'),
-        attribute: z.string().optional().describe('Attribute to extract (e.g. "href", "src"). If omitted, extracts text content.')
-      }),
-      func: async ({ selector, attribute }) => {
-        const contents = getContents();
-        try {
-          // Get full HTML
-          const html = await contents.executeJavaScript('document.documentElement.outerHTML');
-          const $ = cheerio.load(html);
-
-          const results: string[] = [];
-          const sel = selector || 'body';
-
-          $(sel).each((_, el) => {
-            if (attribute) {
-              const val = $(el).attr(attribute);
-              if (val) results.push(val.trim());
-            } else {
-              // Get text, collapse whitespace
-              const text = $(el).text().replace(/\s+/g, ' ').trim();
-              if (text) results.push(text);
-            }
-          });
-
-          return JSON.stringify({
-            success: true,
-            count: results.length,
-            results: results.slice(0, 50) // Limit results
-          });
-        } catch (e) {
-          return JSON.stringify({ success: false, error: String(e) });
-        }
-      }
-    }),
-
-    new DynamicStructuredTool({
-      name: 'browser_replay',
-      description: 'Replay a sequence of browser actions recorded via Chrome DevTools Recorder (JSON format). Allows for complex automation flows with high precision.',
-      schema: z.object({
-        recording: z.string().describe('The JSON string of the recording artifact'),
-        speed_multiplier: z.number().optional().describe('Speed up or slow down replay (default 1.0)'),
-        enable_agent_decisions: z.boolean().optional().describe('Allow the agent to pause or branch if an element is missing'),
-      }),
-      func: async ({ recording, speed_multiplier = 1.0, enable_agent_decisions = false }) => {
-        const contents = getContents();
-        try {
-          const data = JSON.parse(recording);
-          const steps = data.steps || [];
-          const logs: string[] = [];
-
-          sendDebugLog('info', `Starting replay: ${data.title || 'Untitled'}`);
-
-          for (const step of steps) {
-            // Check for stop signal
-            const isStopped = await contents.executeJavaScript('window.__REAVION_STOP__').catch(() => false);
-            if (isStopped) return JSON.stringify({ success: false, error: 'Replay stopped by user' });
-
-            const type = step.type;
-            logs.push(`Executing ${type}...`);
-            sendDebugLog('info', `Step: ${type}`, step);
-
-            if (type === 'setViewport') {
-              // We don't usually resize the webview directly here as it's governed by the UI,
-              // but we can log intent.
-            } else if (type === 'navigate') {
-              try {
-                await contents.loadURL(step.url);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-              } catch (e) {
-                logs.push(`Navigation failed to ${step.url}: ${String(e)}`);
-              }
-            } else if (type === 'click' || type === 'change' || type === 'keyDown' || type === 'keyUp') {
-              // Convert Chrome Recorder selectors to something our engine understands
-              // They provide an array of arrays: [["primary"], ["backup"]]
-              const rawSelectors = step.selectors || [];
-              const flatSelectors = rawSelectors.map((s: any) => Array.isArray(s) ? s[s.length - 1] : s);
-
-              const result = await contents.executeJavaScript(`
-                (async function() {
-                  ${SCRIPT_HELPERS}
-                  const selectors = ${JSON.stringify(flatSelectors)};
-                  const type = "${type}";
-                  const value = "${(step.value || '').replace(/"/g, '\\"')}";
-                  const key = "${(step.key || '').replace(/"/g, '\\"')}";
-                  
-                  let element = null;
-                  if (selectors && selectors.length > 0) {
-                    for (const sel of selectors) {
-                      element = findAnyElement(sel);
-                      if (element) break;
-                    }
-                  }
-
-                  // Default for key events if no element found
-                  if (!element && (type === 'keyDown' || type === 'keyUp')) {
-                    element = document.activeElement || document.body;
-                  }
-
-                  if (!element && type !== 'navigate') {
-                    return { success: false, error: 'Element not found' + (selectors.length ? ': ' + selectors.join(', ') : '') };
-                  }
-
-                  if (element) {
-                    if (element.scrollIntoView) {
-                      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                      await wait(500);
-                    }
-
-                    const rect = element.getBoundingClientRect();
-                    const x = rect.left + rect.width / 2;
-                    const y = rect.top + rect.height / 2;
-
-                    if (type === 'click') {
-                      // Removed element.focus() for generic click
-                      element.click();
-                      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-                      element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-                      element.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
-                    } else if (type === 'change') {
-                      element.focus({ preventScroll: true });
-                      // Handle custom elements/editors like shreddit-composer
-                      if (element.tagName.toLowerCase().includes('composer') || element.isContentEditable || element.tagName === 'DIV') {
-                        element.textContent = value;
-                        element.innerText = value;
-                        // Trigger internal editor events
-                        element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: value }));
-                      } else {
-                        element.value = value;
-                      }
-                      element.dispatchEvent(new Event('input', { bubbles: true }));
-                      element.dispatchEvent(new Event('change', { bubbles: true }));
-                    } else if (type === 'keyDown' || type === 'keyUp') {
-                      const opts = { key: key, code: key, bubbles: true };
-                      element.dispatchEvent(new KeyboardEvent(type, opts));
-                    }
-                  }
-
-                  await wait(400);
-                  return { success: true };
-                })()
-              `);
-
-              if (!result.success && !enable_agent_decisions) {
-                return JSON.stringify({ success: false, error: result.error, logs });
-              }
-            }
-
-            // Artificial delay between steps for realism
-            await new Promise(resolve => setTimeout(resolve, 500 / speed_multiplier));
-          }
-
-          return JSON.stringify({ success: true, message: `Completed ${steps.length} steps of "${data.title}"`, logs });
-        } catch (e) {
-          return JSON.stringify({ success: false, error: String(e) });
-        }
-      }
-    }),
 
     ...createSiteTools({
       getContents,
