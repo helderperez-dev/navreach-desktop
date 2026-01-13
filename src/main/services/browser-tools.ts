@@ -1341,7 +1341,18 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                         const rect = node.getBoundingClientRect();
                         const state = [];
                         if (node.getAttribute('aria-expanded') === 'true') state.push('expanded');
-                        if (node.getAttribute('aria-selected') === 'true' || node.classList.contains('active')) state.push('selected');
+                        const ariaSelected = node.getAttribute('aria-selected') === 'true';
+                        const hasActiveClass = node.classList.contains('active') || node.classList.contains('selected');
+                        // X specific: active tab often has a bold font weight or a specific underline div helper
+                        let isXActiveTab = false;
+                        if (!ariaSelected && !hasActiveClass && (node.getAttribute('role') === 'tab')) {
+                            const style = window.getComputedStyle(node);
+                            if (style.fontWeight === '700' || parseInt(style.fontWeight) >= 700) {
+                                isXActiveTab = !!node.querySelector('div[style*="background-color"]');
+                            }
+                        }
+
+                        if (ariaSelected || hasActiveClass || isXActiveTab) state.push('selected');
                         if (node.disabled) state.push('disabled');
                         if (node.checked) state.push('checked');
 

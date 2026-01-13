@@ -1287,7 +1287,16 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                   const tabLabel = ${JSON.stringify(filter === 'top' ? 'Top' : 'Latest')};
                   const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
                   const targetTab = tabs.find(t => t.innerText && t.innerText.includes(tabLabel));
-                  if (targetTab && targetTab.getAttribute('aria-selected') === 'false') {
+                  const isAlreadySelected = (el) => {
+                    if (el.getAttribute('aria-selected') === 'true') return true;
+                    // Check for font weight and underline as fallback
+                    const style = window.getComputedStyle(el);
+                    const isBold = style.fontWeight === '700' || parseInt(style.fontWeight) >= 700;
+                    const underline = el.querySelector('div[style*="background-color: rgb(29, 155, 240)"]');
+                    return isBold && !!underline;
+                  };
+
+                  if (targetTab && !isAlreadySelected(targetTab)) {
                     await safeClick(targetTab, tabLabel + ' Tab');
                     await wait(2000);
                   }
@@ -1790,12 +1799,29 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 return { success: false, error: 'Tab "' + ${JSON.stringify(tab_name)} + '" not found. Available tabs: ' + availableTabs };
               }
 
-              if (targetTab.getAttribute('aria-selected') === 'true') {
-                return { success: true, message: 'Already on tab "' + (targetTab.innerText || tab_name) + '"' };
+              const isAlreadySelected = (el) => {
+                if (el.getAttribute('aria-selected') === 'true') return true;
+                
+                // Extra checks for X's dynamic DOM
+                const style = window.getComputedStyle(el);
+                const isBold = style.fontWeight === '700' || parseInt(style.fontWeight) >= 700;
+                
+                // The blue underline div that X uses for the active tab
+                const underline = Array.from(el.querySelectorAll('div')).find(d => {
+                  const s = window.getComputedStyle(d);
+                  return (s.backgroundColor === 'rgb(29, 155, 240)' || s.backgroundColor === 'rgb(255, 122, 0)') && 
+                         parseInt(s.height) >= 2;
+                });
+                
+                return isBold && !!underline;
+              };
+
+              if (isAlreadySelected(targetTab)) {
+                return { success: true, message: 'Already on tab "' + (targetTab.innerText || tab_name) + '"', already_on: true };
               }
 
               await safeClick(targetTab, 'Timeline/Search Tab');
-              await wait(2500); // Wait for feed to update
+              await wait(2000); // Wait for feed to update
               
               // Verify navigation
               const finalTabs = findTabs();
@@ -1803,7 +1829,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                  const txt = (t.innerText || t.getAttribute('aria-label') || '').toLowerCase();
                  return txt.includes(targetName);
               });
-              const isSelected = verifiedTab?.getAttribute('aria-selected') === 'true';
+              const isSelected = verifiedTab ? isAlreadySelected(verifiedTab) : false;
 
               return { 
                 success: true, 
