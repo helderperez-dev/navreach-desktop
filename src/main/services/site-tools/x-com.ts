@@ -4,6 +4,54 @@ import { DynamicStructuredTool } from '@langchain/core/tools';
 import type { SiteToolContext } from './types';
 
 const POINTER_HELPERS = `
+  window.__LAST_MOUSE_POS__ = window.__LAST_MOUSE_POS__ || { x: 0, y: 0 };
+
+  window.cubicBezier = (t, p0, p1, p2, p3) => {
+    const oneMinusT = 1 - t;
+    return Math.pow(oneMinusT, 3) * p0 +
+           3 * Math.pow(oneMinusT, 2) * t * p1 +
+           3 * oneMinusT * Math.pow(t, 2) * p2 +
+           Math.pow(t, 3) * p3;
+  };
+
+  window.generateControlPoints = (start, end) => {
+    const dist = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+    // Randomize control points to create an arc
+    // Offset relative to distance, but capped to avoid wild swings
+    const offsetScale = Math.min(dist * 0.5, 200); 
+    
+    // Direction vector
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    
+    // Perpendicular vector (randomly flipped)
+    let px = -dy;
+    let py = dx;
+    if (Math.random() > 0.5) {
+       px = dy;
+       py = -dx;
+    }
+    
+    // Normalize and scale
+    const len = Math.sqrt(px*px + py*py) || 1;
+    const normX = px / len;
+    const normY = py / len;
+    
+    // Control point 1: 1/3 way + curve
+    const cp1 = {
+        x: start.x + dx * 0.33 + normX * (Math.random() * offsetScale),
+        y: start.y + dy * 0.33 + normY * (Math.random() * offsetScale)
+    };
+
+    // Control point 2: 2/3 way + curve (usually same side, but varied)
+    const cp2 = {
+        x: start.x + dx * 0.66 + normX * (Math.random() * offsetScale),
+        y: start.y + dy * 0.66 + normY * (Math.random() * offsetScale)
+    };
+    
+    return { cp1, cp2 };
+  };
+
   window.ensurePointer = () => {
     let host = document.getElementById('reavion-pointer-host');
     if (!host) {
@@ -13,18 +61,17 @@ const POINTER_HELPERS = `
       const shadow = host.attachShadow({ mode: 'open' });
       const style = document.createElement('style');
       style.textContent = \`
-        @keyframes reavionFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } }
         .pointer {
           position: fixed;
           z-index: 2147483647;
           pointer-events: none;
           filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
-          animation: reavionFloat 3s ease-in-out infinite;
-          transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+          transition: transform 0.1s ease; /* Only scale transform, pos updated by JS */
           width: 32px; height: 32px;
           display: block !important;
           visibility: visible !important;
           opacity: 1 !important;
+          will-change: top, left;
         }
         .click-ripple {
           position: fixed;
@@ -44,7 +91,7 @@ const POINTER_HELPERS = `
     return host.shadowRoot;
   };
 
-  window.movePointer = (x, y) => {
+  window.movePointer = (targetX, targetY) => {
     const root = window.ensurePointer();
     let p = root.querySelector('.pointer');
     if (!p) {
@@ -52,11 +99,72 @@ const POINTER_HELPERS = `
       p.className = 'pointer';
       p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
       root.appendChild(p);
+      // Initialize at explicit 0,0 or last known pos
+      p.style.left = (window.__LAST_MOUSE_POS__.x || 0) + 'px';
+      p.style.top = (window.__LAST_MOUSE_POS__.y || 0) + 'px';
     }
-    p.style.left = x + 'px';
-    p.style.top = y + 'px';
-    p.style.transform = 'scale(1.1)';
-    setTimeout(() => { if (p) p.style.transform = 'scale(1)'; }, 400);
+
+    const start = { ...window.__LAST_MOUSE_POS__ };
+    const end = { x: targetX, y: targetY };
+    
+    // Check if distance is tiny, just jump
+    const dist = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+    if (dist < 10) {
+        p.style.left = end.x + 'px';
+        p.style.top = end.y + 'px';
+        window.__LAST_MOUSE_POS__ = end;
+        return Promise.resolve();
+    }
+
+    // Generate path
+    const { cp1, cp2 } = window.generateControlPoints(start, end);
+    
+    // Vary duration based on distance and random factor
+    // Min 300ms, Max 800ms typically
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
+    const baseDuration = Math.min(Math.max(dist * 0.8, 300), 1200) * multiplier;
+    const duration = baseDuration * (0.8 + Math.random() * 0.4); // +/- randomness
+
+    const startTime = performance.now();
+
+    return new Promise(resolve => {
+        const animate = (now) => {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Custom ease-out-sine-ish
+            const ease = Math.sin((progress * Math.PI) / 2);
+
+            const x = window.cubicBezier(ease, start.x, cp1.x, cp2.x, end.x);
+            const y = window.cubicBezier(ease, start.y, cp1.y, cp2.y, end.y);
+
+            p.style.left = x + 'px';
+            p.style.top = y + 'px';
+
+            // Dispatch mousemove periodically (not every frame to avoid perf hit, maybe every other?)
+            // Actually browsers handle frequent events fine.
+            try {
+               const evt = new MouseEvent('mousemove', {
+                   view: window,
+                   bubbles: true,
+                   cancelable: true,
+                   clientX: x,
+                   clientY: y,
+                   screenX: x + window.screenX, // rough estimate
+                   screenY: y + window.screenY
+               });
+               document.elementFromPoint(x, y)?.dispatchEvent(evt);
+            } catch(e) {}
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                window.__LAST_MOUSE_POS__ = end;
+                resolve();
+            }
+        };
+        requestAnimationFrame(animate);
+    });
   };
 
   window.showVisualClick = (x, y) => {
@@ -92,10 +200,17 @@ function isVisible(el) {
 function wait(ms) {
   const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
   const isFast = multiplier < 1.0;
-  // HUMAN BEHAVIOR: Add +/- 25% randomness + small base jitter, but scale down for FAST mode
-  const randomFactor = isFast ? (0.9 + Math.random() * 0.2) : (0.75 + (Math.random() * 0.5));
-  const jitter = Math.random() * (isFast ? 50 : 200);
-  const adjustedMs = Math.round((ms * multiplier * randomFactor) + jitter);
+  
+  // HUMAN BEHAVIOR:
+  // 1. Base Randomness: +/- 30%
+  // 2. Hesitation: 10% chance to add extra 200-800ms
+  // 3. Jitter: small noise
+  
+  const randomFactor = 0.7 + Math.random() * 0.6; // 0.7 to 1.3
+  const hesitation = Math.random() < 0.1 ? (200 + Math.random() * 600) : 0;
+  
+  let adjustedMs = (ms * multiplier * randomFactor) + hesitation;
+  if (isFast) adjustedMs = ms * multiplier; // Strict speed if fast mode is forced
 
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -107,7 +222,7 @@ function wait(ms) {
       if (Date.now() - start >= adjustedMs) {
         resolve();
       } else {
-        setTimeout(checking, 20); // Faster check interval
+        setTimeout(checking, 20); 
       }
     };
     checking();
@@ -127,9 +242,10 @@ async function safeClick(el, label, options = {}) {
   const rect = clickable.getBoundingClientRect();
   const x = Math.round(rect.left + rect.width / 2);
   const y = Math.round(rect.top + rect.height / 2);
-  if (typeof window.movePointer === 'function') window.movePointer(x, y);
+  
+  if (typeof window.movePointer === 'function') await window.movePointer(x, y);
 
-  await wait(options.focusWait || 500); // Wait for pointer transition (0.4s)
+  await wait(options.focusWait || 100); // Small pause after arriving before clicking (human hesitation/verification)
 
   if (typeof window.showVisualClick === 'function') window.showVisualClick(x, y);
 
@@ -325,7 +441,7 @@ async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
       
-      if (typeof window.movePointer === 'function') window.movePointer(x, y);
+      if (typeof window.movePointer === 'function') await window.movePointer(x, y);
       avatar.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
       avatar.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
       
@@ -345,7 +461,7 @@ async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
         if (cardFollow && isVisible(cardFollow)) {
            await safeClick(cardFollow, 'Hover Card Follow');
            // Move mouse away to close card
-           if (typeof window.movePointer === 'function') window.movePointer(0, 0);
+           if (typeof window.movePointer === 'function') await window.movePointer(0, 0);
            return { success: true, message: 'Followed via Hover Card' };
         }
       }
@@ -716,8 +832,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     schema: z.object({
       index: z.union([z.number(), z.string()]).nullable().describe('0-based index of the post.').default(0),
       action: z.enum(['like', 'unlike', 'toggle']).nullable().default('like'),
+      expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended.'),
     }),
-    func: async ({ index, action }: { index: number | string | null; action: 'like' | 'unlike' | 'toggle' | null }) => {
+    func: async ({ index, action, expected_author }: { index: number | string | null; action: 'like' | 'unlike' | 'toggle' | null; expected_author?: string | null }) => {
       const contents = ctx.getContents();
       const rIndex = parseInt(String(index ?? 0), 10);
       const rAction = action ?? 'like';
@@ -729,13 +846,10 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             const host = window.location.hostname || '';
             if (!host.includes('x.com') && !host.includes('twitter.com')) return { success: false, error: 'Not on x.com' };
 
-            const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
-            let target = null;
-            if (tweets.length > 0) {
-              target = tweets[${rIndex}] || tweets[tweets.length - 1];
-            } else {
-              target = document.body;
-            }
+            // Use Robust Finder
+            const findResult = await findTweetRobustly(${rIndex}, ${JSON.stringify(expected_author || null)});
+            if (!findResult.tweet) return { success: false, error: findResult.error || 'Tweet not found' };
+            const target = findResult.tweet;
 
             const likeBtns = Array.from(target.querySelectorAll('button[data-testid="like"], [data-testid="like"]')).filter(isVisible);
             const unlikeBtns = Array.from(target.querySelectorAll('button[data-testid="unlike"], [data-testid="unlike"]')).filter(isVisible);
@@ -863,6 +977,23 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             }
             const root = modal || document;
             
+            // Check for Blocking Modals first (e.g., "Who can reply?")
+            if (modal) {
+               const modalText = (modal.innerText || '').toLowerCase();
+               if (modalText.includes('who can reply') || modalText.includes('people the author mentioned') || modalText.includes('accounts mentioned')) {
+                   const gotItBtn = Array.from(modal.querySelectorAll('[role="button"]')).find(b => {
+                        const t = b.innerText.toLowerCase();
+                        return t.includes('got it') || t.includes('ok') || t.includes('understand') || t.includes('entendido');
+                   }) || modal.querySelector('[data-testid="app-bar-close"]');
+
+                   if (gotItBtn) {
+                       await safeClick(gotItBtn, 'Dismiss Restriction Modal');
+                       await wait(500);
+                   }
+                   return { success: true, skipped: true, reason: 'restricted', message: 'Skipped: Reply restricted by author (Modal dismissed)' };
+               }
+            }
+
             const composer = root.querySelector('[data-testid="tweetTextarea_0"]') || 
                              root.querySelector('div[role="textbox"][contenteditable="true"]');
             
@@ -959,8 +1090,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     schema: z.object({
       index: z.union([z.number(), z.string()]).nullable().default(0),
       action: z.enum(['follow', 'unfollow', 'toggle']).nullable().default('follow'),
+      expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended for timeline followers.'),
     }),
-    func: async ({ index, action }: { index: number | string | null; action: 'follow' | 'unfollow' | 'toggle' | null }) => {
+    func: async ({ index, action, expected_author }: { index: number | string | null; action: 'follow' | 'unfollow' | 'toggle' | null; expected_author?: string | null }) => {
       const contents = ctx.getContents();
       const rIndex = parseInt(String(index ?? 0), 10);
       const rAction = action ?? 'follow';
@@ -1013,6 +1145,13 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               }
 
               // 3. Fallback: Target via Caret Menu on Tweets (Timeline)
+              // If expected_author provided, prioritize it
+              const findResult = await findTweetRobustly(idx, ${JSON.stringify(expected_author || null)});
+              if (findResult.tweet) {
+                  return await followAuthorOfTweet(findResult.tweet, desired);
+              }
+
+              // Legacy fallback if no match found (mostly for compat, though findTweetRobustly handles default case)
               const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
               if (tweets.length > 0 && idx < tweets.length) {
                 return await followAuthorOfTweet(tweets[idx], desired);

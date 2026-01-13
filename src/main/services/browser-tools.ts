@@ -539,7 +539,48 @@ export function getWebviewContents(tabId: string): Electron.WebContents | undefi
 const TAB_ID = 'main-tab';
 
 const SCRIPT_HELPERS = `
-  window.wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  window.__LAST_MOUSE_POS__ = window.__LAST_MOUSE_POS__ || { x: 0, y: 0 };
+
+  window.cubicBezier = (t, p0, p1, p2, p3) => {
+    const oneMinusT = 1 - t;
+    return Math.pow(oneMinusT, 3) * p0 +
+           3 * Math.pow(oneMinusT, 2) * t * p1 +
+           3 * oneMinusT * Math.pow(t, 2) * p2 +
+           Math.pow(t, 3) * p3;
+  };
+
+  window.generateControlPoints = (start, end) => {
+    const dist = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+    const offsetScale = Math.min(dist * 0.5, 200); 
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    let px = -dy;
+    let py = dx;
+    if (Math.random() > 0.5) { px = dy; py = -dx; }
+    const len = Math.sqrt(px*px + py*py) || 1;
+    const normX = px / len;
+    const normY = py / len;
+    const cp1 = { x: start.x + dx * 0.33 + normX * (Math.random() * offsetScale), y: start.y + dy * 0.33 + normY * (Math.random() * offsetScale) };
+    const cp2 = { x: start.x + dx * 0.66 + normX * (Math.random() * offsetScale), y: start.y + dy * 0.66 + normY * (Math.random() * offsetScale) };
+    return { cp1, cp2 };
+  };
+
+  window.wait = (ms) => {
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
+    const isFast = multiplier < 1.0;
+    
+    // HUMAN BEHAVIOR: +/- 30% randomness + occasional hesitation
+    const randomFactor = 0.7 + Math.random() * 0.6;
+    const hesitation = Math.random() < 0.1 ? (200 + Math.random() * 600) : 0;
+    
+    let adjustedMs = (ms * multiplier * randomFactor) + hesitation;
+    if (isFast) adjustedMs = ms * multiplier;
+
+    return new Promise((resolve) => {
+       // Simple timeout for generic tools
+       setTimeout(resolve, adjustedMs);
+    });
+  };
 
   window.ensurePointer = () => {
     let host = document.getElementById('reavion-pointer-host');
@@ -550,18 +591,17 @@ const SCRIPT_HELPERS = `
       const shadow = host.attachShadow({ mode: 'open' });
       const style = document.createElement('style');
       style.textContent = 
-        '@keyframes reavionFloat { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-3px); } } ' +
         '.pointer { ' +
           'position: fixed; ' +
           'z-index: 2147483647; ' +
           'pointer-events: none; ' +
           'filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4)); ' +
-          'animation: reavionFloat 3s ease-in-out infinite; ' +
-          'transition: all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1); ' +
+          'transition: transform 0.1s ease; ' +
           'width: 32px; height: 32px; ' +
           'display: block !important; ' +
           'visibility: visible !important; ' +
           'opacity: 1 !important; ' +
+          'will-change: top, left; ' +
         '} ' +
         '.click-ripple { ' +
           'position: fixed; ' +
@@ -580,7 +620,7 @@ const SCRIPT_HELPERS = `
     return host.shadowRoot;
   };
 
-  window.movePointer = (x, y) => {
+  window.movePointer = (targetX, targetY) => {
     const root = window.ensurePointer();
     let p = root.querySelector('.pointer');
     if (!p) {
@@ -588,11 +628,63 @@ const SCRIPT_HELPERS = `
       p.className = 'pointer';
       p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
       root.appendChild(p);
+      p.style.left = (window.__LAST_MOUSE_POS__.x || 0) + 'px';
+      p.style.top = (window.__LAST_MOUSE_POS__.y || 0) + 'px';
     }
-    p.style.left = x + 'px';
-    p.style.top = y + 'px';
-    p.style.transform = 'scale(1.1)';
-    setTimeout(() => { if (p) p.style.transform = 'scale(1)'; }, 400);
+
+    const start = { ...window.__LAST_MOUSE_POS__ };
+    const end = { x: targetX, y: targetY };
+    
+    // Tiny distance check
+    const dist = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
+    if (dist < 10) {
+        p.style.left = end.x + 'px';
+        p.style.top = end.y + 'px';
+        window.__LAST_MOUSE_POS__ = end;
+        return Promise.resolve();
+    }
+
+    const { cp1, cp2 } = window.generateControlPoints(start, end);
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
+    const baseDuration = Math.min(Math.max(dist * 0.8, 300), 1200) * multiplier;
+    const duration = baseDuration * (0.8 + Math.random() * 0.4);
+
+    const startTime = performance.now();
+
+    return new Promise(resolve => {
+        const animate = (now) => {
+            const elapsed = now - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const ease = Math.sin((progress * Math.PI) / 2);
+
+            const x = window.cubicBezier(ease, start.x, cp1.x, cp2.x, end.x);
+            const y = window.cubicBezier(ease, start.y, cp1.y, cp2.y, end.y);
+
+            p.style.left = x + 'px';
+            p.style.top = y + 'px';
+
+            try {
+               const evt = new MouseEvent('mousemove', {
+                   view: window,
+                   bubbles: true,
+                   cancelable: true,
+                   clientX: x,
+                   clientY: y,
+                   screenX: x + window.screenX, 
+                   screenY: y + window.screenY
+               });
+               document.elementFromPoint(x, y)?.dispatchEvent(evt);
+            } catch(e) {}
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                window.__LAST_MOUSE_POS__ = end;
+                resolve();
+            }
+        };
+        requestAnimationFrame(animate);
+    });
   };
 
   window.showVisualClick = (x, y) => {
@@ -627,10 +719,9 @@ const SCRIPT_HELPERS = `
     const x = Math.round(rect.left + rect.width / 2);
     const y = Math.round(rect.top + rect.height / 2);
     
-    window.movePointer(x, y);
-    await window.wait(300); 
+    await window.movePointer(x, y);
+    await window.wait(100); 
     
-    // Refresh coordinates one last time to account for scroll settling
     const finalRect = clickable.getBoundingClientRect();
     return { 
       x: Math.round(finalRect.left + finalRect.width / 2), 
@@ -671,29 +762,75 @@ const SCRIPT_HELPERS = `
     const results = [];
     const queue = [document];
     const visited = new Set();
+    
+    // Breadth-first search to find candidates
     while (queue.length > 0) {
       const curr = queue.shift();
       if (!curr || visited.has(curr)) continue;
       visited.add(curr);
+      
       const walker = document.createTreeWalker(curr, 1, null);
       let el;
       while (el = walker.nextNode()) {
-        const aria = (el.getAttribute('aria-label') || '').toLowerCase();
-        const title = (el.getAttribute('title') || '').toLowerCase();
-        const placeholder = (el.getAttribute('placeholder') || '').toLowerCase();
-        const alt = (el.getAttribute('alt') || '').toLowerCase();
-        const testId = (el.getAttribute('data-testid') || '').toLowerCase();
-        const role = (el.getAttribute('role') || '').toLowerCase();
-        const name = (el.getAttribute('name') || '').toLowerCase();
-        if (aria.includes(clean) || title.includes(clean) || placeholder.includes(clean) || alt.includes(clean) || testId.includes(clean) || role.includes(clean) || name.includes(clean)) {
-           if (!results.includes(el)) results.push(el);
+        if (results.length > 100) break; // Limit candidate pool for specific search
+
+        let score = 0;
+        const attrs = {
+            aria: (el.getAttribute('aria-label') || '').toLowerCase(),
+            title: (el.getAttribute('title') || '').toLowerCase(),
+            placeholder: (el.getAttribute('placeholder') || '').toLowerCase(),
+            alt: (el.getAttribute('alt') || '').toLowerCase(),
+            testId: (el.getAttribute('data-testid') || '').toLowerCase(),
+            name: (el.getAttribute('name') || '').toLowerCase(),
+            role: (el.getAttribute('role') || '').toLowerCase(),
+            text: (el.innerText || '').slice(0, 50).toLowerCase().trim()
+        };
+
+        // Scoring Logic
+        // 1. Exact matches (highest priority)
+        if (attrs.aria === clean) score += 100;
+        else if (attrs.placeholder === clean) score += 95;
+        else if (attrs.itemprop === clean) score += 95; // Google specific
+        else if (attrs.name === clean) score += 90;
+        else if (attrs.testId === clean) score += 85;
+        
+        // 2. Starts with (high priority)
+        else if (attrs.aria.startsWith(clean + ' ')) score += 60;
+        else if (attrs.placeholder.startsWith(clean)) score += 55;
+        else if (attrs.name.startsWith(clean)) score += 50;
+
+        // 3. Contains (medium/low)
+        else if (attrs.aria.includes(clean)) score += 30;
+        else if (attrs.placeholder.includes(clean)) score += 25;
+        else if (attrs.testId.includes(clean)) score += 20;
+        else if (attrs.title.includes(clean)) score += 15;
+        else if (attrs.alt.includes(clean)) score += 10;
+        
+        // 4. Role/Text fallbacks (lowest)
+        // Only if we haven't found a strong attribute match
+        if (score === 0) { 
+             if (attrs.role === clean) score += 5;
+             // Text match: risky, can match random content. Give it low score.
+             // But if it's a button/link with exact text, bump it up.
+             if (attrs.text === clean && (el.tagName === 'BUTTON' || el.tagName === 'A')) score += 40;
         }
-        if (el.shadowRoot) queue.push(el.shadowRoot);
-        if (results.length > index + 2) break;
+
+        if (score > 0) {
+           results.push({ el, score });
+        }
       }
-      if (results.length > index + 2) break;
+      
+      const hosts = document.createTreeWalker(curr, 1, function(n) { return n.shadowRoot ? 1 : 3; });
+      let h;
+      while (h = hosts.nextNode()) queue.push(h.shadowRoot);
     }
-    return results[index] || results[0] || null;
+
+    // Sort by score descending
+    results.sort((a, b) => b.score - a.score);
+    
+    // Return the request index from the sorted list
+    const match = results[index] || results[0];
+    return match ? match.el : null;
   };
 
   window.findElementByText = (text, root = document) => {
@@ -859,7 +996,8 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         const coreLogic = `
           const result = await window.safeMoveToElement(${JSON.stringify(selector)}, ${index || 0});
           const el = result.element;
-          window.showVisualClick(result.x, result.y);
+          
+          if (typeof window.showVisualClick === 'function') window.showVisualClick(result.x, result.y);
           
           // Hybrid click: dispatch events manually + standard click
           const clickable = el.closest('button, [role="button"], a') || el;
@@ -926,7 +1064,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
         const coreLogic = `
           const result = await window.safeMoveToElement(${JSON.stringify(selector)}, ${index});
-          window.showVisualClick(result.x, result.y);
+          if (typeof window.showVisualClick === 'function') window.showVisualClick(result.x, result.y);
           return { success: true, x: result.x, y: result.y };
         `;
 
@@ -1407,20 +1545,33 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
             // 5. Extract Search Results (Generic)
             function getSearchResults() {
-                const selectors = ['div.g', 'div[data-sokp]', 'div.result', 'article', '.search-result'];
-                const results = [];
+                const selectors = ['div.g', 'div.MjjYud', 'div[data-sokp]', 'div.result', 'article', '.search-result'];
+                let bestResults = [];
+                let maxCount = 0;
+
                 for (const s of selectors) {
                     const found = document.querySelectorAll(s);
-                    if (found.length > 5) {
+                    if (found.length > 0) {
+                        const results = [];
                         found.forEach(el => {
-                            const title = el.querySelector('h1, h2, h3, a')?.innerText;
-                            const snippet = el.innerText.replace(title || '', '').replace(/\\s+/g, ' ').trim().slice(0, 200);
-                            if (title) results.push({ title, snippet });
+                            const titleEl = el.querySelector('h3') || el.querySelector('h1, h2') || el.querySelector('a');
+                            if (titleEl) {
+                                const title = titleEl.innerText.replace(/\s+/g, ' ').trim();
+                                if (title) {
+                                    const snippet = el.innerText.replace(title, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+                                    results.push({ title, snippet });
+                                }
+                            }
                         });
-                        break;
+                        
+                        // Prioritize the selector that yields the most results
+                        if (results.length > maxCount) {
+                            maxCount = results.length;
+                            bestResults = results;
+                        }
                     }
                 }
-                return results.slice(0, 20);
+                return bestResults.slice(0, 25);
             }
 
             return {
@@ -1463,7 +1614,9 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
           const rect = element.getBoundingClientRect();
           const x = Math.round(rect.left + rect.width / 2);
           const y = Math.round(rect.top + rect.height / 2);
-          window.movePointer(x, y);
+          
+          await window.movePointer(x, y);
+          
           return { success: true, x, y };
         `;
         const scriptResult = await contents.executeJavaScript(buildTaskScript(logic));

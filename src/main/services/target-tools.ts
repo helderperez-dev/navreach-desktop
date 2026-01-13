@@ -22,10 +22,11 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
         }),
         func: async ({ list_id, limit, offset }) => {
             try {
-                let query = supabaseClient.from('targets').select('*', { count: 'exact' });
+                // Join with target_lists to filter by workspace since targets doesn't have workspace_id
+                let query = supabaseClient.from('targets').select('*, target_lists!inner(workspace_id)', { count: 'exact' });
 
                 if (currentWorkspaceId) {
-                    query = query.eq('workspace_id', currentWorkspaceId);
+                    query = query.eq('target_lists.workspace_id', currentWorkspaceId);
                 }
 
                 let listName = null;
@@ -116,9 +117,43 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 const { data: { user } } = await supabaseClient.auth.getUser();
                 if (!user) throw new Error('Not authenticated');
 
+                let finalWorkspaceId = currentWorkspaceId;
+
+                // Fallback: If no workspace ID found in context, try to find the user's default workspace
+                if (!finalWorkspaceId) {
+                    const { data: member } = await supabaseClient
+                        .from('workspace_members')
+                        .select('workspace_id')
+                        .eq('user_id', user.id)
+                        .order('created_at', { ascending: true })
+                        .limit(1)
+                        .maybeSingle();
+
+                    if (member) {
+                        finalWorkspaceId = member.workspace_id;
+                    }
+                }
+
+                if (finalWorkspaceId) {
+                    const { data: existingList } = await supabaseClient
+                        .from('target_lists')
+                        .select('*')
+                        .eq('workspace_id', finalWorkspaceId)
+                        .eq('name', name)
+                        .maybeSingle();
+
+                    if (existingList) {
+                        return JSON.stringify({
+                            success: true,
+                            list: existingList,
+                            message: "Found existing list with same name, using it to consolidate targets."
+                        });
+                    }
+                }
+
                 const { data, error } = await supabaseClient
                     .from('target_lists')
-                    .insert([{ name, description, user_id: user.id, workspace_id: currentWorkspaceId }])
+                    .insert([{ name, description, user_id: user.id, workspace_id: finalWorkspaceId }])
                     .select()
                     .single();
 
@@ -149,7 +184,7 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
 
                 const { data, error } = await supabaseClient
                     .from('targets')
-                    .insert([{ ...rest, metadata, user_id: user.id, workspace_id: currentWorkspaceId }])
+                    .insert([{ ...rest, metadata, user_id: user.id }])
                     .select()
                     .single();
 
@@ -188,9 +223,10 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                     .update(updates)
                     .eq('id', id);
 
-                if (currentWorkspaceId) {
-                    updateQuery = updateQuery.eq('workspace_id', currentWorkspaceId);
-                }
+                // Removed workspace_id check as the column doesn't exist on targets
+                // if (currentWorkspaceId) {
+                //     updateQuery = updateQuery.eq('workspace_id', currentWorkspaceId);
+                // }
 
                 const { data, error } = await updateQuery
                     .select()
@@ -227,8 +263,8 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                     url: l.url,
                     type: l.type,
                     metadata: l.metadata,
-                    user_id: user.id,
-                    workspace_id: currentWorkspaceId
+                    user_id: user.id
+                    // workspace_id: currentWorkspaceId // Column doesn't exist on targets
                 }));
 
                 const { data, error } = await supabaseClient

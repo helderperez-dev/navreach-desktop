@@ -150,25 +150,7 @@ export function createUtilityTools(context?: UtilityToolsContext): DynamicStruct
                 }
             },
         }),
-        new DynamicStructuredTool({
-            name: 'calculator',
-            description: 'Perform basic arithmetic calculations (add, subtract, multiply, divide).',
-            schema: z.object({
-                expression: z.string().describe('The mathematical expression to evaluate (e.g., "2 + 2", "100 * 1.5").'),
-            }),
-            func: async ({ expression }) => {
-                try {
-                    const clean = expression.replace(/\s+/g, '');
-                    if (!/^[\d\+\-\*\/\.\(\)]+$/.test(clean)) {
-                        return JSON.stringify({ success: false, error: 'Invalid characters. Only numbers and basic operators (+ - * /) allowed.' });
-                    }
-                    const result = new Function(`"use strict"; return (${expression})`)();
-                    return JSON.stringify({ success: true, result, expression });
-                } catch (e: any) {
-                    return JSON.stringify({ success: false, error: "Calculation failed: " + e.message });
-                }
-            }
-        }),
+
         new DynamicStructuredTool({
             name: 'send_email',
             description: 'Send an email to a specified recipient. Useful for notifications, reports, or direct communication.',
