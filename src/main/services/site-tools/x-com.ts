@@ -1488,11 +1488,11 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const engageTool = new DynamicStructuredTool({
     name: 'x_engage',
-    description: 'Perform multiple actions (like, follow, retweet, reply, dm) on a tweet or post.',
+    description: 'Perform multiple actions (like, follow, retweet, reply) on a tweet or post.',
     schema: z.object({
       targetIndex: z.preprocess((val) => (val === null ? 0 : Number(val)), z.number().default(0)).describe('The 0-based index of the tweet in the visible feed.'),
-      actions: z.string().describe('Comma-separated list of actions to take: like, follow, retweet, reply, dm.'),
-      replyText: z.string().optional().describe('Required if "reply" or "dm" action is specified. The DIRECT content of the message. STRICTLY the final text only. NO narration or "I will reply..." prefixes.'),
+      actions: z.string().describe('Comma-separated list of actions to take: like, follow, retweet, reply.'),
+      replyText: z.string().optional().describe('Required if "reply" action is specified. The DIRECT content of the message. STRICTLY the final text only. NO narration or "I will reply..." prefixes.'),
       skip_self: z.boolean().default(true).describe('Skip if this is your own post.'),
       skip_verified: z.boolean().default(false).describe('Skip if the author is verified.'),
       only_verified: z.boolean().default(false).describe('Only engage with verified users (blue/gold/grey check).'),
@@ -1630,55 +1630,248 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 }
               }
 
-              if (actionsList.includes('dm') && replyText) {
-                 const userLink = tweet.querySelector('[data-testid="User-Name"] a');
-                 if (userLink) {
-                    // Hover to show card
-                    const rect = userLink.getBoundingClientRect();
-                    const mouseEvent = new MouseEvent('mouseover', {
-                        view: window, bubbles: true, cancelable: true,
-                        clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2
-                    });
-                    userLink.dispatchEvent(mouseEvent);
-                    await wait(2000); // Wait for card
-
-                    const hoverCard = document.querySelector('[data-testid="hoverCard"]');
-                    if (hoverCard && isVisible(hoverCard)) {
-                        const dmBtn = hoverCard.querySelector('[aria-label="Message"], [data-testid="sendDMFromProfile"]');
-                        if (dmBtn) {
-                             await safeClick(dmBtn, 'DM Button');
-                             await wait(1500);
-                             // DM Drawer
-                             const dmComposer = document.querySelector('[data-testid="dmComposerTextInput"], [data-testid="dmComposer"] div[role="textbox"]');
-                             if (dmComposer) {
-                                 await safeClick(dmComposer, 'DM Composer');
-                                 dmComposer.focus({ preventScroll: true });
-                                 document.execCommand('insertText', false, replyText);
-                                 await wait(800);
-                                 const sendBtn = document.querySelector('[data-testid="dmComposerSendButton"]');
-                                 if (sendBtn) {
-                                     await safeClick(sendBtn, 'Send DM');
-                                     results.push('DM Sent');
-                                 } else {
-                                     results.push('DM Send Button Not Found');
-                                 }
-                             } else {
-                                 results.push('DM Composer Not Found');
-                             }
-                        } else {
-                            results.push('Message Button Not Found on Hover Card (User might have DMs closed)');
-                        }
-                    } else {
-                        results.push('Hover Card did not appear');
-                    }
-                 } else {
-                    results.push('User Link not found for DM');
-                 }
-              }
-
               return { success: true, actions_performed: results, logs };
             } catch (e) {
               return { success: false, error: e.toString(), logs };
+            }
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
+  const dmTool = new DynamicStructuredTool({
+    name: 'x_dm',
+    description: 'On X.com (Twitter), send a direct message (DM) to a user.',
+    schema: z.object({
+      username: z.string().describe('Target handle (without @).'),
+      text: z.string().min(1).describe('Message content.'),
+      pin: z.string().optional().describe('4-digit PIN for encrypted chats. If prompted for a passcode, you MUST provide this.'),
+    }),
+    func: async ({ username, text, pin }: { username: string; text: string; pin?: string }) => {
+      const contents = ctx.getContents();
+      const handle = (username || '').replace('@', '').trim();
+      try {
+        await contents.loadURL(`https://x.com/${handle}`);
+        await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            try {
+              ${POINTER_HELPERS}
+              ${BASE_SCRIPT_HELPERS}
+              
+              const dmBtn = document.querySelector('[aria-label="Message"], [data-testid="sendDMFromProfile"]');
+              if (!dmBtn) {
+                  return { success: false, error: 'Message button not found on profile. User might have DMs closed or you are not following them.' };
+              }
+
+              await safeClick(dmBtn, 'DM Button');
+              await wait(2000);
+
+              // PIN handling logic
+              const pinContainer = document.querySelector('[data-testid="pin-code-input-container"]');
+              const isPinScreen = pinContainer || window.location.href.includes('/chat/pin/');
+              
+              if (isPinScreen) {
+                  if (!${JSON.stringify(pin)}) {
+                      return { 
+                          success: false, 
+                          error: 'PIN_REQUIRED', 
+                          message: 'X is asking for your DM Passcode/PIN to decrypt this conversation. Please provide your 4-digit PIN in the "pin" parameter.' 
+                      };
+                  }
+                  
+                  const inputs = document.querySelectorAll('[data-testid="pin-code-input-container"] input');
+                  const pinStr = ${JSON.stringify(pin)} || "";
+                  
+                  if (inputs.length >= 4) {
+                      for (let i = 0; i < 4; i++) {
+                          const input = inputs[i];
+                          if (input) {
+                              input.focus();
+                              document.execCommand('insertText', false, pinStr[i] || "");
+                              await wait(200);
+                          }
+                      }
+                      await wait(2500); // Wait for decryption/redirect
+                  }
+              }
+
+              const dmComposer = document.querySelector('textarea[data-testid="dm-composer-textarea"], [data-testid="dm-composer-textarea"], [role="textbox"][data-testid="dm-composer-textarea"]');
+              if (!dmComposer) {
+                  return { success: false, error: 'DM Composer not found after PIN/Navigation. UI might be different or decryption failed.' };
+              }
+
+              await safeClick(dmComposer, 'DM Composer');
+              dmComposer.focus({ preventScroll: true });
+              document.execCommand('insertText', false, ${JSON.stringify(text)});
+              await wait(800);
+
+              const sendBtn = document.querySelector('[data-testid="dm-composer-send-button"]');
+              if (sendBtn) {
+                  await safeClick(sendBtn, 'Send DM');
+                  await wait(1000);
+                  return { success: true, message: 'DM Sent' };
+              } else {
+                  return { success: false, error: 'DM Send Button Not Found' };
+              }
+            } catch (e) {
+              return { success: false, error: e.toString(), logs };
+            }
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
+  const analyzeNotificationsTool = new DynamicStructuredTool({
+    name: 'x_analyze_notifications',
+    description: 'Go to the notifications page and extract the latest interactions (likes, follows, mentions, etc.).',
+    schema: z.object({
+      filter: z.enum(['all', 'verified', 'mentions']).default('all').describe('Which notification tab to analyze.'),
+      limit: z.number().default(20).describe('Max number of notifications to extract.'),
+    }),
+    func: async ({ filter, limit }: { filter: 'all' | 'verified' | 'mentions'; limit: number }) => {
+      const contents = ctx.getContents();
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            try {
+              ${BASE_SCRIPT_HELPERS}
+              
+              // 1. Navigate to the correct tab if needed
+              const tabUrls = {
+                all: 'https://x.com/notifications',
+                verified: 'https://x.com/notifications/priority',
+                mentions: 'https://x.com/notifications/mentions'
+              };
+              
+              const targetUrl = tabUrls['${filter}'];
+              if (window.location.href !== targetUrl) {
+                window.location.href = targetUrl;
+                await wait(3000); // Wait for page load
+              }
+
+              // 2. Extract notifications
+              const articles = Array.from(document.querySelectorAll('article')).slice(0, ${limit});
+              const notifications = articles.map(article => {
+                const testid = article.getAttribute('data-testid');
+                const text = article.innerText;
+                const links = Array.from(article.querySelectorAll('a')).map(a => ({
+                  text: a.innerText,
+                  href: a.href
+                }));
+                
+                let type = 'unknown';
+                if (testid === 'tweet') {
+                  type = 'mention/reply';
+                } else if (text.includes('followed you')) {
+                  type = 'follow';
+                } else if (text.includes('liked your post') || text.includes('liked your reply') || text.includes('liked 2 of your posts')) {
+                  type = 'like';
+                } else if (text.includes('reposted your post')) {
+                  type = 'repost';
+                } else if (text.includes('New post notifications')) {
+                  type = 'new_post';
+                }
+
+                // Find the main tweet link if applicable
+                let tweetUrl = null;
+                if (testid === 'tweet') {
+                  const timeLink = article.querySelector('time')?.parentElement;
+                  if (timeLink && timeLink.tagName === 'A') {
+                    tweetUrl = timeLink.href;
+                  }
+                } else {
+                  const statusLink = links.find(l => l.href.includes('/status/'));
+                  if (statusLink) tweetUrl = statusLink.href;
+                }
+
+                // Extract users involved
+                const users = links.filter(l => 
+                  l.href && 
+                  !l.href.includes('/status/') && 
+                  !l.href.includes('/notifications') && 
+                  !l.href.includes('/settings') &&
+                  l.text.trim().startsWith('@')
+                ).map(l => ({
+                  handle: l.text.trim(),
+                  url: l.href
+                }));
+
+                const tweetTextEl = article.querySelector('[data-testid="tweetText"]');
+                const tweetContent = tweetTextEl ? tweetTextEl.innerText : null;
+
+                return {
+                  type,
+                  content: tweetContent,
+                  fullText: text.substring(0, 300).replace(/\\s+/g, ' '),
+                  users,
+                  tweetUrl,
+                  timestamp: article.querySelector('time')?.innerText || 'just now'
+                };
+              });
+
+              return { success: true, count: notifications.length, notifications };
+            } catch (e) {
+              return { success: false, error: e.toString() };
+            }
+          })()
+        `);
+        return JSON.stringify(result);
+      } catch (e) {
+        return JSON.stringify({ success: false, error: String(e) });
+      }
+    }
+  });
+
+  const switchTabTool = new DynamicStructuredTool({
+    name: 'x_switch_tab',
+    description: 'Switch between timeline tabs or search result tabs on X.com (e.g., "For you", "Following" on Home; or "Latest", "People", "Media", "Lists" on Search).',
+    schema: z.object({
+      tab_name: z.string().describe('The label of the tab to switch to (e.g., "Following", "Latest", "People", "Media", "Lists").'),
+    }),
+    func: async ({ tab_name }: { tab_name: string }) => {
+      const contents = ctx.getContents();
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            try {
+              ${BASE_SCRIPT_HELPERS}
+              const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+              const targetTab = tabs.find(t => t.innerText.toLowerCase().includes(${JSON.stringify(tab_name.toLowerCase())}));
+              
+              if (!targetTab) {
+                const availableTabs = tabs.map(t => t.innerText.trim()).join(', ');
+                return { success: false, error: 'Tab "' + ${JSON.stringify(tab_name)} + '" not found. Available tabs: ' + availableTabs };
+              }
+
+              if (targetTab.getAttribute('aria-selected') === 'true') {
+                return { success: true, message: 'Already on tab "' + targetTab.innerText.trim() + '"' };
+              }
+
+              await safeClick(targetTab, 'Timeline/Search Tab');
+              await wait(2000); // Wait for feed to update
+              
+              // Verify navigation for search tabs specifically (they often reload/redirect)
+              const finalTabs = Array.from(document.querySelectorAll('[role="tab"]'));
+              const verifiedTab = finalTabs.find(t => t.innerText.toLowerCase().includes(${JSON.stringify(tab_name.toLowerCase())}));
+              const isSelected = verifiedTab?.getAttribute('aria-selected') === 'true';
+
+              return { 
+                success: true, 
+                message: 'Switched to tab "' + targetTab.innerText.trim() + '"',
+                verified: isSelected
+              };
+            } catch (e) {
+              return { success: false, error: e.toString() };
             }
           })()
         `);
@@ -1893,5 +2086,5 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     }
   });
 
-  return [searchTool, advancedSearchTool, likeTool, replyTool, postTool, followTool, scoutTool, profileTool, engageTool, checkEngagementTool, scanPostsTool, engagingTool, recoverTool];
+  return [searchTool, advancedSearchTool, likeTool, replyTool, postTool, followTool, scoutTool, profileTool, engageTool, dmTool, switchTabTool, analyzeNotificationsTool, checkEngagementTool, scanPostsTool, engagingTool, recoverTool];
 }

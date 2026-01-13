@@ -256,13 +256,29 @@ You can navigate **ANY** website, even those you've never seen.
 
 **PLATFORMS & SPECIALIZED STRATEGY**: 
 *   **X (Twitter)**: Use \`x_advanced_search\` followed by \`x_scan_posts\`. **STRICT RULE**: Use the user's keywords EXACTLY. If the user provides operators like \`min_likes:50\`, map them to the correct tool parameters. Only refer to your "Advanced X Search" knowledge base for strategic patterns (like excluding replies) when the user's intent matches those strategies or to recover from zero results. NEVER add filters the user did not request. **CONTINUITY**: On timelines or search results, always use \`x_scan_posts(scroll_bottom: true)\` to discover new content until your objective is met. If you have finished all current tasks, output [COMPLETE] to stop.
-*   **X Home Navigation**: If asked for the "Following" tab on home, look for a button or tab with text "Following" near the top. If currently on "For you", click "Following". Do NOT use search to find the following feed.
-*   **Google Search**: When searching on Google, ALWAYS stay on the "All" tab (default results) unless the user EXPLICITLY asks for Images, News, or specific media. Do NOT click the "Images" or "Videos" tabs spontaneously. To see results, look for the main search results container (usually center-left).
+*   **X Navigation & Tabs**: 
+    - **Home**: Switch between "For you" and "Following" using \`x_switch_tab\`.
+    - **Search Results**: After searching, you can refine results by switching tabs (e.g., "Latest" for real-time, "People" for accounts, "Media", "Lists") using \`x_switch_tab(tab_name: "Latest")\`. 
+    - **Note**: Prefer using the \`filter\` parameter in \`x_search\` or \`x_advanced_search\` if you know the target tab beforehand, but use \`x_switch_tab\` if you are already on the page and need to change focus.
+*   **Google Search**: This is your default research engine. You MUST automatically "upgrade" simple user requests into advanced **Google Dorking** queries to ensure high-fidelity results.
+    - **AUTONOMY**: Never ask "Should I use dorking?". If the task involves finding people, companies, or lists, Dorking is the standard operating procedure.
+    - **PLATFORM MATCHING (STRICT)**: If the user specifies a site (e.g., "x.com", "LinkedIn", "GitHub"), you MUST use that site in your \`site:\` operator. DO NOT substitute platforms.
+
+**GOOGLE DORKING – AUTOMATIC RESEARCH PROTOCOL (CRITICAL)**
+You must transform plain-text user requests into precise queries using these strategies:
+1. **Core Operators**:
+   - \`"phrase"\` (Exact), \`OR\` (Either), \`-term\` (Exclude), \`*\` (Wildcard), \`site:domain.com\` (Limit to site).
+   - \`filetype:pdf|xls|csv\` (Files), \`intitle:"term"\` (In title), \`inurl:substr\` (In URL).
+2. **QUERY UPGRADING (MANDATORY)**:
+   - User: "Find SaaS founders on X" -> Dork: \`site:x.com -inurl:status "SaaS" "Founder"\`.
+   - User: "List of AI startups" -> Dork: \`"AI startup" ("we are building" OR "launched") site:linkedin.com/in/\`.
+   - **Pattern Matching**: Use \`"we are building"\`, \`"now in beta"\`, or \`"launched our startup"\` for discovery.
+3. **Execution**: construction of a Dorking query is the INITIAL step for any lead generation task. Use \`browser_navigate\` to \`https://www.google.com/search?q=[UPGRADED_QUERY]\` followed by \`browser_dom_snapshot\` or \`browser_extract\`.
 
 
 **ERROR RECOVERY & RESILIENCE**
 *   **THOROUGHNESS (CRITICAL)**: If the user asks for "all" results, a summary of a list, or to "Engage/Scrape" a feed:
-    1.  Call \`browser_extract\` or \`x_scan_posts\` to get a structured overview.
+1.  Call \`browser_extract\` or \`x_scan_posts\` to get a structured overview.
     2.  **INFINITE FEED PROTOCOL**: If the results are on an infinite-scroll page (like X.com timeline or search), you MUST scroll down to load more content BEFORE concluding. 
     3.  **SCROLL & SNAPSHOT**: If you have processed visible items, call \`browser_scroll\` or \`x_scan_posts(scroll_bottom: true)\` and continue.
     4.  **NEVER** say "Done" or "I have finished" if you are in a feed and could find more by scrolling, unless you have reached a user-specified limit (e.g. "Find 10").
@@ -318,7 +334,7 @@ If running a Playbook ({{playbooks.ID}}):
 
 **KNOWLEDGE & SELF-LEARNING (MEMORY)**
 You have a "Long-Term Memory" stored in the Supabase database. You MUST use the \`supabase\` MCP server (\`execute_sql\`) to manage this.
-1. **DISCOVER YOUR IDENTITY**: At the start of any new session or when relevant, query the \`knowledge_bases\` and \`knowledge_content\` tables using the \`supabase\` MCP server to retrieve context about your **Persona**, **Ideal Customer Profile (ICP)**, **Tone**, **Business Rules**, and **Advanced Search Strategies**. Look for bases with names like "Identity", "Context", "Agent Profile", or "Advanced X Search". Every message you write and every target you select MUST be filtered through this combined context. 
+1. **DISCOVER YOUR IDENTITY**: At the start of any new session or when relevant, query the \`knowledge_bases\` and \`knowledge_content\` tables using the \`supabase\` MCP server to retrieve context about your **Persona**, **Ideal Customer Profile (ICP)**, **Tone**, **Business Rules**, **Advanced Search Strategies**, and **Google Dorking**. Look for bases with names like "Identity", "Context", "Agent Profile", "Advanced X Search", or "Google Dorking". Every message you write and every target you select MUST be filtered through this combined context. 
 2. **PLATFORM EXPERTISE**: Before automating a new domain (e.g., linkedin.com), query \`platform_knowledge\` where \`domain\` matches the hostname. 
     *   **Instruction Overrides**: If the database contains an \`instruction\` for an element or URL, follow it strictly. It represents "Ground Truth" for that specific page.
     *   **Selector Overrides**: If a saved \`selector\` exists for a specific element (check \`notes\` or \`element_details\`), prefer it over your default guesses.
@@ -376,19 +392,39 @@ If you are stuck, stop and THINK. Then try a *different* approach.
 **Go.**
 `;
 
-function createScopedSupabase(accessToken?: string) {
+async function createScopedSupabase(accessToken?: string, refreshToken?: string) {
     if (accessToken) {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_URL : '');
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_ANON_KEY : '');
         const { createClient } = require('@supabase/supabase-js');
 
-        return createClient(supabaseUrl, supabaseAnonKey, {
-            global: {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`
-                }
+        const client = createClient(supabaseUrl, supabaseAnonKey, {
+            auth: {
+                persistSession: false,
+                autoRefreshToken: true,
+                detectSessionInUrl: false
             }
         });
+
+        // Set the session properly so it can refresh during long agent runs
+        try {
+            await client.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken || ''
+            });
+        } catch (e) {
+            console.error('[AI Service] Failed to set Supabase session:', e);
+            // Fallback to legacy header method if setSession fails
+            return createClient(supabaseUrl, supabaseAnonKey, {
+                global: {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`
+                    }
+                }
+            });
+        }
+
+        return client;
     }
     return supabase;
 }
@@ -599,7 +635,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
                 accessToken
             } = request;
 
-            const scopedSupabase = createScopedSupabase(accessToken);
+            const scopedSupabase = await createScopedSupabase(accessToken, request.refreshToken);
             // Retrieve local default model ID from store
             const localDefaultModelId = store.get('defaultModelId');
 
@@ -722,10 +758,10 @@ CRITICAL:
                 stopSignals.set(window.id, false);
             }
 
-            // Create a scoped Supabase client for this request using the access token
-            const scopedSupabase = createScopedSupabase(accessToken);
+            // Create a scoped Supabase client for this request using the tokens
+            const scopedSupabase = await createScopedSupabase(accessToken, refreshToken);
             if (accessToken) {
-                console.log('[AI Service] Created scoped Supabase client with access token');
+                console.log('[AI Service] Created scoped Supabase client with authenticated session');
             } else {
                 console.warn('[AI Service] No access token provided, using anonymous client');
             }

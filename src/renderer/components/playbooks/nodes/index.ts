@@ -21,5 +21,8 @@ export const nodeTypes: Record<string, any> = {
     x_profile: BaseNode,
     x_post: BaseNode,
     x_engage: BaseNode,
-    x_scan_posts: BaseNode
+    x_scan_posts: BaseNode,
+    x_dm: BaseNode,
+    x_switch_tab: BaseNode,
+    x_analyze_notifications: BaseNode
 };

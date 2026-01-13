@@ -694,6 +694,93 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                     </div>
                 );
             }
+            case 'x_dm':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Target Username">
+                            <MentionInput
+                                value={config.username || ''}
+                                onChange={(e) => handleConfigChange('username', e.target.value)}
+                                placeholder="@username or {{target.handle}}"
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Message Text">
+                            <MentionInput
+                                value={config.text || ''}
+                                onChange={(e) => handleConfigChange('text', e.target.value)}
+                                placeholder="Hey, saw your post about..."
+                                variableGroups={variableGroups}
+                            />
+                        </Field>
+                        <Field label="Passcode (PIN)">
+                            <div className="space-y-2">
+                                <Input
+                                    type="password"
+                                    maxLength={4}
+                                    value={config.pin || ''}
+                                    onChange={(e) => handleConfigChange('pin', e.target.value)}
+                                    placeholder="4-digit PIN (optional)"
+                                    className="h-9 text-xs font-mono tracking-[1em]"
+                                />
+                                <p className="text-[10px] text-muted-foreground bg-amber-500/5 border border-amber-500/10 p-2 rounded">
+                                    Required only if the conversation is encrypted. If X prompts for a PIN and it's not provided, the step will fail.
+                                </p>
+                            </div>
+                        </Field>
+                    </div>
+                );
+            case 'x_switch_tab':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Tab Name">
+                            <Select
+                                value={config.tab_name || 'Following'}
+                                onValueChange={(v) => handleConfigChange('tab_name', v)}
+                            >
+                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="For you">For you</SelectItem>
+                                    <SelectItem value="Following">Following</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            Switches between the main timeline views on the X Home page. This will refresh the visible posts.
+                        </div>
+                    </div>
+                );
+            case 'x_analyze_notifications':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Notification Filter">
+                            <Select
+                                value={config.filter || 'all'}
+                                onValueChange={(v) => handleConfigChange('filter', v)}
+                            >
+                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Notifications</SelectItem>
+                                    <SelectItem value="verified">Priority (Verified)</SelectItem>
+                                    <SelectItem value="mentions">Mentions Only</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <Field label="Max Notifications">
+                            <Input
+                                type="number"
+                                min={1}
+                                max={50}
+                                value={config.limit || 20}
+                                onChange={(e) => handleConfigChange('limit', parseInt(e.target.value) || 20)}
+                                className="h-9 text-xs"
+                            />
+                        </Field>
+                        <div className="text-[10px] text-muted-foreground p-2 bg-muted/40 rounded border border-border/20">
+                            Navigates to the notifications page and extracts the most recent interactions.
+                        </div>
+                    </div>
+                );
             case 'x_advanced_search':
                 return (
                     <div className="space-y-6 pb-4">
@@ -960,8 +1047,7 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                     { id: 'like', label: 'Like' },
                                     { id: 'retweet', label: 'Repost' },
                                     { id: 'follow', label: 'Follow' },
-                                    { id: 'reply', label: 'Reply' },
-                                    { id: 'dm', label: 'Send DM' }
+                                    { id: 'reply', label: 'Reply' }
                                 ].map((action) => (
                                     <div key={action.id} className="flex items-center justify-between p-2 rounded bg-muted/30 border border-border/40">
                                         <Label className="text-xs">{action.label}</Label>
@@ -975,7 +1061,7 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                             </div>
                         </div>
 
-                        {(currentActions.includes('reply') || currentActions.includes('dm')) && (
+                        {currentActions.includes('reply') && (
                             <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
                                 <Field label="Prompt / Content">
                                     <Textarea

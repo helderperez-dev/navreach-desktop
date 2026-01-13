@@ -6,7 +6,7 @@ import {
     Cpu, Webhook, MousePointer,
     CheckCircle, PauseCircle,
     Heart, Reply, Send, UserPlus, MessagesSquare, MoveDown, Wand2, Users, User,
-    Eye, Terminal, Layers, Download
+    Eye, Terminal, Layers, Download, Bell
 } from 'lucide-react';
 import { PlaybookNodeType } from '@/types/playbook';
 
@@ -265,6 +265,40 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         outputs_schema: [
             { label: 'Posts Found', value: 'posts', example: '[{ author: "@user", text: "..." }]' },
             { label: 'Total Count', value: 'count', example: '12' }
+        ]
+    },
+    x_dm: {
+        type: 'x_dm',
+        label: 'X DM',
+        category: NODE_CATEGORIES.X,
+        icon: Send,
+        description: 'Send a direct message to a user on X',
+        color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
+        inputs: 1,
+        outputs: 1
+    },
+    x_switch_tab: {
+        type: 'x_switch_tab',
+        label: 'X Switch Tab',
+        category: NODE_CATEGORIES.X,
+        icon: Layers,
+        description: 'Switch between "For you" and "Following" tabs',
+        color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
+        inputs: 1,
+        outputs: 1
+    },
+    x_analyze_notifications: {
+        type: 'x_analyze_notifications',
+        label: 'X Notifications',
+        category: NODE_CATEGORIES.X,
+        icon: Bell,
+        description: 'Analyze recent interactions (likes, mentions, follows)',
+        color: 'bg-[#1DA1F2]/10 text-[#1DA1F2]',
+        inputs: 1,
+        outputs: 1,
+        outputs_schema: [
+            { label: 'Count', value: 'count', example: '20' },
+            { label: 'Notifications', value: 'notifications', example: '[]' }
         ]
     }
 };
