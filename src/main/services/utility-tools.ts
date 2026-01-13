@@ -231,27 +231,6 @@ export function createUtilityTools(context?: UtilityToolsContext): DynamicStruct
             },
         }),
         new DynamicStructuredTool({
-            name: 'run_shell_command',
-            description: 'Execute a shell command. Use with extreme caution.',
-            schema: z.object({
-                command: z.string().describe('The shell command to execute.'),
-                args: z.array(z.string()).nullable().describe('Optional: Arguments for the command.'),
-                cwd: z.string().nullable().describe('Optional: The current working directory for the command.'),
-            }),
-            func: async ({ command, args, cwd }) => {
-                console.log(`[Tool] Running shell command: ${command} ${args?.join(' ')}`);
-                return new Promise((resolve, reject) => {
-                    exec(command + (args ? ' ' + args.join(' ') : ''), { cwd }, (error, stdout, stderr) => {
-                        if (error) {
-                            reject(`Command failed: ${error.message}\nStderr: ${stderr}`);
-                        } else {
-                            resolve(`Stdout: ${stdout}\nStderr: ${stderr}`);
-                        }
-                    });
-                });
-            },
-        }),
-        new DynamicStructuredTool({
             name: 'get_model_info',
             description: 'Retrieve information about the currently active AI model.',
             schema: z.object({}),

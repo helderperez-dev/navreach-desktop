@@ -16,39 +16,17 @@ const POINTER_HELPERS = `
 
   window.generateControlPoints = (start, end) => {
     const dist = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
-    // Randomize control points to create an arc
-    // Offset relative to distance, but capped to avoid wild swings
     const offsetScale = Math.min(dist * 0.5, 200); 
-    
-    // Direction vector
     const dx = end.x - start.x;
     const dy = end.y - start.y;
-    
-    // Perpendicular vector (randomly flipped)
     let px = -dy;
     let py = dx;
-    if (Math.random() > 0.5) {
-       px = dy;
-       py = -dx;
-    }
-    
-    // Normalize and scale
+    if (Math.random() > 0.5) { px = dy; py = -dx; }
     const len = Math.sqrt(px*px + py*py) || 1;
     const normX = px / len;
     const normY = py / len;
-    
-    // Control point 1: 1/3 way + curve
-    const cp1 = {
-        x: start.x + dx * 0.33 + normX * (Math.random() * offsetScale),
-        y: start.y + dy * 0.33 + normY * (Math.random() * offsetScale)
-    };
-
-    // Control point 2: 2/3 way + curve (usually same side, but varied)
-    const cp2 = {
-        x: start.x + dx * 0.66 + normX * (Math.random() * offsetScale),
-        y: start.y + dy * 0.66 + normY * (Math.random() * offsetScale)
-    };
-    
+    const cp1 = { x: start.x + dx * 0.33 + normX * (Math.random() * offsetScale), y: start.y + dy * 0.33 + normY * (Math.random() * offsetScale) };
+    const cp2 = { x: start.x + dx * 0.66 + normX * (Math.random() * offsetScale), y: start.y + dy * 0.66 + normY * (Math.random() * offsetScale) };
     return { cp1, cp2 };
   };
 
@@ -61,69 +39,76 @@ const POINTER_HELPERS = `
       const shadow = host.attachShadow({ mode: 'open' });
       const style = document.createElement('style');
       style.textContent = \`
+        @keyframes breathe { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        @keyframes ripple { 0% { transform: scale(0); opacity: 1; } 100% { transform: scale(3); opacity: 0; } }
+        @keyframes hover-grow { 0% { transform: scale(1.1); } 50% { transform: scale(1.25); } 100% { transform: scale(1.1); } }
         .pointer {
           position: fixed;
           z-index: 2147483647;
           pointer-events: none;
           filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
-          transition: transform 0.1s ease; /* Only scale transform, pos updated by JS */
+          transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
           width: 32px; height: 32px;
           display: block !important;
           visibility: visible !important;
           opacity: 1 !important;
           will-change: top, left;
+          animation: breathe 3s ease-in-out infinite;
         }
+        .pointer.moving { animation: none; transform: scale(0.95); }
+        .pointer.hovering { animation: hover-grow 0.6s ease-in-out infinite !important; filter: drop-shadow(0 4px 15px rgba(59, 130, 246, 0.6)); }
         .click-ripple {
           position: fixed;
-          width: 30px; height: 30px;
-          border: 2px solid #000;
+          width: 40px; height: 40px;
+          border: 3px solid #3b82f6;
           border-radius: 50%;
           pointer-events: none;
           z-index: 2147483646;
-          transition: all 0.4s ease-out;
-          opacity: 1;
+          animation: ripple 0.6s ease-out forwards;
         }
       \`;
       shadow.appendChild(style);
       document.documentElement.appendChild(host);
     }
     if (host.parentElement !== document.documentElement) document.documentElement.appendChild(host);
-    return host.shadowRoot;
-  };
-
-  window.movePointer = (targetX, targetY) => {
-    const root = window.ensurePointer();
+    
+    const root = host.shadowRoot;
     let p = root.querySelector('.pointer');
     if (!p) {
       p = document.createElement('div');
       p.className = 'pointer';
-      p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
+      p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="2"/></svg>';
       root.appendChild(p);
-      // Initialize at explicit 0,0 or last known pos
-      p.style.left = (window.__LAST_MOUSE_POS__.x || 0) + 'px';
-      p.style.top = (window.__LAST_MOUSE_POS__.y || 0) + 'px';
+      const initX = window.__LAST_MOUSE_POS__.x || 100;
+      const initY = window.__LAST_MOUSE_POS__.y || 100;
+      p.style.left = initX + 'px';
+      p.style.top = initY + 'px';
+      window.__LAST_MOUSE_POS__ = { x: initX, y: initY };
     }
+    return root;
+  };
+
+  window.movePointer = (targetX, targetY) => {
+    const root = window.ensurePointer();
+    const p = root.querySelector('.pointer');
+    p.classList.add('moving');
 
     const start = { ...window.__LAST_MOUSE_POS__ };
     const end = { x: targetX, y: targetY };
     
-    // Check if distance is tiny, just jump
     const dist = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
-    if (dist < 10) {
+    if (dist < 5) {
         p.style.left = end.x + 'px';
         p.style.top = end.y + 'px';
         window.__LAST_MOUSE_POS__ = end;
+        p.classList.remove('moving');
         return Promise.resolve();
     }
 
-    // Generate path
     const { cp1, cp2 } = window.generateControlPoints(start, end);
-    
-    // Vary duration based on distance and random factor
-    // Min 300ms, Max 800ms typically
     const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
-    const baseDuration = Math.min(Math.max(dist * 0.8, 300), 1200) * multiplier;
-    const duration = baseDuration * (0.8 + Math.random() * 0.4); // +/- randomness
+    const baseDuration = Math.min(Math.max(dist * 0.6, 250), 1000) * multiplier;
+    const duration = baseDuration * (0.8 + Math.random() * 0.4);
 
     const startTime = performance.now();
 
@@ -131,9 +116,7 @@ const POINTER_HELPERS = `
         const animate = (now) => {
             const elapsed = now - startTime;
             const progress = Math.min(elapsed / duration, 1);
-            
-            // Custom ease-out-sine-ish
-            const ease = Math.sin((progress * Math.PI) / 2);
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
             const x = window.cubicBezier(ease, start.x, cp1.x, cp2.x, end.x);
             const y = window.cubicBezier(ease, start.y, cp1.y, cp2.y, end.y);
@@ -141,25 +124,31 @@ const POINTER_HELPERS = `
             p.style.left = x + 'px';
             p.style.top = y + 'px';
 
-            // Dispatch mousemove periodically (not every frame to avoid perf hit, maybe every other?)
-            // Actually browsers handle frequent events fine.
             try {
+               const elAtPoint = document.elementFromPoint(x, y);
                const evt = new MouseEvent('mousemove', {
                    view: window,
                    bubbles: true,
                    cancelable: true,
                    clientX: x,
                    clientY: y,
-                   screenX: x + window.screenX, // rough estimate
+                   screenX: x + window.screenX, 
                    screenY: y + window.screenY
                });
-               document.elementFromPoint(x, y)?.dispatchEvent(evt);
+               if (elAtPoint && (elAtPoint.closest('button, a, [role="button"], input, textarea, select') || elAtPoint.onclick)) {
+                   p.classList.add('hovering');
+               } else {
+                   p.classList.remove('hovering');
+               }
+               elAtPoint?.dispatchEvent(evt);
             } catch(e) {}
 
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
                 window.__LAST_MOUSE_POS__ = end;
+                p.classList.remove('moving');
+                p.classList.remove('hovering');
                 resolve();
             }
         };
@@ -171,14 +160,10 @@ const POINTER_HELPERS = `
     const root = window.ensurePointer();
     const r = document.createElement('div');
     r.className = 'click-ripple';
-    r.style.left = (x - 15) + 'px';
-    r.style.top = (y - 15) + 'px';
+    r.style.left = (x - 20) + 'px';
+    r.style.top = (y - 20) + 'px';
     root.appendChild(r);
-    setTimeout(() => {
-      r.style.transform = 'scale(2)';
-      r.style.opacity = '0';
-    }, 10);
-    setTimeout(() => { if (r.parentNode) r.remove(); }, 400);
+    setTimeout(() => { if (r.parentNode) r.remove(); }, 600);
   };
 `;
 
@@ -1468,13 +1453,104 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       targetIndex: z.preprocess((val) => (val === null ? 0 : Number(val)), z.number().default(0)).describe('The 0-based index of the tweet in the visible feed.'),
       actions: z.string().describe('Comma-separated list of actions to take: like, follow, retweet, reply.'),
       replyText: z.string().optional().describe('Required if "reply" action is specified.'),
+      expected_author: z.string().nullable().optional().describe('Handle of the author (without @) to verify target. Highly recommended.'),
     }),
-    func: async ({ targetIndex, actions, replyText }) => {
+    func: async ({ targetIndex, actions, replyText, expected_author }) => {
       const contents = ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function () {
-            return { success: true, message: 'Engagement tool reset' };
+            try {
+                ${POINTER_HELPERS}
+                ${BASE_SCRIPT_HELPERS}
+                
+                const index = ${targetIndex};
+                const actionList = ${JSON.stringify(actions)}.split(',').map(a => a.trim().toLowerCase());
+                const rText = ${JSON.stringify(replyText || '')};
+                const expAuth = ${JSON.stringify(expected_author || null)};
+
+                // 1. Find Tweet
+                const findResult = await findTweetRobustly(index, expAuth);
+                if (!findResult.tweet) return { success: false, error: findResult.error || 'Tweet not found at index ' + index };
+                const tweet = findResult.tweet;
+                const results = [];
+
+                for (const action of actionList) {
+                    if (action === 'like') {
+                        const likeBtn = tweet.querySelector('[data-testid="like"]');
+                        if (likeBtn && isVisible(likeBtn)) {
+                            await safeClick(likeBtn, 'Like');
+                            results.push('Liked');
+                        } else if (tweet.querySelector('[data-testid="unlike"]')) {
+                            results.push('Already Liked');
+                        } else {
+                            results.push('Like Button Missing');
+                        }
+                    } else if (action === 'follow') {
+                        const res = await followAuthorOfTweet(tweet, 'follow');
+                        results.push(res.success ? (res.message || 'Followed') : ('Follow Error: ' + res.error));
+                    } else if (action === 'retweet') {
+                        const rtBtn = tweet.querySelector('[data-testid="retweet"]');
+                        if (rtBtn && isVisible(rtBtn)) {
+                            await safeClick(rtBtn, 'Retweet Menu');
+                            await wait(400);
+                            const rtConfirm = document.querySelector('[data-testid="retweetConfirm"]');
+                            if (rtConfirm && isVisible(rtConfirm)) {
+                                await safeClick(rtConfirm, 'Confirm Retweet');
+                                results.push('Retweeted');
+                            } else {
+                                results.push('Retweet Confirm Missing');
+                            }
+                        } else if (tweet.querySelector('[data-testid="unretweet"]')) {
+                            results.push('Already Retweeted');
+                        } else {
+                            results.push('Retweet Button Missing');
+                        }
+                    } else if (action === 'reply') {
+                        if (!rText) {
+                            results.push('Reply Skipped (No Text)');
+                            continue;
+                        }
+                        const replyBtn = tweet.querySelector('[data-testid="reply"]');
+                        if (replyBtn && isVisible(replyBtn)) {
+                            await safeClick(replyBtn, 'Reply');
+                            await wait(1000);
+                            
+                            const modal = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible).pop() || document;
+                            const composer = modal.querySelector('[data-testid="tweetTextarea_0"]') || 
+                                             modal.querySelector('div[role="textbox"][contenteditable="true"]');
+                            
+                            if (composer) {
+                                await safeClick(composer, 'Reply Composer');
+                                composer.focus({ preventScroll: true });
+                                document.execCommand('insertText', false, rText);
+                                await wait(500);
+                                const send = modal.querySelector('[data-testid="tweetButton"]');
+                                if (send) {
+                                    await safeClick(send, 'Send Reply');
+                                    results.push('Replied');
+                                    await wait(1000);
+                                } else {
+                                    results.push('Reply Send Missing');
+                                }
+                            } else {
+                                results.push('Reply Composer Missing');
+                            }
+                        } else {
+                            results.push('Reply Button Missing');
+                        }
+                    }
+                }
+
+                return { 
+                    success: true, 
+                    message: results.join(', '),
+                    recovered: findResult.recovered,
+                    finalIndex: findResult.index 
+                };
+            } catch (e) {
+                return { success: false, error: e.toString(), logs };
+            }
           })()
         `);
         return JSON.stringify(result);
@@ -1686,29 +1762,52 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
           (async function() {
             try {
               ${BASE_SCRIPT_HELPERS}
-              const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
-              const targetTab = tabs.find(t => t.innerText.toLowerCase().includes(${JSON.stringify(tab_name.toLowerCase())}));
+              
+              // 1. Ensure we are on a page that supports tabs (Home or Search)
+              const url = window.location.href;
+              if (!url.includes('/search') && !url.includes('x.com/home') && url !== 'https://x.com/') {
+                 window.location.href = 'https://x.com/home';
+                 await wait(3500);
+              }
+
+              const findTabs = () => Array.from(document.querySelectorAll('[role="tab"]'));
+              let tabs = findTabs();
+              
+              // Retry for tabs if they are loading
+              if (tabs.length === 0) {
+                 await wait(1500);
+                 tabs = findTabs();
+              }
+
+              const targetName = ${JSON.stringify(tab_name.toLowerCase())};
+              const targetTab = tabs.find(t => {
+                const txt = (t.innerText || t.getAttribute('aria-label') || '').toLowerCase();
+                return txt.includes(targetName);
+              });
               
               if (!targetTab) {
-                const availableTabs = tabs.map(t => t.innerText.trim()).join(', ');
+                const availableTabs = tabs.map(t => (t.innerText || t.getAttribute('aria-label') || 'unnamed')).join(', ');
                 return { success: false, error: 'Tab "' + ${JSON.stringify(tab_name)} + '" not found. Available tabs: ' + availableTabs };
               }
 
               if (targetTab.getAttribute('aria-selected') === 'true') {
-                return { success: true, message: 'Already on tab "' + targetTab.innerText.trim() + '"' };
+                return { success: true, message: 'Already on tab "' + (targetTab.innerText || tab_name) + '"' };
               }
 
               await safeClick(targetTab, 'Timeline/Search Tab');
-              await wait(2000); // Wait for feed to update
+              await wait(2500); // Wait for feed to update
               
-              // Verify navigation for search tabs specifically (they often reload/redirect)
-              const finalTabs = Array.from(document.querySelectorAll('[role="tab"]'));
-              const verifiedTab = finalTabs.find(t => t.innerText.toLowerCase().includes(${JSON.stringify(tab_name.toLowerCase())}));
+              // Verify navigation
+              const finalTabs = findTabs();
+              const verifiedTab = finalTabs.find(t => {
+                 const txt = (t.innerText || t.getAttribute('aria-label') || '').toLowerCase();
+                 return txt.includes(targetName);
+              });
               const isSelected = verifiedTab?.getAttribute('aria-selected') === 'true';
 
               return { 
                 success: true, 
-                message: 'Switched to tab "' + targetTab.innerText.trim() + '"',
+                message: 'Switched to tab "' + (targetTab.innerText || tab_name) + '"',
                 verified: isSelected
               };
             } catch (e) {
@@ -1809,7 +1908,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               count: data.length, 
               posts: data,
               scrolled,
-              message: 'Scanned ' + data.length + ' visible posts.' + (scrolled ? ' Scrolled down to load more.' : '')
+              message: data.length > 0 
+                ? ('Scanned ' + data.length + ' visible posts.' + (scrolled ? ' Scrolled down to load more.' : ''))
+                : ('No posts found. Are you on a feed? (URL: ' + window.location.href + ')')
             };
           })()
         `);
@@ -1822,7 +1923,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const engagingTool = new DynamicStructuredTool({
     name: 'Engaging',
-    description: 'Perform multiple actions (like, follow, retweet, reply) on a tweet. Alias: x_engage.',
+    description: 'Perform a sequence of actions (like, follow, retweet, reply) on a specific post. YOU MUST use this after scan_posts to engage with interesting content. Do not just scan without engaging.',
     schema: engageTool.schema,
     func: engageTool.func,
   });

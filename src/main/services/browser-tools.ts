@@ -591,62 +591,75 @@ const SCRIPT_HELPERS = `
       const shadow = host.attachShadow({ mode: 'open' });
       const style = document.createElement('style');
       style.textContent = 
+        '@keyframes breathe { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } } ' +
+        '@keyframes ripple { 0% { transform: scale(0); opacity: 1; } 100% { transform: scale(3); opacity: 0; } } ' +
+        '@keyframes hover-grow { 0% { transform: scale(1.1); } 50% { transform: scale(1.25); } 100% { transform: scale(1.1); } } ' +
         '.pointer { ' +
           'position: fixed; ' +
           'z-index: 2147483647; ' +
           'pointer-events: none; ' +
           'filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4)); ' +
-          'transition: transform 0.1s ease; ' +
+          'transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); ' +
           'width: 32px; height: 32px; ' +
           'display: block !important; ' +
           'visibility: visible !important; ' +
           'opacity: 1 !important; ' +
           'will-change: top, left; ' +
+          'animation: breathe 3s ease-in-out infinite; ' +
         '} ' +
+        '.pointer.moving { animation: none; transform: scale(0.95); } ' +
+        '.pointer.hovering { animation: hover-grow 0.6s ease-in-out infinite !important; filter: drop-shadow(0 4px 15px rgba(59, 130, 246, 0.6)); } ' +
         '.click-ripple { ' +
           'position: fixed; ' +
-          'width: 30px; height: 30px; ' +
-          'border: 2px solid #000; ' +
+          'width: 40px; height: 40px; ' +
+          'border: 3px solid #3b82f6; ' +
           'border-radius: 50%; ' +
           'pointer-events: none; ' +
           'z-index: 2147483646; ' +
-          'transition: all 0.4s ease-out; ' +
-          'opacity: 1; ' +
+          'animation: ripple 0.6s ease-out forwards; ' +
         '}';
       shadow.appendChild(style);
       document.documentElement.appendChild(host);
     }
     if (host.parentElement !== document.documentElement) document.documentElement.appendChild(host);
-    return host.shadowRoot;
-  };
-
-  window.movePointer = (targetX, targetY) => {
-    const root = window.ensurePointer();
+    
+    // Auto-create pointer if missing
+    const root = host.shadowRoot;
     let p = root.querySelector('.pointer');
     if (!p) {
       p = document.createElement('div');
       p.className = 'pointer';
-      p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/></svg>';
+      p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="2"/></svg>';
       root.appendChild(p);
-      p.style.left = (window.__LAST_MOUSE_POS__.x || 0) + 'px';
-      p.style.top = (window.__LAST_MOUSE_POS__.y || 0) + 'px';
+      const initX = window.__LAST_MOUSE_POS__.x || 100;
+      const initY = window.__LAST_MOUSE_POS__.y || 100;
+      p.style.left = initX + 'px';
+      p.style.top = initY + 'px';
+      window.__LAST_MOUSE_POS__ = { x: initX, y: initY };
     }
+    return root;
+  };
+
+  window.movePointer = (targetX, targetY) => {
+    const root = window.ensurePointer();
+    const p = root.querySelector('.pointer');
+    p.classList.add('moving');
 
     const start = { ...window.__LAST_MOUSE_POS__ };
     const end = { x: targetX, y: targetY };
     
-    // Tiny distance check
     const dist = Math.sqrt(Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2));
-    if (dist < 10) {
+    if (dist < 5) {
         p.style.left = end.x + 'px';
         p.style.top = end.y + 'px';
         window.__LAST_MOUSE_POS__ = end;
+        p.classList.remove('moving');
         return Promise.resolve();
     }
 
     const { cp1, cp2 } = window.generateControlPoints(start, end);
     const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
-    const baseDuration = Math.min(Math.max(dist * 0.8, 300), 1200) * multiplier;
+    const baseDuration = Math.min(Math.max(dist * 0.6, 250), 1000) * multiplier;
     const duration = baseDuration * (0.8 + Math.random() * 0.4);
 
     const startTime = performance.now();
@@ -655,7 +668,7 @@ const SCRIPT_HELPERS = `
         const animate = (now) => {
             const elapsed = now - startTime;
             const progress = Math.min(elapsed / duration, 1);
-            const ease = Math.sin((progress * Math.PI) / 2);
+            const ease = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2; // easeInOutQuad
 
             const x = window.cubicBezier(ease, start.x, cp1.x, cp2.x, end.x);
             const y = window.cubicBezier(ease, start.y, cp1.y, cp2.y, end.y);
@@ -664,7 +677,8 @@ const SCRIPT_HELPERS = `
             p.style.top = y + 'px';
 
             try {
-               const evt = new MouseEvent('mousemove', {
+                const elAtPoint = document.elementFromPoint(x, y);
+                const evt = new MouseEvent('mousemove', {
                    view: window,
                    bubbles: true,
                    cancelable: true,
@@ -672,14 +686,21 @@ const SCRIPT_HELPERS = `
                    clientY: y,
                    screenX: x + window.screenX, 
                    screenY: y + window.screenY
-               });
-               document.elementFromPoint(x, y)?.dispatchEvent(evt);
+                });
+                if (elAtPoint && (elAtPoint.closest('button, a, [role="button"], input, textarea, select') || elAtPoint.onclick)) {
+                    p.classList.add('hovering');
+                } else {
+                    p.classList.remove('hovering');
+                }
+                elAtPoint?.dispatchEvent(evt);
             } catch(e) {}
 
             if (progress < 1) {
                 requestAnimationFrame(animate);
             } else {
                 window.__LAST_MOUSE_POS__ = end;
+                p.classList.remove('moving');
+                p.classList.remove('hovering');
                 resolve();
             }
         };
@@ -691,14 +712,10 @@ const SCRIPT_HELPERS = `
     const root = window.ensurePointer();
     const r = document.createElement('div');
     r.className = 'click-ripple';
-    r.style.left = (x - 15) + 'px';
-    r.style.top = (y - 15) + 'px';
+    r.style.left = (x - 20) + 'px';
+    r.style.top = (y - 20) + 'px';
     root.appendChild(r);
-    setTimeout(() => {
-      r.style.transform = 'scale(2)';
-      r.style.opacity = '0';
-    }, 10);
-    setTimeout(() => { if (r.parentNode) r.remove(); }, 400);
+    setTimeout(() => { if (r.parentNode) r.remove(); }, 600);
   };
 
   window.safeMoveToElement = async (selector, index = 0) => {
@@ -834,7 +851,7 @@ const SCRIPT_HELPERS = `
   };
 
   window.findElementByText = (text, root = document) => {
-    const clean = text.replace(/['"]/g, '').trim().toLowerCase();
+    const clean = (text || '').toString().replace(/['"]/g, '').trim().toLowerCase();
     if (!clean) return null;
     const queue = [root];
     const visited = new Set();
@@ -845,9 +862,13 @@ const SCRIPT_HELPERS = `
       const walker = document.createTreeWalker(curr, 4, null);
       let node;
       while (node = walker.nextNode()) {
-        if (node.textContent.toLowerCase().includes(clean)) {
+        const txt = node.textContent.toLowerCase();
+        if (txt.includes(clean)) {
           const p = node.parentElement;
-          if (p && p.offsetWidth > 0) return p;
+          if (p && p.offsetWidth > 0 && p.offsetHeight > 0) {
+              // Prefer exact matches or buttons/links
+              if (txt.trim() === clean || p.tagName === 'A' || p.tagName === 'BUTTON') return p;
+          }
         }
       }
       const hosts = document.createTreeWalker(curr, 1, function(n) { return n.shadowRoot ? 1 : 3; });
@@ -1533,19 +1554,35 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                 .slice(0, 40)
                 .join('\\n');
 
-            // 4. Extract Pagination
+            // 4. Extract Pagination & Next Button
             function getPagination() {
-                const navs = Array.from(document.querySelectorAll('nav, [role="navigation"], #navcnt, #foot, .pagination'));
-                return navs.map(n => ({
-                    role: n.getAttribute('role'),
-                    id: n.id,
-                    text: (n.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 200)
-                })).filter(n => n.text.length > 0);
+                const navs = Array.from(document.querySelectorAll('nav, [role="navigation"], #navcnt, #foot, .pagination, #pnnext, [aria-label*="Next"], [aria-label*="Próx"]'));
+                const paginationText = navs.map(n => (n.innerText || n.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim()).join(' | ');
+                
+                // Specifically look for a "Next" link/button
+                const nextLink = document.querySelector('#pnnext, [aria-label*="Next page"], [aria-label="Next"], [aria-label*="Próxima"], a.pn, a#pnnext');
+                let nextSelector = null;
+                if (nextLink) {
+                    nextSelector = nextLink.id ? '#' + nextLink.id : (nextLink.getAttribute('aria-label') ? 'aria/' + nextLink.getAttribute('aria-label') : 'text/Próxima');
+                } else {
+                    // Fallback to text search for "Próxima" or "Next"
+                    const possibleNext = Array.from(document.querySelectorAll('a, span, button')).find(el => {
+                        const t = (el.innerText || '').toLowerCase();
+                        return t === 'próxima' || t === 'next' || t === 'próxima >' || t === 'next >';
+                    });
+                    if (possibleNext) nextSelector = 'text/' + possibleNext.innerText.trim();
+                }
+
+                return {
+                    summary: paginationText.slice(0, 300),
+                    hasMore: !!nextLink || paginationText.toLowerCase().includes('next') || paginationText.toLowerCase().includes('próx'),
+                    nextSelectorHint: nextSelector
+                };
             }
 
             // 5. Extract Search Results (Generic)
             function getSearchResults() {
-                const selectors = ['div.g', 'div.MjjYud', 'div[data-sokp]', 'div.result', 'article', '.search-result'];
+                const selectors = ['div.g', 'div.MjjYud', 'div[data-sokp]', 'div.result', 'article', '.search-result', '.yuRUbf'];
                 let bestResults = [];
                 let maxCount = 0;
 
@@ -1555,16 +1592,17 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                         const results = [];
                         found.forEach(el => {
                             const titleEl = el.querySelector('h3') || el.querySelector('h1, h2') || el.querySelector('a');
+                            const linkEl = el.querySelector('a') || el;
                             if (titleEl) {
                                 const title = titleEl.innerText.replace(/\s+/g, ' ').trim();
-                                if (title) {
+                                const url = linkEl.getAttribute('href') || '';
+                                if (title && url && !url.startsWith('#')) {
                                     const snippet = el.innerText.replace(title, '').replace(/\s+/g, ' ').trim().slice(0, 300);
-                                    results.push({ title, snippet });
+                                    results.push({ title, url, snippet });
                                 }
                             }
                         });
                         
-                        // Prioritize the selector that yields the most results
                         if (results.length > maxCount) {
                             maxCount = results.length;
                             bestResults = results;
@@ -1577,6 +1615,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
             return {
                 title: document.title,
                 url: window.location.href,
+                isSearchPage: window.location.href.includes('google.com/search') || window.location.href.includes('bing.com') || window.location.href.includes('search'),
                 viewport: { width: vWidth, height: vHeight },
                 semantics: getSemantics(),
                 headlines: getHeadlines(),

@@ -959,7 +959,18 @@ CRITICAL:
 
             const infiniteDirective =
                 infiniteMode && baseUserGoal
-                    ? `\nThe user enabled **Infinite Loop Mode**. This means you must execute the task continuously without stopping:\n- Goal: "${baseUserGoal}"\n- **CONTINUITY**: Never ask the user for extra details. Self-correct and continue. After one cycle is done, immediately start the next.\n- **IF DATA COLLECTION**: If the goal is to find leads, save targets, or scrape: Continue finding NEW leads (pagination, new searches) and saving them. **DO NOT** switch to engaging/replying.\n- **IF ENGAGEMENT**: If the goal is to reply, like, or post: Rotate tactics and continue engaging to grow the account.\n- **Summaries**: Keep them extremely brief (1 line) and do not stop.`
+                    ? `\nThe user enabled **Infinite Loop Mode**. This means you must execute the task continuously without stopping:
+- **IF DATA COLLECTION** (Leads/Scraping): 
+    1. **CAPTURE IN BULK**: Use \`capture_leads_bulk\` to save ALL visible results on the current page at once.
+    2. **DO NOT VISIT**: Never click into individual results unless you specifically need data that is missing from the snippet.
+    3. **PAGINATE IMMEDIATELY**: After one \`capture_leads_bulk\`, immediately find and click the "Next" button. Use \`browser_extract\` to find pagination hints.
+    4. **ROTATE SEARCHES**: If you hit the end of the pages or no results are found, change your search query keywords to find fresh data.
+    5. **MOMENTUM**: Your goal is volume. Keep moving.
+- **IF ENGAGEMENT**:
+    1. Scan items.
+    2. **IMMEDIATELY ENGAGE**: If scan results contain items you haven't engaged with, engage with them in the same turn or next turn. **DO NOT** just scroll/scan over and over without acting.
+    3. **ROTATE**: If the current page/tab/search has no more new content, switch to a DIFFERENT search or TAB (e.g., move from "For You" to "Following", or try a new niche keyword).
+- **Summaries**: Keep them extremely brief (1 line) and do not stop.`
                     : '';
 
             // --- CONTEXT INJECTION START ---
@@ -1082,6 +1093,7 @@ You are in FAST mode.
 - **FINISH WHAT YOU START**: Never end a turn with a "plan" or "promise" without executing at least one tool to advance that plan.
 - **NO CHAT TRAPS**: Do not stop to summarize and wait for instructions unless you are [COMPLETE] or [BLOCKED].
 - **MAXIMUM MOMENTUM**: Perform as many steps as possible in a single turn. 
+- **ACT ON SIGHT**: If you scan a page and find actionable items (e.g., posts to reply to), proceed to act on them IMMEDIATELY. Do not stop to list them or ask for permission.
 - **DETAILED REPORTING**: When you do stop, explain exactly what was achieved and what the remaining steps are.
 `;
 
@@ -1378,7 +1390,11 @@ You are in FAST mode.
                             console.log(`[AI Service] Infinite Mode: Autonomous loop continuing.`);
                             langchainMessages.push(
                                 new HumanMessage(
-                                    `Remain in autonomous mode. Goal: "${baseUserGoal}". Immediately plan and execute the next set of actions. \n- If expanding a list, find NEW targets.\n- If engaging, find NEW posts.\n- If you have finished all possible work for now, output [COMPLETE].\n- Summarize briefly and continue.`
+                                    `Remain in autonomous mode. Goal: "${baseUserGoal}". Immediately plan and execute the next set of actions. 
+- **IF DATA COLLECTION**: If you reached the end of the current search results or found no new leads, **YOU MUST ROTATE**. Invent a new, similar search query (e.g. change a keyword or location) and start again. 
+- **IF ENGAGEMENT**: If the current feed has no new items, switch tabs or keywords.
+- **NEVER WAIT**: Do not wait for user input unless you are fundamentally blocked.
+Summarize briefly (1 line) and continue.`
                                 )
                             );
                             iteration = 0;
