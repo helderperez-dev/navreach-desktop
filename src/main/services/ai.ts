@@ -131,7 +131,7 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
     }
 }
 
-function convertMessages(messages: Message[], systemPrompt?: string): BaseMessage[] {
+function convertMessages(messages: Message[], systemPrompt?: string, disableVision: boolean = false): BaseMessage[] {
     const langchainMessages: BaseMessage[] = [];
 
     if (systemPrompt) {
@@ -158,8 +158,34 @@ function convertMessages(messages: Message[], systemPrompt?: string): BaseMessag
             // 2. Add the tool response messages immediately after if they exist in history
             if (toolResults && toolResults.length > 0) {
                 for (const tr of toolResults) {
+                    let content: any = typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result || tr.error || "No result");
+
+                    // Multimodal Handling: Check for screen capture data and convert to image block
+                    if (!disableVision) {
+                        try {
+                            const parsed = typeof tr.result === 'string' ? JSON.parse(tr.result) : tr.result;
+                            if (parsed && parsed.image_data && typeof parsed.image_data === 'string' && parsed.image_data.startsWith('data:image')) {
+                                console.log('[AI Service] Detected screenshot in tool output. converting to multimodal message.');
+                                content = [
+                                    {
+                                        type: 'text',
+                                        text: parsed.message || 'Screenshot captured successfully.'
+                                    },
+                                    {
+                                        type: 'image_url',
+                                        image_url: {
+                                            url: parsed.image_data
+                                        }
+                                    }
+                                ];
+                            }
+                        } catch (e) {
+                            // Not JSON or not an image, keep as text
+                        }
+                    }
+
                     langchainMessages.push(new ToolMessage({
-                        content: typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result || tr.error || "No result"),
+                        content: content,
                         tool_call_id: tr.toolCallId || tr.id,
                     }));
                 }
@@ -559,6 +585,10 @@ export async function resolveAIConfig(
 
         if (targetApiKey && targetApiKey.trim() !== '') {
             effectiveProvider.apiKey = targetApiKey;
+        } else if (accessToken && (!effectiveProvider.apiKey || effectiveProvider.apiKey === 'managed-by-system')) {
+            // Fallback: Use user's access token if no specific API key is found (common for system proxies)
+            console.log('[AI Service] Using User Access Token as Model API Key');
+            effectiveProvider.apiKey = accessToken;
         } else if (effectiveProvider.type !== provider.type && (!effectiveProvider.apiKey || effectiveProvider.apiKey.trim() === '')) {
             console.warn(`[AI Service] Provider switched to ${effectiveProvider.type} but no API Key found in settings!`);
         }
@@ -1116,6 +1146,8 @@ You are in FAST mode.
                 let consecutiveToolFailures = 0;
                 let consecutiveEmptyOutputErrors = 0;
                 const sentNarrations = new Set<string>(); // Track sent narrations to prevent duplicates
+                // Tracking variable for vision capability fallback
+                let disableVision = false;
 
 
                 while (iteration < hardStopIterations) {
@@ -1206,6 +1238,36 @@ You are in FAST mode.
                             console.log('Rate limited, waiting 5 seconds before retry...');
                             await new Promise(resolve => setTimeout(resolve, 5000));
                             continue; // Retry the iteration
+                        }
+
+                        // VISION FALLBACK: Handle models that don't support image input
+                        if (errorMessage.toLowerCase().includes('image input') || errorMessage.includes('support image')) {
+                            console.log('[Auto-Recovery] Model does not support vision. Retrying without images...');
+                            disableVision = true;
+
+                            // Sanitize existing history to remove any image blocks
+                            langchainMessages = langchainMessages.map(msg => {
+                                if (msg instanceof ToolMessage && Array.isArray(msg.content)) {
+                                    // Find the text part and discard the image
+                                    const textPart = (msg.content as any[]).find(c => c.type === 'text');
+                                    if (textPart) {
+                                        return new ToolMessage({
+                                            content: textPart.text,
+                                            tool_call_id: msg.tool_call_id,
+                                            name: msg.name
+                                        });
+                                    }
+                                    // Fallback if no text found (unlikely for our format)
+                                    return new ToolMessage({
+                                        content: "Image content removed (not supported by model)",
+                                        tool_call_id: msg.tool_call_id,
+                                        name: msg.name
+                                    });
+                                }
+                                return msg;
+                            });
+
+                            continue; // Retry immediately with sanitized history
                         }
 
                         // Specific Auto-Recovery for internal LangChain/Model undefined errors
@@ -1550,9 +1612,35 @@ Summarize briefly (1 line) and continue.`
                             const delay = getToolDelayMs(toolCall.name, getSpeed());
                             await sleep(delay);
 
+                            // Multimodal Handling within the loop
+                            let content: any = result;
+
+                            if (!disableVision) {
+                                try {
+                                    const parsed = JSON.parse(result);
+                                    if (parsed && parsed.image_data && typeof parsed.image_data === 'string' && parsed.image_data.startsWith('data:image')) {
+                                        console.log('[AI Service] Tool returned image. Creating multimodal message.');
+                                        content = [
+                                            {
+                                                type: 'text',
+                                                text: parsed.message || 'Screenshot captured.'
+                                            },
+                                            {
+                                                type: 'image_url',
+                                                image_url: {
+                                                    url: parsed.image_data
+                                                }
+                                            }
+                                        ];
+                                    }
+                                } catch (e) {
+                                    // Not JSON or no image, keep as text
+                                }
+                            }
+
                             const toolMessage = new ToolMessage({
                                 tool_call_id: toolCall.id || '',
-                                content: result,
+                                content: content,
                             });
                             langchainMessages.push(toolMessage);
 
