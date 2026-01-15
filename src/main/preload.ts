@@ -157,6 +157,8 @@ const stripeAPI = {
     ipcRenderer.invoke('stripe:get-customer', customerId),
   setDefaultPaymentMethod: (customerId: string, paymentMethodId: string) =>
     ipcRenderer.invoke('stripe:set-default-payment-method', { customerId, paymentMethodId }),
+  getTierLimits: (accessToken?: string) =>
+    ipcRenderer.invoke('stripe:get-tier-limits', accessToken),
 };
 
 console.log('Stripe API initialized with methods:', Object.keys(stripeAPI));

@@ -101,10 +101,14 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             return;
         }
 
-        if (!useSubscriptionStore.getState().canAddTargetList()) {
-            useSubscriptionStore.getState().openUpgradeModal(
+        const subStore = useSubscriptionStore.getState();
+        const limits = subStore.limits;
+        const isPro = subStore.isPro();
+
+        if (!isPro && get().lists.length >= limits.target_list_limit) {
+            subStore.openUpgradeModal(
                 "Target List Limit Reached",
-                "Free accounts are limited to 3 target lists. Upgrade to Pro to create unlimited lists and organize your outreach better."
+                `Free accounts are limited to ${limits.target_list_limit} target lists. Upgrade to Pro to create unlimited lists and organize your outreach better.`
             );
             return;
         }
@@ -167,10 +171,15 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             return;
         }
 
-        if (!useSubscriptionStore.getState().canAddTarget(targetInput.list_id)) {
-            useSubscriptionStore.getState().openUpgradeModal(
+        const subStore = useSubscriptionStore.getState();
+        const limits = subStore.limits;
+        const isPro = subStore.isPro();
+        const list = get().lists.find(l => l.id === targetInput.list_id);
+
+        if (!isPro && (list?.target_count || 0) >= limits.target_limit) {
+            subStore.openUpgradeModal(
                 "Target Limit Reached",
-                "Free accounts are limited to 50 targets per list. Upgrade to Pro to add unlimited targets and scale your growth."
+                `Free accounts are limited to ${limits.target_limit} targets per list. Upgrade to Pro to add unlimited targets and scale your growth.`
             );
             return;
         }
@@ -227,12 +236,19 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
 
         const listId = targetsInput[0]?.list_id;
-        if (listId && !useSubscriptionStore.getState().canAddTarget(listId)) {
-            useSubscriptionStore.getState().openUpgradeModal(
-                "Target Limit Reached",
-                "Free accounts are limited to 50 targets per list. Upgrade to Pro to add unlimited targets and scale your growth."
-            );
-            return;
+        if (listId) {
+            const subStore = useSubscriptionStore.getState();
+            const limits = subStore.limits;
+            const isPro = subStore.isPro();
+            const list = get().lists.find(l => l.id === listId);
+
+            if (!isPro && (list?.target_count || 0) >= limits.target_limit) {
+                subStore.openUpgradeModal(
+                    "Target Limit Reached",
+                    `Free accounts are limited to ${limits.target_limit} targets per list. Upgrade to Pro to add unlimited targets and scale your growth.`
+                );
+                return;
+            }
         }
 
         const targetsWithUser = targetsInput.map(t => ({ ...t, user_id: user.id }));

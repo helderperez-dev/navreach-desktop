@@ -66,10 +66,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     },
 
     createWorkspace: async (name: string) => {
-        if (!useSubscriptionStore.getState().canCreateWorkspace()) {
-            useSubscriptionStore.getState().openUpgradeModal(
+        const subStore = useSubscriptionStore.getState();
+        const limits = subStore.limits;
+        const isPro = subStore.isPro();
+
+        if (!isPro && get().workspaces.length >= limits.workspace_limit) {
+            subStore.openUpgradeModal(
                 "Workspace Limit Reached",
-                "Free accounts are limited to 1 workspace. Upgrade to Pro to create unlimited workspaces for different clients or projects."
+                `Free accounts are limited to ${limits.workspace_limit} workspace. Upgrade to Pro to create unlimited workspaces for different clients or projects.`
             );
             return;
         }

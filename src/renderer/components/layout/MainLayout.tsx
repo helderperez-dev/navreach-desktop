@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/stores/app.store';
 import { useDebugStore } from '@/stores/debug.store';
 import { useSubscriptionStore } from '@/stores/subscription.store';
+import { supabase } from '@/lib/supabase';
 import { Sidebar } from './Sidebar';
 import { useBillingStore } from '@/stores/billing.store';
 import { ChatPanel } from './ChatPanel';
@@ -42,6 +43,13 @@ export function MainLayout() {
     fetchSubscription();
     loadCustomerId();
     loadStripeConfig();
+
+    // Fetch dynamic tier limits
+    const initLimits = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      useSubscriptionStore.getState().fetchLimits(session?.access_token);
+    };
+    initLimits();
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

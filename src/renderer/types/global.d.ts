@@ -122,7 +122,12 @@ declare global {
         getConfig: () => Promise<{ publishableKey: string; proPriceId: string; credits100PriceId: string; credits500PriceId: string; credits1000PriceId: string }>;
         createPaymentIntent: (amount: number, currency: string, metadata?: any, customerId?: string) => Promise<{ clientSecret: string; id: string }>;
         fulfillPaymentIntent: (paymentIntentId: string) => Promise<{ success: boolean; balance?: number; message?: string }>;
-        createSubscription: (customerId: string, priceId: string) => Promise<{ clientSecret: string }>;
+        createSubscription: (customerId: string, priceId: string, promoCode?: string) => Promise<{
+          clientSecret: string;
+          amount?: number;
+          subtotal?: number;
+          currency?: string;
+        }>;
         createCustomer: (email: string, name?: string) => Promise<{ id: string }>;
         createPortalSession: (customerId: string, returnUrl: string) => Promise<{ url: string }>;
         getInvoices: (customerId: string) => Promise<any[]>;
@@ -134,6 +139,12 @@ declare global {
         getSubscriptions: (customerId: string) => Promise<any[]>;
         getCustomer: (customerId: string) => Promise<any>;
         setDefaultPaymentMethod: (customerId: string, paymentMethodId: string) => Promise<{ success: boolean }>;
+        getTierLimits: (accessToken?: string) => Promise<{
+          ai_actions_limit: number;
+          workspace_limit: number;
+          target_list_limit: number;
+          target_limit: number;
+        }>;
       };
     };
   }

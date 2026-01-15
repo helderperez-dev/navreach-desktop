@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard, Zap, Rocket } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
-import { useSubscriptionStore, FREE_TIER_AI_ACTIONS_LIMIT } from '@/stores/subscription.store';
+import { useSubscriptionStore } from '@/stores/subscription.store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 
@@ -21,7 +21,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, activeView, setActiveView, chatPanelCollapsed, toggleChatPanel } = useAppStore();
-  const { isPro, dailyUsage, openUpgradeModal } = useSubscriptionStore();
+  const { isPro, dailyUsage, openUpgradeModal, limits } = useSubscriptionStore();
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -109,13 +109,13 @@ export function Sidebar() {
             <div className="space-y-1.5 mb-3">
               <div className="flex justify-between text-[10px] text-muted-foreground">
                 <span>AI actions today</span>
-                <span>{Math.min(dailyUsage.aiActions, FREE_TIER_AI_ACTIONS_LIMIT)}/{FREE_TIER_AI_ACTIONS_LIMIT}</span>
+                <span>{Math.min(dailyUsage.aiActions, limits.ai_actions_limit)}/{limits.ai_actions_limit}</span>
               </div>
               <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
                 <motion.div
                   className="h-full bg-primary"
                   initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(100, (dailyUsage.aiActions / FREE_TIER_AI_ACTIONS_LIMIT) * 100)}%` }}
+                  animate={{ width: `${Math.min(100, (dailyUsage.aiActions / limits.ai_actions_limit) * 100)}%` }}
                 />
               </div>
             </div>

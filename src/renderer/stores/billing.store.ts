@@ -136,9 +136,9 @@ export const useBillingStore = create<BillingState>((set, get) => ({
         set({ isLoading: true });
         try {
             const cid = await get().ensureCustomer();
-            const response = await (window.api.stripe as any).createSubscription(cid, targetPriceId, promoCode);
+            const response = await window.api.stripe.createSubscription(cid, targetPriceId, promoCode);
 
-            const { clientSecret, amount = 4999, subtotal = 4999, currency = 'usd' } = response;
+            const { clientSecret, amount, subtotal, currency = 'usd' } = response;
 
             // Format currency helper
             const formatAmount = (val: any) => {

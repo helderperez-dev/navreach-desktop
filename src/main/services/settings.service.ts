@@ -54,6 +54,41 @@ export class SystemSettingsService {
             credits1000PriceId: settings['stripe_credits_1000_price_id'] || process.env.VITE_STRIPE_CREDITS_1000_PRICE_ID,
         };
     }
+
+    /**
+     * Get dynamic tier limits merged with user overrides
+     */
+    async getTierLimits(accessToken?: string): Promise<Record<string, number>> {
+        const settings = await this.getSettings();
+
+        // Base Global Limits (with defaults)
+        const limits: Record<string, number> = {
+            ai_actions_limit: Number(settings['free_tier_ai_actions_limit'] || 10),
+            workspace_limit: Number(settings['free_tier_workspace_limit'] || 1),
+            target_list_limit: Number(settings['free_tier_target_list_limit'] || 3),
+            target_limit: Number(settings['free_tier_target_limit'] || 50)
+        };
+
+        if (accessToken) {
+            try {
+                const { data: userSettings } = await supabase
+                    .from('user_settings')
+                    .select('ai_actions_limit, workspace_limit, target_list_limit, target_limit')
+                    .maybeSingle();
+
+                if (userSettings) {
+                    if (userSettings.ai_actions_limit !== null && userSettings.ai_actions_limit !== undefined) limits.ai_actions_limit = userSettings.ai_actions_limit;
+                    if (userSettings.workspace_limit !== null && userSettings.workspace_limit !== undefined) limits.workspace_limit = userSettings.workspace_limit;
+                    if (userSettings.target_list_limit !== null && userSettings.target_list_limit !== undefined) limits.target_list_limit = userSettings.target_list_limit;
+                    if (userSettings.target_limit !== null && userSettings.target_limit !== undefined) limits.target_limit = userSettings.target_limit;
+                }
+            } catch (error) {
+                console.error('[SystemSettingsService] Failed to fetch user limits:', error);
+            }
+        }
+
+        return limits;
+    }
 }
 
 export const systemSettingsService = new SystemSettingsService();

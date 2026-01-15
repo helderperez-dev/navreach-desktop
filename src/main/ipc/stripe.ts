@@ -145,4 +145,13 @@ export function setupStripeHandlers(ipcMain: IpcMain) {
             throw new Error(error.message);
         }
     });
+
+    ipcMain.handle('stripe:get-tier-limits', async (_, accessToken?: string) => {
+        try {
+            return await systemSettingsService.getTierLimits(accessToken);
+        } catch (error: any) {
+            console.error('[IPC] stripe:get-tier-limits error:', error);
+            throw new Error(error.message);
+        }
+    });
 }

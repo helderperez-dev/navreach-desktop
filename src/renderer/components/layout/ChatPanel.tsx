@@ -21,7 +21,7 @@ import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
 import { supabase } from '@/lib/supabase';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import { useSubscriptionStore, FREE_TIER_AI_ACTIONS_LIMIT } from '@/stores/subscription.store';
+import { useSubscriptionStore } from '@/stores/subscription.store';
 import { toast } from 'sonner';
 
 
@@ -148,7 +148,7 @@ export function ChatPanel() {
     setPendingPrompt,
   } = useChatStore();
 
-  const { dailyUsage, canRunAIAction, trackAIAction, isPro, isUpgradeModalOpen, closeUpgradeModal, openUpgradeModal, modalTitle, modalDescription } = useSubscriptionStore();
+  const { dailyUsage, limits, canRunAIAction, trackAIAction, isPro, isUpgradeModalOpen, closeUpgradeModal, openUpgradeModal, modalTitle, modalDescription } = useSubscriptionStore();
 
   const { currentWorkspace } = useWorkspaceStore();
 
@@ -1019,7 +1019,7 @@ export function ChatPanel() {
                   {!isPro() && (
                     <div className="flex items-center gap-1 text-[10px] text-primary/60 font-medium">
                       <Rocket className="h-2.5 w-2.5 fill-current" />
-                      <span>{Math.max(0, FREE_TIER_AI_ACTIONS_LIMIT - dailyUsage.aiActions)} actions left today</span>
+                      <span>{Math.max(0, limits.ai_actions_limit - dailyUsage.aiActions)} actions left today</span>
                     </div>
                   )}
                 </div>
