@@ -37,12 +37,13 @@ export function setupStripeHandlers(ipcMain: IpcMain) {
         }
     });
 
-    ipcMain.handle('stripe:create-subscription', async (_, { customerId, priceId }) => {
+    ipcMain.handle('stripe:create-subscription', async (_, { customerId, priceId, promoCode }) => {
         try {
-            return await stripeService.createSubscription(customerId, priceId);
+            return await stripeService.createSubscription(customerId, priceId, promoCode);
         } catch (error: any) {
             console.error('[IPC] stripe:create-subscription error:', error);
-            throw new Error(error.message);
+            // Return simpler message for better UI toasts
+            throw error;
         }
     });
 

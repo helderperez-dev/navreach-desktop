@@ -1,9 +1,11 @@
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '@/stores/app.store';
 import { useDebugStore } from '@/stores/debug.store';
+import { useSubscriptionStore } from '@/stores/subscription.store';
 import { Sidebar } from './Sidebar';
+import { useBillingStore } from '@/stores/billing.store';
 import { ChatPanel } from './ChatPanel';
 import { TitleBar } from './TitleBar';
 import { WelcomeScreen } from './WelcomeScreen';
@@ -12,12 +14,35 @@ import { SettingsLayout } from '@/components/settings/SettingsLayout';
 import { DebugPanel } from '@/components/debug/DebugPanel';
 import { TargetListView } from '@/components/targets/TargetListView';
 import { PlaybooksView } from '@/components/playbooks/PlaybooksView';
+import { UpgradeModal } from '@/components/billing/UpgradeModal';
+import { PaymentModal } from '@/components/billing/PaymentModal';
 
 export function MainLayout() {
   const { activeView, chatPanelCollapsed, chatPanelWidth, setChatPanelWidth, hasStarted, showPlaybookBrowser, playbookBrowserMaximized } = useAppStore();
+  const { isUpgradeModalOpen, closeUpgradeModal, modalTitle, modalDescription } = useSubscriptionStore();
+  const {
+    isPaymentModalOpen,
+    setPaymentModalOpen,
+    clientSecret,
+    handlePaymentSuccess,
+    paymentContext,
+    customerId,
+    fetchCredits,
+    fetchSubscription,
+    loadCustomerId,
+    loadStripeConfig
+  } = useBillingStore();
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
   const [isResizing, setIsResizing] = useState(false);
+
+  useEffect(() => {
+    // Initialize global billing data
+    fetchCredits();
+    fetchSubscription();
+    loadCustomerId();
+    loadStripeConfig();
+  }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -188,6 +213,24 @@ export function MainLayout() {
           )}
         </AnimatePresence>
       </div>
+      <UpgradeModal
+        isOpen={isUpgradeModalOpen}
+        onClose={closeUpgradeModal}
+        title={modalTitle}
+        description={modalDescription}
+      />
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setPaymentModalOpen(false)}
+        clientSecret={clientSecret}
+        onSuccess={handlePaymentSuccess}
+        amount={paymentContext.amount}
+        description={paymentContext.description}
+        promoCode={paymentContext.promoCode}
+        formattedSubtotal={paymentContext.formattedSubtotal}
+        formattedDiscount={paymentContext.formattedDiscount}
+        customerId={customerId || undefined}
+      />
     </div>
   );
 }

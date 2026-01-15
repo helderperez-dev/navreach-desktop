@@ -1,5 +1,6 @@
 import { useChatStore } from '@/stores/chat.store';
-import { Clock, Plus, Minus, ChevronLeft, ChevronRight, Infinity, List } from 'lucide-react';
+import { useSubscriptionStore } from '@/stores/subscription.store';
+import { Clock, Plus, Minus, ChevronLeft, ChevronRight, Infinity, List, Lock } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -17,6 +18,9 @@ export function MaxStepsSelector() {
     setAgentRunLimit
   } = useChatStore();
 
+  const { isPro, openUpgradeModal } = useSubscriptionStore();
+  const pro = isPro();
+
   const [isOpen, setIsOpen] = useState(false);
   const [view, setView] = useState<'main' | 'timer'>('main');
 
@@ -30,6 +34,14 @@ export function MaxStepsSelector() {
   };
 
   const handleSelectInfinite = () => {
+    if (!pro) {
+      openUpgradeModal(
+        "Infinite Mode is a Pro Feature",
+        "Upgrade to Pro to let the agent run without any step limits and handle complex, long-running research tasks autonomously."
+      );
+      setIsOpen(false);
+      return;
+    }
     setInfiniteMode(true);
     setAgentRunLimit(null);
     setIsOpen(false);
@@ -92,12 +104,21 @@ export function MaxStepsSelector() {
               <div className="flex items-center gap-2">
                 <Infinity className="h-3.5 w-3.5" />
                 <span>Infinite Mode</span>
+                {!pro && <Lock className="h-2.5 w-2.5 opacity-40 ml-1" />}
               </div>
               {infiniteMode && !agentRunLimit && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
             </button>
 
             <button
               onClick={() => {
+                if (!pro) {
+                  openUpgradeModal(
+                    "Fixed Timer is a Pro Feature",
+                    "Upgrade to Pro to set precise execution windows for your agents, perfect for time-boxed automation and monitoring."
+                  );
+                  setIsOpen(false);
+                  return;
+                }
                 setInfiniteMode(true);
                 if (!agentRunLimit) setAgentRunLimit(60);
                 setView('timer');
@@ -110,6 +131,7 @@ export function MaxStepsSelector() {
               <div className="flex items-center gap-2">
                 <Clock className="h-3.5 w-3.5" />
                 <span>Fixed Timer</span>
+                {!pro && <Lock className="h-2.5 w-2.5 opacity-40 ml-1" />}
               </div>
               <div className="flex items-center gap-2">
                 {isTimerMode && <span className="text-[10px] opacity-70">{agentRunLimit}m</span>}

@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
-import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard } from 'lucide-react';
+import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard, Zap, Rocket } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
+import { useSubscriptionStore, FREE_TIER_AI_ACTIONS_LIMIT } from '@/stores/subscription.store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 
@@ -9,7 +10,7 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
-  view: 'browser' | 'settings' | 'targets' | 'playbooks' | 'billing';
+  view: 'browser' | 'settings' | 'targets' | 'playbooks';
 }
 const navItems: NavItem[] = [
   { id: 'browser', label: 'Browser', icon: <Compass className="h-5 w-5" />, view: 'browser' },
@@ -20,6 +21,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, activeView, setActiveView, chatPanelCollapsed, toggleChatPanel } = useAppStore();
+  const { isPro, dailyUsage, openUpgradeModal } = useSubscriptionStore();
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -97,6 +99,36 @@ export function Sidebar() {
             </Tooltip>
           )}
         </nav>
+
+        {!isPro() && !sidebarCollapsed && (
+          <div className="mx-3 mb-4 p-3 rounded-xl bg-gradient-to-br from-primary/10 to-blue-500/10 border border-primary/20">
+            <div className="flex items-center gap-2 mb-2">
+              <Rocket className="h-3.5 w-3.5 text-primary" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-primary">Free Plan</span>
+            </div>
+            <div className="space-y-1.5 mb-3">
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>AI actions today</span>
+                <span>{Math.min(dailyUsage.aiActions, FREE_TIER_AI_ACTIONS_LIMIT)}/{FREE_TIER_AI_ACTIONS_LIMIT}</span>
+              </div>
+              <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
+                <motion.div
+                  className="h-full bg-primary"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, (dailyUsage.aiActions / FREE_TIER_AI_ACTIONS_LIMIT) * 100)}%` }}
+                />
+              </div>
+            </div>
+            <Button
+              variant="default"
+              size="sm"
+              className="w-full h-7 text-[10px] font-bold bg-primary hover:bg-primary/90 shadow-sm"
+              onClick={() => openUpgradeModal()}
+            >
+              Upgrade to Pro
+            </Button>
+          </div>
+        )}
 
         <div className={cn("py-2 border-t border-border/30", sidebarCollapsed ? "px-2" : "px-3")}>
           <Tooltip>

@@ -118,30 +118,105 @@ export class StripeService {
     /**
      * Create a Subscription
      */
-    async createSubscription(customerId: string, priceId: string) {
+    async createSubscription(customerId: string, priceId: string, promoCode?: string) {
         await this.ensureInitialized();
         if (!this.stripe) throw new Error('Stripe not initialized');
 
         try {
-            // 1. Create the subscription (status will be incomplete)
+            let promoCodeId: string | undefined;
+
+            if (promoCode) {
+                const promoCodes = await this.stripe.promotionCodes.list({
+                    code: promoCode,
+                    active: true,
+                    limit: 1,
+                });
+
+                if (promoCodes.data.length > 0) {
+                    promoCodeId = promoCodes.data[0].id;
+                } else {
+                    throw new Error('Invalid or expired promotion code');
+                }
+            }
+
+            // 1. Create the subscription with deep expansion
+            // This expansion helps see the discount on the latest_invoice immediately.
             const subscription = await this.stripe.subscriptions.create({
                 customer: customerId,
                 items: [{ price: priceId }],
+                discounts: promoCodeId ? [{ promotion_code: promoCodeId }] : undefined,
                 payment_behavior: 'default_incomplete',
                 payment_settings: { save_default_payment_method: 'on_subscription' },
-                expand: ['latest_invoice.payment_intent'],
+                expand: [
+                    'latest_invoice.payment_intent',
+                    'latest_invoice.total_discount_amounts'
+                ],
             });
 
-            const invoice = subscription.latest_invoice as any;
+            let invoice = subscription.latest_invoice as any;
+
+            // Log current state for debugging
+            console.log('[StripeService] Initial checkout invoice:', {
+                id: invoice?.id,
+                subtotal: invoice?.subtotal,
+                total: invoice?.total,
+                amount_due: invoice?.amount_due,
+                discount_amounts: invoice?.total_discount_amounts
+            });
+
+            // If we have a promo code, Stripe sometimes takes a moment to "finalize" the invoice.
+            // We want to return the version of the invoice that actually has the discount.
+            if (promoCodeId && invoice && typeof invoice !== 'string') {
+                // If it looks like the discount hasn't been applied yet (total == subtotal)
+                // OR if total_discount_amounts is empty, we fetch again.
+                if (invoice.total === invoice.subtotal || !invoice.total_discount_amounts?.length) {
+                    try {
+                        console.log('[StripeService] Discount not visible yet, waiting for settlement...');
+                        // 800ms is a safe window for the Stripe billing engine to process the coupon
+                        await new Promise(r => setTimeout(r, 800));
+
+                        const fresh = await this.stripe.invoices.retrieve(invoice.id, {
+                            expand: ['payment_intent', 'total_discount_amounts']
+                        });
+
+                        if (fresh) {
+                            invoice = fresh;
+                            console.log('[StripeService] Settled invoice data:', {
+                                subtotal: invoice.subtotal,
+                                total: invoice.total,
+                                amount_due: invoice.amount_due,
+                                discount_amounts: invoice.total_discount_amounts
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('[StripeService] Error fetching settled invoice:', e);
+                    }
+                }
+            }
+
             const paymentIntent = invoice?.payment_intent as Stripe.PaymentIntent | null;
 
             return {
                 subscriptionId: subscription.id,
                 clientSecret: paymentIntent?.client_secret || null,
+                amount: typeof invoice?.amount_due === 'number' ? invoice.amount_due : (invoice?.total ?? 4999),
+                subtotal: typeof invoice?.subtotal === 'number' ? invoice.subtotal : 4999,
+                currency: invoice?.currency || 'usd',
             };
         } catch (error: any) {
             console.error('[StripeService] Create Subscription failed:', error);
-            throw error;
+
+            const rawMessage = error.raw?.message || error.message;
+
+            if (rawMessage.includes('prior transactions')) {
+                throw new Error('This code is only for new customers. You have prior transactions on your account.');
+            }
+            if (rawMessage.includes('Invalid or expired')) {
+                throw new Error('This promo code is invalid or has expired.');
+            }
+
+            // Catch-all for other Stripe errors to keep them clean
+            throw new Error(rawMessage);
         }
     }
 

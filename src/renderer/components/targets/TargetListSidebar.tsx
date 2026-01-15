@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { useTargetsStore } from '@/stores/targets.store';
+import { useSubscriptionStore } from '@/stores/subscription.store';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Plus, List, MoreVertical, Trash2, Edit2 } from 'lucide-react';
@@ -14,6 +15,7 @@ import { Input } from '@/components/ui/input';
 
 export function TargetListSidebar() {
     const { lists, selectedListId, setSelectedListId, addList, deleteList, updateList } = useTargetsStore();
+    const { isPro } = useSubscriptionStore();
     const [isAdding, setIsAdding] = useState(false);
     const [newListName, setNewListName] = useState('');
     const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -83,7 +85,14 @@ export function TargetListSidebar() {
             style={{ width: `${width}px` }}
         >
             <div className="p-4 border-b border-border/30 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground truncate">Lists</h2>
+                <div className="flex items-center gap-2">
+                    <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground truncate">Lists</h2>
+                    {!isPro() && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground/70 border border-border/50">
+                            {lists.length}/3
+                        </span>
+                    )}
+                </div>
                 <Button
                     variant="ghost"
                     size="icon"

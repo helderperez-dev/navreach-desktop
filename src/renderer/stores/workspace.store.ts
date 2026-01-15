@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { Workspace } from '@/types/workspace';
 import { workspaceService } from '@/services/workspace.service';
 import { useChatStore } from './chat.store';
+import { useSubscriptionStore } from './subscription.store';
 import { toast } from 'sonner';
 
 interface WorkspaceState {
@@ -65,6 +66,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     },
 
     createWorkspace: async (name: string) => {
+        if (!useSubscriptionStore.getState().canCreateWorkspace()) {
+            useSubscriptionStore.getState().openUpgradeModal(
+                "Workspace Limit Reached",
+                "Free accounts are limited to 1 workspace. Upgrade to Pro to create unlimited workspaces for different clients or projects."
+            );
+            return;
+        }
+
         try {
             const newWorkspace = await workspaceService.createWorkspace(name);
             const workspaces = [...get().workspaces, newWorkspace];

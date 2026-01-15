@@ -133,8 +133,8 @@ const stripeAPI = {
     ipcRenderer.invoke('stripe:create-payment-intent', { amount, currency, metadata, customerId }),
   fulfillPaymentIntent: (paymentIntentId: string) =>
     ipcRenderer.invoke('stripe:fulfill-payment-intent', paymentIntentId),
-  createSubscription: (customerId: string, priceId: string) =>
-    ipcRenderer.invoke('stripe:create-subscription', { customerId, priceId }),
+  createSubscription: (customerId: string, priceId: string, promoCode?: string) =>
+    ipcRenderer.invoke('stripe:create-subscription', { customerId, priceId, promoCode }),
   createCustomer: (email: string, name?: string) =>
     ipcRenderer.invoke('stripe:create-customer', { email, name }),
   createPortalSession: (customerId: string, returnUrl: string) =>

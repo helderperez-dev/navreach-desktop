@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useSubscriptionStore } from '@/stores/subscription.store';
 import { TargetList, Target } from '@/types/targets';
 import { targetService } from '@/lib/targets.service';
 import { toast } from 'sonner';
@@ -100,6 +101,14 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             return;
         }
 
+        if (!useSubscriptionStore.getState().canAddTargetList()) {
+            useSubscriptionStore.getState().openUpgradeModal(
+                "Target List Limit Reached",
+                "Free accounts are limited to 3 target lists. Upgrade to Pro to create unlimited lists and organize your outreach better."
+            );
+            return;
+        }
+
         const { data, error } = await targetService.createTargetList({
             name,
             description,
@@ -158,6 +167,14 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             return;
         }
 
+        if (!useSubscriptionStore.getState().canAddTarget(targetInput.list_id)) {
+            useSubscriptionStore.getState().openUpgradeModal(
+                "Target Limit Reached",
+                "Free accounts are limited to 50 targets per list. Upgrade to Pro to add unlimited targets and scale your growth."
+            );
+            return;
+        }
+
         const { data, error } = await targetService.createTarget({
             ...targetInput,
             user_id: user.id
@@ -206,6 +223,15 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
             toast.error('User not authenticated');
+            return;
+        }
+
+        const listId = targetsInput[0]?.list_id;
+        if (listId && !useSubscriptionStore.getState().canAddTarget(listId)) {
+            useSubscriptionStore.getState().openUpgradeModal(
+                "Target Limit Reached",
+                "Free accounts are limited to 50 targets per list. Upgrade to Pro to add unlimited targets and scale your growth."
+            );
             return;
         }
 

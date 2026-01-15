@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Conversation } from '@shared/types';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, Square, Plus, Trash2, History, X, MessageSquare, PanelLeftClose, Globe, MousePointer, Type, ScrollText, FileText, ArrowLeft, ArrowRight, RefreshCw, Clock, Search, Eye, Check, Heart, UserPlus, Camera } from 'lucide-react';
+import { ArrowUp, Square, Plus, Trash2, History, X, MessageSquare, PanelLeftClose, Globe, MousePointer, Type, ScrollText, FileText, ArrowLeft, ArrowRight, RefreshCw, Clock, Search, Eye, Check, Heart, UserPlus, Camera, Zap, Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChatStore } from '@/stores/chat.store';
@@ -21,6 +21,8 @@ import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
 import { supabase } from '@/lib/supabase';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useSubscriptionStore, FREE_TIER_AI_ACTIONS_LIMIT } from '@/stores/subscription.store';
+import { toast } from 'sonner';
 
 
 
@@ -145,6 +147,8 @@ export function ChatPanel() {
     pendingPrompt,
     setPendingPrompt,
   } = useChatStore();
+
+  const { dailyUsage, canRunAIAction, trackAIAction, isPro, isUpgradeModalOpen, closeUpgradeModal, openUpgradeModal, modalTitle, modalDescription } = useSubscriptionStore();
 
   const { currentWorkspace } = useWorkspaceStore();
 
@@ -333,6 +337,19 @@ export function ChatPanel() {
 
         // 2. Handle Tool Call Start
         if (streamData.toolCall) {
+          // Track AI action for Free users
+          trackAIAction();
+
+          // If limit reached, stop immediately
+          if (!canRunAIAction()) {
+            window.api.ai.stop().catch(console.error);
+            openUpgradeModal(
+              "Daily Limit Reached",
+              "You've reached your 10 free AI actions for today. Upgrade to Pro to continue your automation."
+            );
+            return;
+          }
+
           // Clear pending narration tracking before starting a tool without double-merging
           streamingContentRef.current = '';
           setStreamingContent('');
@@ -461,6 +478,14 @@ export function ChatPanel() {
 
 
   const sendMessage = useCallback(async (content: string, options: { isIsolated?: boolean, playbookId?: string } = {}) => {
+    if (!canRunAIAction()) {
+      openUpgradeModal(
+        "Daily Limit Reached",
+        "You've used your 10 free AI actions for today. Upgrade to Pro to continue automating at scale."
+      );
+      return;
+    }
+
     const { isIsolated = false, playbookId = null } = options;
     const enabledProviders = modelProviders.filter((p) => p.enabled);
 
@@ -991,6 +1016,12 @@ export function ChatPanel() {
                 <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground/60">
                   <ModelSelector />
                   <MaxStepsSelector />
+                  {!isPro() && (
+                    <div className="flex items-center gap-1 text-[10px] text-primary/60 font-medium">
+                      <Rocket className="h-2.5 w-2.5 fill-current" />
+                      <span>{Math.max(0, FREE_TIER_AI_ACTIONS_LIMIT - dailyUsage.aiActions)} actions left today</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex items-center">

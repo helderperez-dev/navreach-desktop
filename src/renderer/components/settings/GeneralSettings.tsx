@@ -8,7 +8,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Monitor, Clock, PlayCircle, Palette, Moon, Sun, Laptop, User, Camera } from 'lucide-react';
+import { Monitor, Palette, Moon, Sun, Laptop, User, Camera } from 'lucide-react';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { toast } from 'sonner';
 
@@ -249,67 +249,6 @@ export function GeneralSettings() {
                 </div>
             </div>
 
-            <div className="space-y-4">
-                <div>
-                    <h3 className="text-lg font-medium">Agent Execution</h3>
-                    <p className="text-sm text-muted-foreground">
-                        Define default behavior for long-running agent tasks.
-                    </p>
-                </div>
-
-                <div className="space-y-4 p-4 rounded-xl bg-muted/40 border border-border">
-                    <div className="flex items-center gap-4 mb-2">
-                        <div className="p-2 rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-muted/80">
-                            <PlayCircle className="h-5 w-5" />
-                        </div>
-                        <div>
-                            <Label className="text-base font-semibold">Agent Run Mode</Label>
-                            <p className="text-xs text-muted-foreground">How the agent should handle execution cycles.</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                        <div className="space-y-2">
-                            <Label className="text-xs uppercase tracking-wider text-muted-foreground">Default Mode</Label>
-                            <Select
-                                value={settings.agentRunMode}
-                                onValueChange={(v: any) => updateSetting('agentRunMode', v)}
-                            >
-                                <SelectTrigger className="bg-background/50 border-border">
-                                    <SelectValue placeholder="Select mode" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="manual">Manual (Step-by-step)</SelectItem>
-                                    <SelectItem value="indefinite">Indefinite (Forever)</SelectItem>
-                                    <SelectItem value="timer">Timer (Fixed duration)</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {settings.agentRunMode === 'timer' && (
-                            <div className="space-y-2 animate-in zoom-in-95 duration-200">
-                                <Label className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                                    <Clock className="h-3 w-3" /> Duration (minutes)
-                                </Label>
-                                <Input
-                                    type="number"
-                                    min={1}
-                                    value={settings.agentRunDuration}
-                                    onChange={(e) => updateSetting('agentRunDuration', parseInt(e.target.value) || 1)}
-                                    className="bg-background/50 border-border"
-                                />
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="mt-4 p-3 rounded-lg bg-muted/30 border border-border/50">
-                        <p className="text-[11px] text-muted-foreground/80 leading-relaxed italic">
-                            Note: Indefinite mode will continue execution cycles until manually stopped or a system error occurs.
-                            Always ensure you have sufficient API credits.
-                        </p>
-                    </div>
-                </div>
-            </div>
         </div>
     );
 }

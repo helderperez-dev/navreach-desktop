@@ -62,7 +62,6 @@ export function SettingsLayout() {
         <ScrollArea className="flex-1">
           <div className="p-8 max-w-4xl mx-auto h-full">
             {activeTab === 'workspace' && <WorkspaceSettings />}
-            {activeTab === 'workspace' && <WorkspaceSettings />}
             {activeTab === 'general' && <GeneralSettings />}
             {activeTab === 'knowledge' && <KnowledgeSettings />}
             {activeTab === 'mcp' && <MCPSettings />}

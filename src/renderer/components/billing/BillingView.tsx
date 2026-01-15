@@ -11,15 +11,23 @@ import { toast } from 'sonner';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 
 export function BillingView() {
-    const { credits, subscription, fetchCredits, fetchSubscription } = useBillingStore();
-    const [modalOpen, setModalOpen] = useState(false);
-    const [clientSecret, setClientSecret] = useState('');
-    const [paymentContext, setPaymentContext] = useState<{ amount?: string; description?: string }>({});
+    const {
+        credits,
+        subscription,
+        fetchCredits,
+        fetchSubscription,
+        customerId,
+        loadCustomerId,
+        stripeConfig,
+        loadStripeConfig,
+        initiateSubscription,
+        isLoading: globalLoading,
+        handlePaymentSuccess: globalPaymentSuccess
+    } = useBillingStore();
+
     const [loading, setLoading] = useState(false);
     const [stripeSubscription, setStripeSubscription] = useState<any>(null);
-    const [customerId, setCustomerId] = useState<string | undefined>();
     const [refreshKey, setRefreshKey] = useState(0);
-    const [stripeConfig, setStripeConfig] = useState<any>(null);
     const [initialLoading, setInitialLoading] = useState(true);
 
     useEffect(() => {
@@ -31,13 +39,11 @@ export function BillingView() {
                     loadCustomerId()
                 ]);
 
-                // Also load stripe subscription if we have a customer
                 if (cid) {
                     await loadStripeSubscription(cid);
                 }
 
-                const config = await window.api.stripe.getConfig();
-                setStripeConfig(config);
+                await loadStripeConfig();
             } catch (err) {
                 console.error('Failed to load Stripe config:', err);
             } finally {
@@ -53,17 +59,6 @@ export function BillingView() {
         }
     }, [customerId, refreshKey]);
 
-    const loadCustomerId = async (): Promise<string | undefined> => {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-            const { data: profile } = await supabase.from('profiles').select('stripe_customer_id').eq('id', user.id).single();
-            const cid = profile?.stripe_customer_id;
-            setCustomerId(cid);
-            return cid;
-        }
-        return undefined;
-    };
-
     const loadStripeSubscription = async (cid?: string) => {
         const id = cid || customerId;
         if (!id) return;
@@ -76,32 +71,11 @@ export function BillingView() {
         }
     };
 
-    const ensureCustomer = async (): Promise<string> => {
-        if (customerId) return customerId;
-
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) throw new Error('Not authenticated');
-
-        const customer = await window.api.stripe.createCustomer(user.email!, user.user_metadata?.full_name);
-        const cid = customer.id;
-        await supabase.from('profiles').update({ stripe_customer_id: cid }).eq('id', user.id);
-        setCustomerId(cid);
-        return cid;
-    };
-
     const handleSubscribe = async (priceId: string) => {
-        setLoading(true);
         try {
-            const cid = await ensureCustomer();
-            const { clientSecret } = await window.api.stripe.createSubscription(cid, priceId);
-            setPaymentContext({ amount: '$49.99', description: 'Pro Subscription' });
-            setClientSecret(clientSecret);
-            setModalOpen(true);
+            await initiateSubscription(priceId);
         } catch (error: any) {
-            console.error('Subscription error:', error);
             toast.error('Failed to start subscription: ' + error.message);
-        } finally {
-            setLoading(false);
         }
     };
 
@@ -145,69 +119,29 @@ export function BillingView() {
         }
     };
 
-    const handleBuyCredits = async (amount: number, _priceId: string) => {
-        const priceMap: Record<number, number> = {
-            100: 1000, // $10.00
-            500: 4500, // $45.00
-            1000: 8000 // $80.00
-        };
-
-        const priceInCents = priceMap[amount];
-        if (!priceInCents) return;
-
-        setLoading(true);
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error('Not authenticated');
-
-            const cid = await ensureCustomer();
-
-            const { clientSecret } = await window.api.stripe.createPaymentIntent(priceInCents, 'usd', {
-                userId: String(user.id),
-                credits: String(amount),
-                type: 'credit_purchase'
-            }, cid);
-
-            setPaymentContext({
-                amount: `$${(priceInCents / 100).toFixed(2)}`,
-                description: `${amount} Credits`
-            });
-            setClientSecret(clientSecret);
-            setModalOpen(true);
-        } catch (error: any) {
-            console.error('Credit purchase error:', error);
-            toast.error('Failed to initiate purchase: ' + error.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
     const handleAddPaymentMethod = async () => {
         setLoading(true);
         try {
-            const cid = await ensureCustomer();
+            // This could also be moved to store if needed
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) throw new Error('Not authenticated');
+
+            // Re-using the store's customer logic if needed, but for simplicity:
+            const cid = customerId || await useBillingStore.getState().ensureCustomer();
             const { clientSecret } = await window.api.stripe.createSetupIntent(cid);
-            setPaymentContext({ description: 'Securely save a card for future use' });
-            setClientSecret(clientSecret);
-            setModalOpen(true);
+
+            // Open global modal with custom context
+            useBillingStore.setState({
+                clientSecret,
+                paymentContext: { description: 'Securely save a card for future use' },
+                isPaymentModalOpen: true
+            });
         } catch (error: any) {
             console.error('Setup error:', error);
             toast.error('Failed to prepare card setup: ' + error.message);
         } finally {
             setLoading(false);
         }
-    };
-
-    const handlePaymentSuccess = () => {
-        setModalOpen(false);
-        toast.success('Operation successful!');
-        setRefreshKey(prev => prev + 1);
-
-        setTimeout(() => {
-            fetchCredits();
-            fetchSubscription();
-            loadStripeSubscription();
-        }, 2000);
     };
 
     if (initialLoading) {
@@ -217,6 +151,8 @@ export function BillingView() {
             </div>
         );
     }
+
+    const currentLoading = loading || globalLoading;
 
     return (
         <div className="space-y-12 pb-12">
@@ -230,48 +166,26 @@ export function BillingView() {
                 <PricingTable
                     onSubscribe={handleSubscribe}
                     onManageSubscription={handleCancelSubscription}
-                    isLoading={loading || initialLoading}
+                    isLoading={currentLoading || initialLoading}
                     subscription={stripeSubscription || subscription}
                     config={stripeConfig}
                 />
             </section>
 
-            {/* Native Management Sections */}
             <section className="space-y-6">
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl font-semibold">Payment Methods</h2>
-                    <Button variant="outline" size="sm" onClick={handleAddPaymentMethod} disabled={loading}>
+                    <Button variant="outline" size="sm" onClick={handleAddPaymentMethod} disabled={currentLoading}>
                         Add Card
                     </Button>
                 </div>
-                <PaymentMethodsList customerId={customerId} refreshKey={refreshKey} />
+                <PaymentMethodsList customerId={customerId || undefined} refreshKey={refreshKey} />
             </section>
 
             <section className="space-y-6">
                 <h2 className="text-xl font-semibold">Invoices</h2>
-                <InvoicesList customerId={customerId} />
+                <InvoicesList customerId={customerId || undefined} />
             </section>
-
-            {/* 
-            <section className="space-y-6">
-                <h2 className="text-xl font-semibold">Credits</h2>
-                <CreditBalance
-                    balance={credits}
-                    onBuyCredits={handleBuyCredits}
-                    isLoading={loading}
-                />
-            </section>
-*/}
-
-            <PaymentModal
-                isOpen={modalOpen}
-                onClose={() => setModalOpen(false)}
-                clientSecret={clientSecret}
-                onSuccess={handlePaymentSuccess}
-                amount={paymentContext.amount}
-                description={paymentContext.description}
-                customerId={customerId}
-            />
         </div>
     );
 }

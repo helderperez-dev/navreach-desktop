@@ -50,7 +50,7 @@ export function InvoicesList({ customerId }: InvoicesListProps) {
         window.api.browser.download(url);
     };
 
-    const isLoadingData = loading || !customerId;
+    const isLoadingData = loading;
 
     return (
         <Card>

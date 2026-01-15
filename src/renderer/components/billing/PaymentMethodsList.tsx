@@ -71,7 +71,7 @@ export function PaymentMethodsList({ customerId, refreshKey }: PaymentMethodsLis
         }
     };
 
-    const isLoadingData = loading || !customerId;
+    const isLoadingData = loading;
 
     return (
         <Card>

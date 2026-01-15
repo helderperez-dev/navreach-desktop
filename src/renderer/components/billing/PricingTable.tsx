@@ -1,4 +1,4 @@
-import { Check, CreditCard, Calendar } from 'lucide-react';
+import { Check, CreditCard, Calendar, Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { format } from 'date-fns';
@@ -90,7 +90,10 @@ export function PricingTable({ onSubscribe, onManageSubscription, isLoading, sub
             {/* Pro Plan Card */}
             <Card className={`flex flex-col border-primary/20 ${isPro ? 'opacity-80' : ''}`}>
                 <CardHeader>
-                    <CardTitle>Pro Plan</CardTitle>
+                    <div className="flex items-center gap-2">
+                        <Rocket className="h-5 w-5 text-primary" />
+                        <CardTitle>Pro Plan</CardTitle>
+                    </div>
                     <CardDescription className="text-primary font-medium">$49.99/month</CardDescription>
                 </CardHeader>
                 <CardContent className="flex-1">
