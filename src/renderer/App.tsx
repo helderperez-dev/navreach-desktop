@@ -103,7 +103,7 @@ export function App() {
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background">
-        <CircularLoader className="w-8 h-8 border-primary/20 border-t-primary" />
+        <CircularLoader className="w-6 h-6 border-primary/20 border-t-primary" />
       </div>
     );
   }
