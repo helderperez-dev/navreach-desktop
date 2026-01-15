@@ -194,4 +194,15 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
     unregisterWebviewContents(tabId);
     return { success: true };
   });
+
+  ipcMain.handle('browser:download', async (event, url: string) => {
+    event.sender.downloadURL(url);
+    return { success: true };
+  });
+
+  ipcMain.handle('browser:open-external', async (_event, url: string) => {
+    const { shell } = require('electron');
+    await shell.openExternal(url);
+    return { success: true };
+  });
 }

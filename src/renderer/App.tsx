@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/auth.store';
 import { supabase } from '@/lib/supabase';
 import { Toaster } from 'sonner';
 
+import { CircularLoader } from '@/components/ui/CircularLoader';
+
 export function App() {
   const { theme, setTheme } = useAppStore();
   const { loadSettings } = useSettingsStore();
@@ -101,7 +103,7 @@ export function App() {
   if (isLoading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-background">
-        <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+        <CircularLoader className="w-8 h-8 border-primary/20 border-t-primary" />
       </div>
     );
   }

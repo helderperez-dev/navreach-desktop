@@ -1,7 +1,7 @@
 
 import { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Loader2 } from 'lucide-react';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { NODE_DEFINITIONS } from '../nodeDefs';
 import { cn } from '@/lib/utils';
 import { PlaybookNodeType } from '@/types/playbook';
@@ -35,7 +35,7 @@ const BaseNode = ({ data, type, selected }: NodeProps) => {
                     status === 'success' && "bg-emerald-500 text-white",
                     status === 'error' && "bg-destructive text-white"
                 )}>
-                    {status === 'running' && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {status === 'running' && <CircularLoader className="w-4 h-4 border-white border-t-white/60" />}
                     {status === 'success' && '✓'}
                     {status === 'error' && '!'}
                 </div>

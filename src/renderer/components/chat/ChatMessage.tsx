@@ -1,4 +1,5 @@
-import { Copy, Check, ChevronDown, ChevronRight, Square, RotateCcw, Activity, Loader2, AlertCircle } from 'lucide-react';
+import { Copy, Check, ChevronDown, ChevronRight, Square, RotateCcw, Activity, AlertCircle } from 'lucide-react';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { cn } from '@/lib/utils';
@@ -251,7 +252,7 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
         )}>
           {isSuccess ? <Check className="h-3.5 w-3.5" /> :
             isFailed ? <AlertCircle className="h-3.5 w-3.5" /> :
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <CircularLoader className="h-3.5 w-3.5" />
           }
         </div>
 
@@ -590,7 +591,7 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
         )}>
           {isSuccess ? <Check className="h-3 w-3" /> :
             isFailed ? <AlertCircle className="h-3 w-3" /> :
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <CircularLoader className="h-3 w-3" />
           }
         </div>
 

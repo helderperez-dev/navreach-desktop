@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Server, Wrench, Key, ShieldCheck, Monitor, Settings, BrainCircuit } from 'lucide-react';
+import { Server, Wrench, Key, ShieldCheck, Monitor, Settings, BrainCircuit, CreditCard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { GeneralSettings } from './GeneralSettings';
@@ -9,8 +9,9 @@ import { IntegrationsSettings } from './IntegrationsSettings';
 import { ModelProvidersSettings } from './ModelProvidersSettings';
 import { WorkspaceSettings } from './WorkspaceSettings';
 import { KnowledgeSettings } from './KnowledgeSettings';
+import { BillingView } from '../billing/BillingView';
 
-type SettingsTab = 'general' | 'workspace' | 'mcp' | 'api-tools' | 'model-providers' | 'integrations' | 'knowledge';
+type SettingsTab = 'general' | 'workspace' | 'mcp' | 'api-tools' | 'model-providers' | 'integrations' | 'knowledge' | 'billing';
 
 const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'general', label: 'General', icon: <Monitor className="h-4 w-4" /> },
@@ -20,6 +21,7 @@ const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'api-tools', label: 'API Tools', icon: <Wrench className="h-4 w-4" /> },
   { id: 'model-providers', label: 'Model Providers', icon: <Key className="h-4 w-4" /> },
   { id: 'integrations', label: 'Integrations', icon: <ShieldCheck className="h-4 w-4" /> },
+  { id: 'billing', label: 'Billing', icon: <CreditCard className="h-4 w-4" /> },
 ];
 
 export function SettingsLayout() {
@@ -67,6 +69,7 @@ export function SettingsLayout() {
             {activeTab === 'api-tools' && <APIToolsSettings />}
             {activeTab === 'model-providers' && <ModelProvidersSettings />}
             {activeTab === 'integrations' && <IntegrationsSettings />}
+            {activeTab === 'billing' && <BillingView />}
           </div>
         </ScrollArea>
       </div>

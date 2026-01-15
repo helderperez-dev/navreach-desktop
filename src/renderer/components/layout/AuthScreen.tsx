@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogIn, Mail, Github, Chrome, ArrowRight, Loader2, Minus, Square, X } from 'lucide-react';
+import { LogIn, Mail, Github, Chrome, ArrowRight, Minus, Square, X } from 'lucide-react';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { useAuthStore } from '@/stores/auth.store';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
@@ -144,7 +145,7 @@ export function AuthScreen() {
                                 className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-all duration-300"
                             >
                                 {isLoading ? (
-                                    <Loader2 className="animate-spin h-5 w-5" />
+                                    <CircularLoader className="h-5 w-5" />
                                 ) : (
                                     <>
                                         {mode === 'login' ? 'Sign In' : 'Sign Up'}

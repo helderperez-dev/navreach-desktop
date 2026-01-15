@@ -14,6 +14,7 @@ import { playbookService } from '@/services/playbookService';
 import { Playbook } from '@/types/playbook';
 import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 
 interface PlaybookListViewProps {
     onCreate: () => void;
@@ -213,7 +214,7 @@ export function PlaybookListView({ onCreate, onSelect, playbooks, loading, onRef
             <div className="flex-1 overflow-auto p-6">
                 {loading ? (
                     <div className="flex items-center justify-center h-full">
-                        <div className="w-6 h-6 border-2 border-muted-foreground/20 border-t-muted-foreground/60 rounded-full animate-spin" />
+                        <CircularLoader className="w-6 h-6" />
                     </div>
                 ) : filteredPlaybooks.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center space-y-4">

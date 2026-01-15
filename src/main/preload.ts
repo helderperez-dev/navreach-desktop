@@ -37,6 +37,8 @@ const browserAPI = {
   registerWebview: (tabId: string, webContentsId: number) => ipcRenderer.invoke('browser:register-webview', tabId, webContentsId),
   unregisterWebview: (tabId: string) => ipcRenderer.invoke('browser:unregister-webview', tabId),
   allowNavigation: (url: string) => ipcRenderer.invoke('browser:allow-navigation', url),
+  openExternal: (url: string) => ipcRenderer.invoke('browser:open-external', url),
+  download: (url: string) => ipcRenderer.invoke('browser:download', url),
 };
 
 const settingsAPI = {
@@ -125,6 +127,40 @@ const authAPI = {
   },
 };
 
+const stripeAPI = {
+  getConfig: () => ipcRenderer.invoke('stripe:get-config'),
+  createPaymentIntent: (amount: number, currency: string, metadata?: any, customerId?: string) =>
+    ipcRenderer.invoke('stripe:create-payment-intent', { amount, currency, metadata, customerId }),
+  fulfillPaymentIntent: (paymentIntentId: string) =>
+    ipcRenderer.invoke('stripe:fulfill-payment-intent', paymentIntentId),
+  createSubscription: (customerId: string, priceId: string) =>
+    ipcRenderer.invoke('stripe:create-subscription', { customerId, priceId }),
+  createCustomer: (email: string, name?: string) =>
+    ipcRenderer.invoke('stripe:create-customer', { email, name }),
+  createPortalSession: (customerId: string, returnUrl: string) =>
+    ipcRenderer.invoke('stripe:create-portal-session', { customerId, returnUrl }),
+  getInvoices: (customerId: string) =>
+    ipcRenderer.invoke('stripe:get-invoices', customerId),
+  getPaymentMethods: (customerId: string) =>
+    ipcRenderer.invoke('stripe:get-payment-methods', customerId),
+  cancelSubscription: (subscriptionId: string) =>
+    ipcRenderer.invoke('stripe:cancel-subscription', subscriptionId),
+  updateSubscription: (subscriptionId: string, params: any) =>
+    ipcRenderer.invoke('stripe:update-subscription', { subscriptionId, params }),
+  createSetupIntent: (customerId: string) =>
+    ipcRenderer.invoke('stripe:create-setup-intent', customerId),
+  deletePaymentMethod: (paymentMethodId: string) =>
+    ipcRenderer.invoke('stripe:delete-payment-method', paymentMethodId),
+  getSubscriptions: (customerId: string) =>
+    ipcRenderer.invoke('stripe:get-subscriptions', customerId),
+  getCustomer: (customerId: string) =>
+    ipcRenderer.invoke('stripe:get-customer', customerId),
+  setDefaultPaymentMethod: (customerId: string, paymentMethodId: string) =>
+    ipcRenderer.invoke('stripe:set-default-payment-method', { customerId, paymentMethodId }),
+};
+
+console.log('Stripe API initialized with methods:', Object.keys(stripeAPI));
+
 contextBridge.exposeInMainWorld('api', {
   browser: browserAPI,
   settings: settingsAPI,
@@ -133,6 +169,7 @@ contextBridge.exposeInMainWorld('api', {
   ai: aiAPI,
   debug: debugAPI,
   auth: authAPI,
+  stripe: stripeAPI,
 });
 
 export type DebugAPI = typeof debugAPI;
@@ -146,6 +183,8 @@ declare global {
       window: WindowAPI;
       ai: typeof aiAPI;
       debug: DebugAPI;
+      auth: typeof authAPI;
+      stripe: typeof stripeAPI;
     };
   }
 }

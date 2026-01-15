@@ -56,7 +56,7 @@ export function TitleBar() {
           <DropdownMenuTrigger asChild>
             <button className="flex items-center justify-center transition-opacity hover:opacity-80 outline-none">
               <Avatar className="h-8 w-8 border border-border">
-                <AvatarImage src={avatarUrl} alt={user?.email || 'User'} />
+                <AvatarImage src={avatarUrl} alt={user?.email || 'User'} className="object-cover" />
                 <AvatarFallback className="bg-muted text-[10px] font-bold text-muted-foreground">
                   {userInitials}
                 </AvatarFallback>

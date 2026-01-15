@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Check, X, ChevronDown, ChevronRight, Sparkles, RefreshCw, Loader2, Wifi, Star } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, X, ChevronDown, ChevronRight, Sparkles, RefreshCw, Wifi, Star } from 'lucide-react';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -451,7 +452,7 @@ export function ModelProvidersSettings() {
                       className="flex items-center gap-1 text-xs text-foreground/70 hover:text-foreground hover:underline disabled:opacity-50"
                     >
                       {isFetchingModels ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <CircularLoader className="h-3 w-3" />
                       ) : (
                         <RefreshCw className="h-3 w-3" />
                       )}
@@ -598,7 +599,7 @@ export function ModelProvidersSettings() {
               onClick={handleTestConnection}
               disabled={isTesting || !formData.apiKey}
             >
-              {isTesting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Wifi className="h-4 w-4 mr-2" />}
+              {isTesting ? <CircularLoader className="h-4 w-4 mr-2" /> : <Wifi className="h-4 w-4 mr-2" />}
               Test Connection
             </Button>
             <Button size="sm" onClick={handleSave} disabled={enabledCount === 0 && formData.type !== 'custom'}>

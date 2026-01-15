@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Conversation } from '@shared/types';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, Square, Plus, Trash2, History, X, MessageSquare, PanelLeftClose, Globe, MousePointer, Type, ScrollText, FileText, ArrowLeft, ArrowRight, RefreshCw, Clock, Search, Eye, Check, Heart, UserPlus, Camera, Loader2 } from 'lucide-react';
+import { ArrowUp, Square, Plus, Trash2, History, X, MessageSquare, PanelLeftClose, Globe, MousePointer, Type, ScrollText, FileText, ArrowLeft, ArrowRight, RefreshCw, Clock, Search, Eye, Check, Heart, UserPlus, Camera } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChatStore } from '@/stores/chat.store';
@@ -883,7 +883,7 @@ export function ChatPanel() {
                             )}>
                               {isSuccess ? <Check className="h-3.5 w-3.5" /> :
                                 isFailed ? <X className="h-3.5 w-3.5" /> :
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  <CircularLoader className="h-3.5 w-3.5" />
                               }
                             </div>
 

@@ -6,6 +6,7 @@ import { setupBrowserHandlers } from './ipc/browser';
 import { setupSettingsHandlers } from './ipc/settings';
 import { setupMCPHandlers } from './ipc/mcp';
 import { setupAIHandlers } from './services/ai';
+import { setupStripeHandlers } from './ipc/stripe';
 import { setupMenu } from './menu';
 import { config } from 'dotenv';
 
@@ -129,6 +130,7 @@ if (!gotTheLock) {
     setupSettingsHandlers(ipcMain);
     setupMCPHandlers(ipcMain);
     setupAIHandlers(ipcMain);
+    setupStripeHandlers(ipcMain);
 
     ipcMain.handle('window:minimize', () => {
       mainWindow?.minimize();

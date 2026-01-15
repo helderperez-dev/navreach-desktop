@@ -25,6 +25,8 @@ declare global {
         startInspector: (tabId: string) => Promise<{ success: boolean; error?: string }>;
         stopInspector: (tabId: string) => Promise<{ success: boolean; error?: string }>;
         onInspectorAction: (callback: (data: any) => void) => () => void;
+        openExternal: (url: string) => Promise<{ success: boolean }>;
+        download: (url: string) => Promise<{ success: boolean }>;
       };
       settings: {
         get: <T>(key: string) => Promise<T>;
@@ -115,6 +117,23 @@ declare global {
       };
       auth: {
         onAuthCallback: (callback: (hash: string) => void) => () => void;
+      };
+      stripe: {
+        getConfig: () => Promise<{ publishableKey: string; proPriceId: string; credits100PriceId: string; credits500PriceId: string; credits1000PriceId: string }>;
+        createPaymentIntent: (amount: number, currency: string, metadata?: any, customerId?: string) => Promise<{ clientSecret: string; id: string }>;
+        fulfillPaymentIntent: (paymentIntentId: string) => Promise<{ success: boolean; balance?: number; message?: string }>;
+        createSubscription: (customerId: string, priceId: string) => Promise<{ clientSecret: string }>;
+        createCustomer: (email: string, name?: string) => Promise<{ id: string }>;
+        createPortalSession: (customerId: string, returnUrl: string) => Promise<{ url: string }>;
+        getInvoices: (customerId: string) => Promise<any[]>;
+        getPaymentMethods: (customerId: string) => Promise<any[]>;
+        cancelSubscription: (subscriptionId: string) => Promise<any>;
+        updateSubscription: (subscriptionId: string, params: any) => Promise<any>;
+        createSetupIntent: (customerId: string) => Promise<{ clientSecret: string }>;
+        deletePaymentMethod: (paymentMethodId: string) => Promise<{ success: boolean }>;
+        getSubscriptions: (customerId: string) => Promise<any[]>;
+        getCustomer: (customerId: string) => Promise<any>;
+        setDefaultPaymentMethod: (customerId: string, paymentMethodId: string) => Promise<{ success: boolean }>;
       };
     };
   }

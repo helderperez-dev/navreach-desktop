@@ -164,6 +164,7 @@ export function MainLayout() {
                       <TargetListView />
                     </motion.div>
                   )}
+
                   {activeView === 'playbooks' && (
                     <motion.div
                       key="playbooks"

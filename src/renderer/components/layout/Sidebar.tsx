@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow } from 'lucide-react';
+import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
-  view: 'browser' | 'settings' | 'targets' | 'playbooks';
+  view: 'browser' | 'settings' | 'targets' | 'playbooks' | 'billing';
 }
 const navItems: NavItem[] = [
   { id: 'browser', label: 'Browser', icon: <Compass className="h-5 w-5" />, view: 'browser' },
