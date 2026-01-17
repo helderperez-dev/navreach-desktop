@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { ModelProvider, MCPServer, APITool, AppSettings } from '../../shared/types';
+import { useAuthStore } from './auth.store';
 
 interface SettingsState {
   settings: Partial<AppSettings>;
@@ -18,6 +19,7 @@ interface SettingsState {
   addAPITool: (tool: APITool) => Promise<void>;
   updateAPITool: (tool: APITool) => Promise<void>;
   deleteAPITool: (id: string) => Promise<void>;
+  reset: () => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -27,10 +29,21 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   apiTools: [],
   isLoading: false,
 
+  reset: () => {
+    set({
+      settings: {},
+      modelProviders: [],
+      mcpServers: [],
+      apiTools: [],
+      isLoading: false
+    });
+  },
+
   loadSettings: async () => {
     set({ isLoading: true });
     try {
-      const settings = await window.api.settings.getAll();
+      const accessToken = useAuthStore.getState().session?.access_token;
+      const settings = await window.api.settings.getAll(accessToken);
       set({
         settings,
         modelProviders: settings.modelProviders || [],
@@ -43,6 +56,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   updateSetting: async (key, value) => {
+    // Basic settings (theme, etc) still go to local store for now
     await window.api.settings.set(key, value);
     set((state) => ({
       settings: { ...state.settings, [key]: value }
@@ -50,56 +64,107 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   addModelProvider: async (provider) => {
-    const providers = [...get().modelProviders, provider];
-    await window.api.settings.set('modelProviders', providers);
-    set({ modelProviders: providers });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, provider: savedProvider, error } = await window.api.settings.addModelProvider(provider, accessToken);
+    if (success) {
+      set((state) => ({ modelProviders: [...state.modelProviders, savedProvider || provider] }));
+    } else {
+      console.error('Failed to add model provider:', error);
+    }
   },
 
   updateModelProvider: async (provider) => {
-    const updated = get().modelProviders.map((p) => (p.id === provider.id ? provider : p));
-    await window.api.settings.set('modelProviders', updated);
-    set({ modelProviders: updated });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, error } = await window.api.settings.updateModelProvider(provider, accessToken);
+    if (success) {
+      set((state) => ({
+        modelProviders: state.modelProviders.map((p) => (p.id === provider.id ? provider : p))
+      }));
+    } else {
+      console.error('Failed to update model provider:', error);
+    }
   },
 
   deleteModelProvider: async (id) => {
-    const filtered = get().modelProviders.filter((p) => p.id !== id);
-    await window.api.settings.set('modelProviders', filtered);
-    set({ modelProviders: filtered });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, error } = await window.api.settings.deleteModelProvider(id, accessToken);
+    if (success) {
+      set((state) => ({
+        modelProviders: state.modelProviders.filter((p) => p.id !== id)
+      }));
+    } else {
+      console.error('Failed to delete model provider:', error);
+    }
   },
 
   addMCPServer: async (server) => {
-    const servers = [...get().mcpServers, server];
-    await window.api.settings.set('mcpServers', servers);
-    set({ mcpServers: servers });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, server: savedServer, error } = await window.api.settings.addMCPServer(server, accessToken);
+    if (success) {
+      set((state) => ({ mcpServers: [...state.mcpServers, savedServer || server] }));
+    } else {
+      console.error('Failed to add MCP server:', error);
+      throw new Error(error || 'Failed to add MCP server');
+    }
   },
 
   updateMCPServer: async (server) => {
-    const updated = get().mcpServers.map((s) => (s.id === server.id ? server : s));
-    await window.api.settings.set('mcpServers', updated);
-    set({ mcpServers: updated });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, server: updatedServer, error } = await window.api.settings.updateMCPServer(server, accessToken);
+    if (success) {
+      set((state) => ({
+        mcpServers: state.mcpServers.map((s) => (s.id === server.id ? (updatedServer || server) : s))
+      }));
+    } else {
+      console.error('Failed to update MCP server:', error);
+      throw new Error(error || 'Failed to update MCP server');
+    }
   },
 
   deleteMCPServer: async (id) => {
-    const filtered = get().mcpServers.filter((s) => s.id !== id);
-    await window.api.settings.set('mcpServers', filtered);
-    set({ mcpServers: filtered });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, error } = await window.api.settings.deleteMCPServer(id, accessToken);
+    if (success) {
+      set((state) => ({
+        mcpServers: state.mcpServers.filter((s) => s.id !== id)
+      }));
+    } else {
+      console.error('Failed to delete MCP server:', error);
+      throw new Error(error || 'Failed to delete MCP server');
+    }
   },
 
   addAPITool: async (tool) => {
-    const tools = [...get().apiTools, tool];
-    await window.api.settings.set('apiTools', tools);
-    set({ apiTools: tools });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, tool: savedTool, error } = await window.api.settings.addAPITool(tool, accessToken);
+    if (success) {
+      set((state) => ({ apiTools: [...state.apiTools, savedTool || tool] }));
+    } else {
+      console.error('Failed to add API tool:', error);
+    }
   },
 
   updateAPITool: async (tool) => {
-    const updated = get().apiTools.map((t) => (t.id === tool.id ? tool : t));
-    await window.api.settings.set('apiTools', updated);
-    set({ apiTools: updated });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, error } = await window.api.settings.updateAPITool(tool, accessToken);
+    if (success) {
+      set((state) => ({
+        apiTools: state.apiTools.map((t) => (t.id === tool.id ? tool : t))
+      }));
+    } else {
+      console.error('Failed to update API tool:', error);
+    }
   },
 
   deleteAPITool: async (id) => {
-    const filtered = get().apiTools.filter((t) => t.id !== id);
-    await window.api.settings.set('apiTools', filtered);
-    set({ apiTools: filtered });
+    const accessToken = useAuthStore.getState().session?.access_token;
+    const { success, error } = await window.api.settings.deleteAPITool(id, accessToken);
+    if (success) {
+      set((state) => ({
+        apiTools: state.apiTools.filter((t) => t.id !== id)
+      }));
+    } else {
+      console.error('Failed to delete API tool:', error);
+    }
   },
 }));

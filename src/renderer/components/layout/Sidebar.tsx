@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion';
-import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard, Zap, Rocket } from 'lucide-react';
+import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard, Zap } from 'lucide-react';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import { useSubscriptionStore } from '@/stores/subscription.store';
+import { useBillingStore } from '@/stores/billing.store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 
@@ -21,7 +23,10 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar, activeView, setActiveView, chatPanelCollapsed, toggleChatPanel } = useAppStore();
-  const { isPro, dailyUsage, openUpgradeModal, limits } = useSubscriptionStore();
+  const { dailyUsage, openUpgradeModal, limits } = useSubscriptionStore();
+  const subscription = useBillingStore(state => state.subscription);
+  const isLoading = useBillingStore(state => state.isLoading);
+  const isPro = subscription?.status === 'active' || subscription?.status === 'trialing';
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -100,25 +105,56 @@ export function Sidebar() {
           )}
         </nav>
 
-        {!isPro() && !sidebarCollapsed && (
+        {isLoading && !sidebarCollapsed && (
+          <div className="flex justify-center mb-4 py-4">
+            <CircularLoader className="h-4 w-4 text-primary/60" />
+          </div>
+        )}
+
+        {!isLoading && !isPro && !sidebarCollapsed && (
           <div className="mx-3 mb-4 p-3 rounded-xl bg-gradient-to-br from-primary/10 to-blue-500/10 border border-primary/20">
             <div className="flex items-center gap-2 mb-2">
-              <Rocket className="h-3.5 w-3.5 text-primary" />
+              <Zap className="h-3.5 w-3.5 text-primary" />
               <span className="text-[11px] font-bold uppercase tracking-wider text-primary">Free Plan</span>
             </div>
-            <div className="space-y-1.5 mb-3">
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>AI actions today</span>
-                <span>{Math.min(dailyUsage.aiActions, limits.ai_actions_limit)}/{limits.ai_actions_limit}</span>
-              </div>
-              <div className="h-1 w-full bg-secondary rounded-full overflow-hidden">
-                <motion.div
-                  className="h-full bg-primary"
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(100, (dailyUsage.aiActions / limits.ai_actions_limit) * 100)}%` }}
-                />
-              </div>
-            </div>
+
+            {(() => {
+              const remaining = Math.max(0, limits.ai_actions_limit - dailyUsage.aiActions);
+              const percentRemaining = (remaining / limits.ai_actions_limit) * 100;
+              const isLow = remaining <= 5;
+              const isWarning = remaining <= 20;
+
+              return (
+                <div className="space-y-1.5 mb-3">
+                  <div className="flex justify-between text-[10px] font-medium transition-colors duration-300">
+                    <span className={cn(
+                      isLow ? "text-red-500 font-bold animate-pulse" :
+                        isWarning ? "text-orange-500" :
+                          "text-muted-foreground"
+                    )}>
+                      {remaining === 0 ? "Daily limit reached" :
+                        isLow ? `Only ${remaining} left!` :
+                          `${remaining} actions left`}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full bg-secondary/50 rounded-full overflow-hidden">
+                    <motion.div
+                      className={cn(
+                        "h-full transition-colors duration-500",
+                        remaining === 0 ? "bg-red-600" :
+                          isLow ? "bg-red-500" :
+                            isWarning ? "bg-orange-500" :
+                              "bg-primary"
+                      )}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${Math.min(100, (dailyUsage.aiActions / limits.ai_actions_limit) * 100)}%` }}
+                      transition={{ type: "spring", stiffness: 50, damping: 20 }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
             <Button
               variant="default"
               size="sm"

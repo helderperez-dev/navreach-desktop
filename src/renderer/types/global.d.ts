@@ -31,17 +31,17 @@ declare global {
       settings: {
         get: <T>(key: string) => Promise<T>;
         set: (key: string, value: unknown) => Promise<{ success: boolean }>;
-        getAll: () => Promise<import('@shared/types').AppSettings>;
+        getAll: (accessToken?: string) => Promise<import('@shared/types').AppSettings>;
         reset: () => Promise<{ success: boolean }>;
-        addModelProvider: (provider: import('@shared/types').ModelProvider) => Promise<{ success: boolean; provider: import('@shared/types').ModelProvider }>;
-        updateModelProvider: (provider: import('@shared/types').ModelProvider) => Promise<{ success: boolean; provider?: import('@shared/types').ModelProvider }>;
-        deleteModelProvider: (id: string) => Promise<{ success: boolean }>;
-        addMCPServer: (server: import('@shared/types').MCPServer) => Promise<{ success: boolean; server: import('@shared/types').MCPServer }>;
-        updateMCPServer: (server: import('@shared/types').MCPServer) => Promise<{ success: boolean; server?: import('@shared/types').MCPServer }>;
-        deleteMCPServer: (id: string) => Promise<{ success: boolean }>;
-        addAPITool: (tool: import('@shared/types').APITool) => Promise<{ success: boolean; tool: import('@shared/types').APITool }>;
-        updateAPITool: (tool: import('@shared/types').APITool) => Promise<{ success: boolean; tool?: import('@shared/types').APITool }>;
-        deleteAPITool: (id: string) => Promise<{ success: boolean }>;
+        addModelProvider: (provider: import('@shared/types').ModelProvider, accessToken?: string) => Promise<{ success: boolean; provider?: import('@shared/types').ModelProvider; error?: string }>;
+        updateModelProvider: (provider: import('@shared/types').ModelProvider, accessToken?: string) => Promise<{ success: boolean; provider?: import('@shared/types').ModelProvider; error?: string }>;
+        deleteModelProvider: (id: string, accessToken?: string) => Promise<{ success: boolean; error?: string }>;
+        addMCPServer: (server: import('@shared/types').MCPServer, accessToken?: string) => Promise<{ success: boolean; server?: import('@shared/types').MCPServer; error?: string }>;
+        updateMCPServer: (server: import('@shared/types').MCPServer, accessToken?: string) => Promise<{ success: boolean; server?: import('@shared/types').MCPServer; error?: string }>;
+        deleteMCPServer: (id: string, accessToken?: string) => Promise<{ success: boolean; error?: string }>;
+        addAPITool: (tool: import('@shared/types').APITool, accessToken?: string) => Promise<{ success: boolean; tool?: import('@shared/types').APITool; error?: string }>;
+        updateAPITool: (tool: import('@shared/types').APITool, accessToken?: string) => Promise<{ success: boolean; tool?: import('@shared/types').APITool; error?: string }>;
+        deleteAPITool: (id: string, accessToken?: string) => Promise<{ success: boolean; error?: string }>;
 
         getPlatformKnowledge: () => Promise<import('@shared/types').PlatformKnowledge[]>;
         addPlatformKnowledge: (record: Partial<import('@shared/types').PlatformKnowledge>) => Promise<{ success: boolean; data?: import('@shared/types').PlatformKnowledge; error?: string }>;
@@ -145,6 +145,8 @@ declare global {
           target_list_limit: number;
           target_limit: number;
         }>;
+        getUsage: (accessToken: string, type: string) => Promise<any>;
+        trackUsage: (accessToken: string, type: string, incrementBy?: number) => Promise<any>;
       };
     };
   }

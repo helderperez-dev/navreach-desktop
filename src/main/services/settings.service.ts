@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { supabase, getScopedSupabase } from '../lib/supabase';
 
 export interface SystemSettings {
     [key: string]: any;
@@ -71,7 +71,8 @@ export class SystemSettingsService {
 
         if (accessToken) {
             try {
-                const { data: userSettings } = await supabase
+                const scopedSupabase = await getScopedSupabase(accessToken);
+                const { data: userSettings } = await scopedSupabase
                     .from('user_settings')
                     .select('ai_actions_limit, workspace_limit, target_list_limit, target_limit')
                     .maybeSingle();

@@ -23,6 +23,8 @@ import { Target } from '@/types/targets';
 import { Code2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
+import { CircularLoader } from '@/components/ui/CircularLoader';
+
 export function TargetListView() {
     const { targets, fetchLists, selectedListId, fetchTargets, isLoading } = useTargetsStore();
     const { currentWorkspace } = useWorkspaceStore();
@@ -305,7 +307,11 @@ export function TargetListView() {
 
                 <ScrollArea className="flex-1">
                     <div className="p-6 min-w-0 overflow-hidden">
-                        {!selectedListId ? (
+                        {isLoading ? (
+                            <div className="flex h-[400px] items-center justify-center">
+                                <CircularLoader className="h-6 w-6" />
+                            </div>
+                        ) : !selectedListId ? (
                             <div className="h-[400px] flex flex-col items-center justify-center text-center">
                                 <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
                                     <Plus className="h-8 w-8 text-muted-foreground" />

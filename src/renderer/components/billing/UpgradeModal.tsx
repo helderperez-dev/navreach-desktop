@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Check, Zap, X, Star, Shield, Rocket, Sparkles, Tag } from 'lucide-react';
+import { Check, Zap, X, Star, Shield, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useBillingStore } from '@/stores/billing.store';
@@ -46,7 +46,7 @@ export function UpgradeModal({
     const features = [
         { icon: <Zap className="h-4 w-4 text-blue-500" />, text: "Unlimited AI Actions", desc: "No daily caps on automation" },
         { icon: <Shield className="h-4 w-4 text-sky-500" />, text: "Unlimited Workspaces", desc: "Scale for multiple clients" },
-        { icon: <Sparkles className="h-4 w-4 text-indigo-400" />, text: "Priority Execution", desc: "Faster agent processing" },
+        { icon: <Zap className="h-4 w-4 text-indigo-400" />, text: "Priority Execution", desc: "Faster agent processing" },
         { icon: <Star className="h-4 w-4 text-blue-400" />, text: "Advanced Playbooks", desc: "Access to premium templates" },
     ];
 
@@ -91,7 +91,7 @@ export function UpgradeModal({
                                         transition={{ delay: 0.2, type: "spring" }}
                                         className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-500/10 mb-6 shadow-inner"
                                     >
-                                        <Rocket className="h-6 w-6 text-blue-500 animate-pulse" />
+                                        <Zap className="h-6 w-6 text-blue-500 fill-current" />
                                     </motion.div>
                                     <motion.h2
                                         initial={{ opacity: 0, y: 10 }}
@@ -176,7 +176,7 @@ export function UpgradeModal({
                                             className="w-full h-12 text-base font-semibold bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-500/20 transition-all active:scale-[0.98]"
                                         >
                                             {isLoading ? "Starting Checkout..." : "Upgrade Now - $49.99/mo"}
-                                            {!isLoading && <Rocket className="ml-2 h-4 w-4 fill-current" />}
+                                            {!isLoading && <Zap className="ml-2 h-4 w-4 fill-current" />}
                                         </Button>
                                         <p className="text-[10px] text-center text-muted-foreground">
                                             Cancel anytime. Premium support included.

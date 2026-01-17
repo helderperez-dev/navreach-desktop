@@ -1,11 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
+import type { AppSettings } from '../shared/types';
 
 console.log('Preload script starting...');
-
-export type BrowserAPI = typeof browserAPI;
-export type SettingsAPI = typeof settingsAPI;
-export type MCPAPI = typeof mcpAPI;
-export type WindowAPI = typeof windowAPI;
 
 const browserAPI = {
   navigate: (tabId: string, url: string) => ipcRenderer.invoke('browser:navigate', tabId, url),
@@ -44,26 +40,41 @@ const browserAPI = {
 const settingsAPI = {
   get: <T>(key: string) => ipcRenderer.invoke('settings:get', key) as Promise<T>,
   set: <T>(key: string, value: T) => ipcRenderer.invoke('settings:set', key, value),
-  getAll: () => ipcRenderer.invoke('settings:get-all'),
+  getAll: (accessToken?: string) => ipcRenderer.invoke('settings:get-all', accessToken) as Promise<AppSettings>,
   reset: () => ipcRenderer.invoke('settings:reset'),
 
   // Platform Knowledge
-  getPlatformKnowledge: () => ipcRenderer.invoke('settings:get-platform-knowledge'),
-  addPlatformKnowledge: (record: any) => ipcRenderer.invoke('settings:add-platform-knowledge', record),
-  updatePlatformKnowledge: (record: any) => ipcRenderer.invoke('settings:update-platform-knowledge', record),
-  deletePlatformKnowledge: (id: string) => ipcRenderer.invoke('settings:delete-platform-knowledge', id),
+  getPlatformKnowledge: (accessToken?: string) => ipcRenderer.invoke('settings:get-platform-knowledge', accessToken) as Promise<any[]>,
+  addPlatformKnowledge: (record: any, accessToken?: string) => ipcRenderer.invoke('settings:add-platform-knowledge', record, accessToken) as Promise<{ success: boolean; data?: any; error?: string }>,
+  updatePlatformKnowledge: (record: any, accessToken?: string) => ipcRenderer.invoke('settings:update-platform-knowledge', record, accessToken) as Promise<{ success: boolean; data?: any; error?: string }>,
+  deletePlatformKnowledge: (id: string, accessToken?: string) => ipcRenderer.invoke('settings:delete-platform-knowledge', id, accessToken) as Promise<{ success: boolean; error?: string }>,
 
   // Agent Profile
-  getAgentProfile: () => ipcRenderer.invoke('settings:get-agent-profile'),
-  updateAgentProfile: (profile: any) => ipcRenderer.invoke('settings:update-agent-profile', profile),
+  getAgentProfile: (accessToken?: string) => ipcRenderer.invoke('settings:get-agent-profile', accessToken) as Promise<any>,
+  updateAgentProfile: (profile: any, accessToken?: string) => ipcRenderer.invoke('settings:update-agent-profile', profile, accessToken) as Promise<{ success: boolean; error?: string }>,
 
   // Dynamic Knowledge Bases
-  getKnowledgeBases: () => ipcRenderer.invoke('settings:get-knowledge-bases'),
-  createKnowledgeBase: (name: string, description?: string) => ipcRenderer.invoke('settings:create-knowledge-base', name, description),
-  deleteKnowledgeBase: (id: string) => ipcRenderer.invoke('settings:delete-knowledge-base', id),
-  getKBContent: (kbId: string) => ipcRenderer.invoke('settings:get-kb-content', kbId),
-  addKBContent: (kbId: string, content: string, title?: string) => ipcRenderer.invoke('settings:add-kb-content', kbId, content, title),
-  deleteKBContent: (id: string) => ipcRenderer.invoke('settings:delete-kb-content', id),
+  getKnowledgeBases: (accessToken?: string) => ipcRenderer.invoke('settings:get-knowledge-bases', accessToken) as Promise<any[]>,
+  createKnowledgeBase: (name: string, description?: string, accessToken?: string) => ipcRenderer.invoke('settings:create-knowledge-base', name, description, accessToken) as Promise<{ success: boolean; data?: any; error?: string }>,
+  deleteKnowledgeBase: (id: string, accessToken?: string) => ipcRenderer.invoke('settings:delete-knowledge-base', id, accessToken) as Promise<{ success: boolean; error?: string }>,
+  getKBContent: (kbId: string, accessToken?: string) => ipcRenderer.invoke('settings:get-kb-content', kbId, accessToken) as Promise<any[]>,
+  addKBContent: (kbId: string, content: string, title?: string, accessToken?: string) => ipcRenderer.invoke('settings:add-kb-content', kbId, content, title, accessToken) as Promise<{ success: boolean; data?: any; error?: string }>,
+  deleteKBContent: (id: string, accessToken?: string) => ipcRenderer.invoke('settings:delete-kb-content', id, accessToken) as Promise<{ success: boolean; error?: string }>,
+
+  // Model Providers
+  addModelProvider: (provider: any, accessToken?: string) => ipcRenderer.invoke('settings:add-model-provider', provider, accessToken) as Promise<{ success: boolean; provider?: any; error?: string }>,
+  updateModelProvider: (provider: any, accessToken?: string) => ipcRenderer.invoke('settings:update-model-provider', provider, accessToken) as Promise<{ success: boolean; provider?: any; error?: string }>,
+  deleteModelProvider: (id: string, accessToken?: string) => ipcRenderer.invoke('settings:delete-model-provider', id, accessToken) as Promise<{ success: boolean; error?: string }>,
+
+  // MCP Servers
+  addMCPServer: (server: any, accessToken?: string) => ipcRenderer.invoke('settings:add-mcp-server', server, accessToken) as Promise<{ success: boolean; server?: any; error?: string }>,
+  updateMCPServer: (server: any, accessToken?: string) => ipcRenderer.invoke('settings:update-mcp-server', server, accessToken) as Promise<{ success: boolean; server?: any; error?: string }>,
+  deleteMCPServer: (id: string, accessToken?: string) => ipcRenderer.invoke('settings:delete-mcp-server', id, accessToken) as Promise<{ success: boolean; error?: string }>,
+
+  // API Tools
+  addAPITool: (tool: any, accessToken?: string) => ipcRenderer.invoke('settings:add-api-tool', tool, accessToken) as Promise<{ success: boolean; tool?: any; error?: string }>,
+  updateAPITool: (tool: any, accessToken?: string) => ipcRenderer.invoke('settings:update-api-tool', tool, accessToken) as Promise<{ success: boolean; tool?: any; error?: string }>,
+  deleteAPITool: (id: string, accessToken?: string) => ipcRenderer.invoke('settings:delete-api-tool', id, accessToken) as Promise<{ success: boolean; error?: string }>,
 };
 
 const mcpAPI = {
@@ -159,9 +170,18 @@ const stripeAPI = {
     ipcRenderer.invoke('stripe:set-default-payment-method', { customerId, paymentMethodId }),
   getTierLimits: (accessToken?: string) =>
     ipcRenderer.invoke('stripe:get-tier-limits', accessToken),
+  getUsage: (accessToken: string, type: string) =>
+    ipcRenderer.invoke('stripe:get-usage', accessToken, type),
+  trackUsage: (accessToken: string, type: string, incrementBy?: number) =>
+    ipcRenderer.invoke('stripe:track-usage', { accessToken, type, incrementBy }),
 };
 
 console.log('Stripe API initialized with methods:', Object.keys(stripeAPI));
+
+export type BrowserAPI = typeof browserAPI;
+export type SettingsAPI = typeof settingsAPI;
+export type MCPAPI = typeof mcpAPI;
+export type WindowAPI = typeof windowAPI;
 
 contextBridge.exposeInMainWorld('api', {
   browser: browserAPI,

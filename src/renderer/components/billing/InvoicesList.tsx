@@ -38,7 +38,11 @@ export function InvoicesList({ customerId }: InvoicesListProps) {
         setLoading(true);
         try {
             const data = await window.api.stripe.getInvoices(customerId!);
-            setInvoices(data);
+            // Filter out void and draft invoices to keep the list clean
+            const validInvoices = data.filter((inv: any) =>
+                inv.status !== 'void' && inv.status !== 'draft'
+            );
+            setInvoices(validInvoices);
         } catch (error) {
             console.error("Failed to load invoices", error);
         } finally {
@@ -84,7 +88,7 @@ export function InvoicesList({ customerId }: InvoicesListProps) {
                                         {format(new Date(invoice.created * 1000), "MMM d, yyyy")}
                                     </TableCell>
                                     <TableCell>
-                                        ${(invoice.amount_paid / 100).toFixed(2)}
+                                        ${(invoice.total / 100).toFixed(2)}
                                     </TableCell>
                                     <TableCell>
                                         <Badge variant={invoice.status === 'paid' ? 'default' : 'secondary'}>

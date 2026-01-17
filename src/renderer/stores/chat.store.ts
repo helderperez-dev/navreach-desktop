@@ -32,6 +32,7 @@ interface ChatState {
   setCurrentSessionTime: (sec: number) => void;
   setPendingPrompt: (prompt: string | { content: string, isIsolated?: boolean, playbookId?: string } | null) => void;
   assignWorkspaces: (workspaceId: string) => void;
+  reset: () => void;
 }
 
 export const useChatStore = create<ChatState>()(
@@ -237,6 +238,18 @@ export const useChatStore = create<ChatState>()(
           )
         }));
       },
+      reset: () => {
+        set({
+          conversations: [],
+          activeConversationId: null,
+          currentSessionTime: 0,
+          pendingPrompt: null,
+          isStreaming: false,
+          agentStartTime: null,
+          // We intentionally DO NOT reset maxIterations, infiniteMode, selectedModel
+          // as these are more like persisted "client preferences" than "user data"
+        });
+      }
     }),
     {
       name: 'reavion-chat-store',

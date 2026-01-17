@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace.store';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,7 +11,7 @@ import { useSettingsStore } from '@/stores/settings.store';
 import { Wrench, Server } from 'lucide-react';
 
 export function WorkspaceSettings() {
-    const { currentWorkspace, updateWorkspace } = useWorkspaceStore();
+    const { currentWorkspace, updateWorkspace, isLoading } = useWorkspaceStore();
     const { apiTools, mcpServers, loadSettings } = useSettingsStore();
     const [name, setName] = useState('');
     const [isSaving, setIsSaving] = useState(false);
@@ -24,6 +25,14 @@ export function WorkspaceSettings() {
             setName(currentWorkspace.name);
         }
     }, [currentWorkspace]);
+
+    if (isLoading) {
+        return (
+            <div className="flex h-full items-center justify-center">
+                <CircularLoader className="h-6 w-6" />
+            </div>
+        );
+    }
 
     if (!currentWorkspace) {
         return (

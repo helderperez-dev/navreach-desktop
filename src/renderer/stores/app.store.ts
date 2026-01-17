@@ -21,6 +21,7 @@ interface AppState {
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setActiveView: (view: 'browser' | 'settings' | 'targets' | 'playbooks') => void | Promise<void>;
   setHasStarted: (started: boolean) => void;
+  reset: () => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -81,6 +82,12 @@ export const useAppStore = create<AppState>()(
         // Force chat panel to open if we are starting a session
         chatPanelCollapsed: hasStarted ? false : state.chatPanelCollapsed
       })),
+      reset: () => set({
+        hasStarted: false,
+        activeView: 'browser',
+        showPlaybookBrowser: false,
+        playbookBrowserMaximized: false
+      })
     }),
     {
       name: 'reavion-app-store',

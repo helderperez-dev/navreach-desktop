@@ -13,9 +13,11 @@ import { createSiteTools } from './site-tools';
 import { createIntegrationTools } from './integration-tools';
 import { createUtilityTools } from './utility-tools';
 import { DynamicStructuredTool } from '@langchain/core/tools';
-import { supabase } from '../lib/supabase';
+import { supabase, getScopedSupabase } from '../lib/supabase';
 import Store from 'electron-store';
 import type { AppSettings } from '../../shared/types';
+import { systemSettingsService } from './settings.service';
+import { usageService } from './usage.service';
 
 export const store = new Store<AppSettings>({
     name: 'settings',
@@ -418,43 +420,6 @@ If you are stuck, stop and THINK. Then try a *different* approach.
 **Go.**
 `;
 
-async function createScopedSupabase(accessToken?: string, refreshToken?: string) {
-    if (accessToken) {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_URL : '');
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_ANON_KEY : '');
-        const { createClient } = require('@supabase/supabase-js');
-
-        const client = createClient(supabaseUrl, supabaseAnonKey, {
-            auth: {
-                persistSession: false,
-                autoRefreshToken: true,
-                detectSessionInUrl: false
-            }
-        });
-
-        // Set the session properly so it can refresh during long agent runs
-        try {
-            await client.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken || ''
-            });
-        } catch (e) {
-            console.error('[AI Service] Failed to set Supabase session:', e);
-            // Fallback to legacy header method if setSession fails
-            return createClient(supabaseUrl, supabaseAnonKey, {
-                global: {
-                    headers: {
-                        Authorization: `Bearer ${accessToken}`
-                    }
-                }
-            });
-        }
-
-        return client;
-    }
-    return supabase;
-}
-
 export async function resolveAIConfig(
     supabaseClient: any,
     provider: ModelProvider,
@@ -546,7 +511,17 @@ export async function resolveAIConfig(
             // unless we fetch the full list.
 
             // To fix properly: We need to search all providers for this model ID.
-            const providers = store.get('modelProviders') || [];
+            const { data: dbProviders } = await supabaseClient.from('model_providers').select('*');
+            const providers: ModelProvider[] = (dbProviders || []).map((p: any) => ({
+                id: p.id,
+                name: p.name,
+                type: p.type,
+                apiKey: p.api_key,
+                baseUrl: p.base_url,
+                models: p.models || [],
+                enabled: p.enabled
+            }));
+
             const managedSystemProvider: ModelProvider[] = sysProviderType && sysModelId ? [{
                 id: 'system-default',
                 name: 'Reavion',
@@ -665,7 +640,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
                 accessToken
             } = request;
 
-            const scopedSupabase = await createScopedSupabase(accessToken, request.refreshToken);
+            const scopedSupabase = await getScopedSupabase(accessToken, request.refreshToken);
             // Retrieve local default model ID from store
             const localDefaultModelId = store.get('defaultModelId');
 
@@ -789,7 +764,7 @@ CRITICAL:
             }
 
             // Create a scoped Supabase client for this request using the tokens
-            const scopedSupabase = await createScopedSupabase(accessToken, refreshToken);
+            const scopedSupabase = await getScopedSupabase(accessToken, refreshToken);
             if (accessToken) {
                 console.log('[AI Service] Created scoped Supabase client with authenticated session');
             } else {
@@ -1149,6 +1124,26 @@ You are in FAST mode.
                 // Tracking variable for vision capability fallback
                 let disableVision = false;
 
+                // --- USAGE TRACKING INITIALIZATION ---
+                let isPro = true; // Forced pro by default
+                let aiActionsLimit = 10000; // High limit for default pro
+                let currentUsage = 0;
+
+                if (accessToken) {
+                    try {
+                        const [subRes, limits, usage] = await Promise.all([
+                            scopedSupabase.from('subscriptions').select('status').in('status', ['active', 'trialing']).limit(1).maybeSingle(),
+                            systemSettingsService.getTierLimits(accessToken),
+                            usageService.getUsage(accessToken, 'ai_actions')
+                        ]);
+                        isPro = true; // Force pro regardless of DB result
+                        aiActionsLimit = limits.ai_actions_limit || 10000;
+                        currentUsage = usage?.count || 0;
+                        console.log(`[AI Service] Usage Init: ${currentUsage}/${aiActionsLimit} (FORCED PRO)`);
+                    } catch (e) {
+                        console.error('[AI Service] Limit initialization error:', e);
+                    }
+                }
 
                 while (iteration < hardStopIterations) {
                     // Check if user requested stop
@@ -1539,6 +1534,33 @@ Summarize briefly (1 line) and continue.`
                     let lastToolErrorDescription = '';
 
                     for (const toolCall of toolCalls) {
+                        // --- USAGE ENFORCEMENT ---
+                        if (accessToken) {
+                            if (!isPro && currentUsage >= aiActionsLimit) {
+                                console.log(`[AI Service] Daily AI action limit reached (${currentUsage}/${aiActionsLimit}). Stopping turn.`);
+                                if (window && !window.isDestroyed()) {
+                                    window.webContents.send('ai:stream-chunk', {
+                                        content: `⚠️ You've reached your daily limit of ${aiActionsLimit} free AI actions. Upgrade to Pro to continue.\n`,
+                                        done: true,
+                                        limitReached: true
+                                    });
+                                }
+                                // Return partial response but ensure it stops
+                                return { success: true, response: fullResponse || 'Limit reached' };
+                            }
+
+                            // Track usage (Fire and forget DB update, but increment local for the loop)
+                            try {
+                                currentUsage++;
+                                usageService.incrementUsage(accessToken, 'ai_actions').catch(e => {
+                                    console.error('[AI Service] DB Usage increment failed:', e);
+                                });
+                            } catch (e) {
+                                console.error('[AI Service] Local usage increment failed:', e);
+                            }
+                        }
+                        // -------------------------
+
                         toolExecutionCount++; // Increment progress counter
                         // Reset iteration limit in infinite mode if progress is being made
                         if (infiniteMode) {
@@ -1802,7 +1824,7 @@ Summarize briefly (1 line) and continue.`
         try {
             const { messages, model, provider, systemPrompt, accessToken } = request;
 
-            const scopedSupabase = createScopedSupabase(accessToken);
+            const scopedSupabase = await getScopedSupabase(accessToken);
             const { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken);
 
             const chatModel = createChatModel(effectiveProvider, effectiveModel, false);

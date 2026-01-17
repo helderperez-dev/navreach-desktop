@@ -142,7 +142,7 @@ async function fetchOpenRouterModels(): Promise<ModelConfig[]> {
 }
 
 export function ModelProvidersSettings() {
-  const { settings, updateSetting, modelProviders, loadSettings, addModelProvider, updateModelProvider, deleteModelProvider } = useSettingsStore();
+  const { settings, updateSetting, modelProviders, loadSettings, addModelProvider, updateModelProvider, deleteModelProvider, isLoading } = useSettingsStore();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showModels, setShowModels] = useState(true);
@@ -352,350 +352,358 @@ export function ModelProvidersSettings() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">Model Providers</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Configure AI model providers for the Reavion Agent.
-          </p>
+      {isLoading ? (
+        <div className="flex h-[400px] items-center justify-center">
+          <CircularLoader className="h-6 w-6" />
         </div>
-        {!isAdding && !editingId && (
-          <Button onClick={handleAdd} size="sm">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Provider
-          </Button>
-        )}
-      </div>
-
-      {(isAdding || editingId) && (
-        <div className="border border-border rounded-lg p-4 space-y-4 bg-card">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Name</label>
-              <Input
-                value={formData.name || ''}
-                onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="My OpenAI"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Type</label>
-              <select
-                value={formData.type || 'openai'}
-                onChange={(e) => handleTypeChange(e.target.value)}
-                className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-sm"
-              >
-                {providerTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium">API Key</label>
-            <Input
-              type="password"
-              value={formData.apiKey || ''}
-              onChange={(e) => setFormData((prev) => ({ ...prev, apiKey: e.target.value }))}
-              placeholder="sk-..."
-            />
-          </div>
-
-          {(formData.type === 'custom' || formData.type === 'openai') && (
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Base URL {formData.type === 'openai' && <span className="text-xs text-muted-foreground font-normal">(Optional)</span>}</label>
-              <Input
-                value={formData.baseUrl || ''}
-                onChange={(e) => setFormData((prev) => ({ ...prev, baseUrl: e.target.value }))}
-                placeholder={formData.type === 'openai' ? "https://api.openai.com/v1" : "https://api.example.com/v1"}
-              />
-            </div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="enabled"
-              checked={formData.enabled ?? true}
-              onChange={(e) => setFormData((prev) => ({ ...prev, enabled: e.target.checked }))}
-              className="rounded border-input"
-            />
-            <label htmlFor="enabled" className="text-sm">Enabled</label>
-          </div>
-
-          {formData.type !== 'custom' && (
-            <div className="space-y-3 pt-2">
-              <div
-                className="flex items-center justify-between cursor-pointer"
-                onClick={() => setShowModels(!showModels)}
-              >
-                <div className="flex items-center gap-2">
-                  {showModels ? (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  )}
-                  <span className="text-sm font-medium">Available Models</span>
-                  <span className="text-xs text-muted-foreground px-2 py-0.5 rounded-full bg-secondary">
-                    {enabledCount} of {currentModels.length} enabled
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  {(formData.type === 'openrouter' || formData.type === 'openai') && (
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); handleFetchModels(); }}
-                      disabled={isFetchingModels}
-                      className="flex items-center gap-1 text-xs text-foreground/70 hover:text-foreground hover:underline disabled:opacity-50"
-                    >
-                      {isFetchingModels ? (
-                        <CircularLoader className="h-3 w-3" />
-                      ) : (
-                        <RefreshCw className="h-3 w-3" />
-                      )}
-                      {isFetchingModels ? 'Fetching...' : 'Fetch models'}
-                    </button>
-                  )}
-                  <span className="text-muted-foreground">·</span>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); enableAllModels(); }}
-                    className="text-xs text-foreground/70 hover:text-foreground hover:underline"
-                  >
-                    Enable all
-                  </button>
-                  <span className="text-muted-foreground">·</span>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); disableAllModels(); }}
-                    className="text-xs text-muted-foreground hover:text-foreground"
-                  >
-                    Disable all
-                  </button>
-                </div>
-              </div>
-
-              {showModels && (
-                <>
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search models..."
-                    className="h-8 text-sm"
-                  />
-                  <div className="grid gap-2 max-h-[350px] overflow-y-auto pr-2">
-                    {filteredModels.length === 0 ? (
-                      <div className="text-center py-8 text-muted-foreground text-sm">
-                        {searchQuery ? 'No models match your search' : 'No models available'}
-                      </div>
-                    ) : (
-                      filteredModels.map((model) => (
-                        <div
-                          key={model.id}
-                          onClick={() => toggleModel(model.id)}
-                          className={cn(
-                            'flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all',
-                            modelStates[model.id]
-                              ? 'bg-muted border-muted-foreground/30 hover:bg-muted/80'
-                              : 'bg-secondary/30 border-border/50 hover:bg-secondary/50'
-                          )}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div
-                              className={cn(
-                                'w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors',
-                                modelStates[model.id]
-                                  ? 'bg-foreground border-foreground'
-                                  : 'border-muted-foreground/30'
-                              )}
-                            >
-                              {modelStates[model.id] && (
-                                <Check className="h-3 w-3 text-primary-foreground" />
-                              )}
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className={cn(
-                                  'text-sm font-medium',
-                                  modelStates[model.id] ? 'text-foreground' : 'text-muted-foreground'
-                                )}>
-                                  {model.name}
-                                </span>
-                                {allModels.openrouter.some(m => m.id === model.id && m.enabled) && (
-                                  <span title="Recommended">
-                                    <Sparkles className="h-3 w-3 text-amber-500" />
-                                  </span>
-                                )}
-                              </div>
-                              <span className="text-xs text-muted-foreground font-mono">
-                                {model.id}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {(model.contextWindow / 1000).toFixed(0)}K ctx
-                          </div>
-
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn(
-                              "h-8 w-8 ml-2",
-                              settings.defaultModelId === model.id ? "text-yellow-400 hover:text-yellow-500" : "text-muted-foreground/30 hover:text-yellow-400"
-                            )}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              updateSetting('defaultModelId', model.id);
-                            }}
-                            title="Set as default model"
-                          >
-                            <Star className="h-4 w-4" fill={settings.defaultModelId === model.id ? "currentColor" : "none"} />
-                          </Button>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {formData.type === 'custom' && (
-            <div className="p-4 rounded-lg bg-secondary/30 border border-border/50">
-              <p className="text-sm text-muted-foreground">
-                For custom providers, models will be auto-detected or you can manually configure them after saving.
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold">Model Providers</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Configure AI model providers for the Reavion Agent.
               </p>
             </div>
-          )}
+            {!isAdding && !editingId && (
+              <Button onClick={handleAdd} size="sm">
+                <Plus className="h-4 w-4 mr-2" />
+                Add Provider
+              </Button>
+            )}
+          </div>
 
-          {testResult && (
-            <div className={cn(
-              "p-3 rounded-lg text-sm flex items-start gap-2",
-              testResult.success ? "bg-green-500/10 text-green-500 border border-green-500/20" : "bg-destructive/10 text-destructive border border-destructive/20"
-            )}>
-              {testResult.success ? <Check className="h-4 w-4 mt-0.5" /> : <X className="h-4 w-4 mt-0.5" />}
-              <div>
-                <p className="font-medium">{testResult.success ? 'Connection Verified' : 'Connection Failed'}</p>
-                <p className="text-xs opacity-90 mt-1">{testResult.message}</p>
-                {testResult.response && (
-                  <p className="text-xs font-mono mt-1 opacity-75">Response: "{testResult.response}"</p>
-                )}
+          {(isAdding || editingId) && (
+            <div className="border border-border rounded-lg p-4 space-y-4 bg-card">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Name</label>
+                  <Input
+                    value={formData.name || ''}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="My OpenAI"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Type</label>
+                  <select
+                    value={formData.type || 'openai'}
+                    onChange={(e) => handleTypeChange(e.target.value)}
+                    className="w-full h-9 px-3 rounded-md border border-input bg-transparent text-sm"
+                  >
+                    {providerTypes.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">API Key</label>
+                <Input
+                  type="password"
+                  value={formData.apiKey || ''}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, apiKey: e.target.value }))}
+                  placeholder="sk-..."
+                />
+              </div>
+
+              {(formData.type === 'custom' || formData.type === 'openai') && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Base URL {formData.type === 'openai' && <span className="text-xs text-muted-foreground font-normal">(Optional)</span>}</label>
+                  <Input
+                    value={formData.baseUrl || ''}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                    placeholder={formData.type === 'openai' ? "https://api.openai.com/v1" : "https://api.example.com/v1"}
+                  />
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="enabled"
+                  checked={formData.enabled ?? true}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, enabled: e.target.checked }))}
+                  className="rounded border-input"
+                />
+                <label htmlFor="enabled" className="text-sm">Enabled</label>
+              </div>
+
+              {formData.type !== 'custom' && (
+                <div className="space-y-3 pt-2">
+                  <div
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() => setShowModels(!showModels)}
+                  >
+                    <div className="flex items-center gap-2">
+                      {showModels ? (
+                        <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span className="text-sm font-medium">Available Models</span>
+                      <span className="text-xs text-muted-foreground px-2 py-0.5 rounded-full bg-secondary">
+                        {enabledCount} of {currentModels.length} enabled
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(formData.type === 'openrouter' || formData.type === 'openai') && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); handleFetchModels(); }}
+                          disabled={isFetchingModels}
+                          className="flex items-center gap-1 text-xs text-foreground/70 hover:text-foreground hover:underline disabled:opacity-50"
+                        >
+                          {isFetchingModels ? (
+                            <CircularLoader className="h-3 w-3" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3" />
+                          )}
+                          {isFetchingModels ? 'Fetching...' : 'Fetch models'}
+                        </button>
+                      )}
+                      <span className="text-muted-foreground">·</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); enableAllModels(); }}
+                        className="text-xs text-foreground/70 hover:text-foreground hover:underline"
+                      >
+                        Enable all
+                      </button>
+                      <span className="text-muted-foreground">·</span>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); disableAllModels(); }}
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Disable all
+                      </button>
+                    </div>
+                  </div>
+
+                  {showModels && (
+                    <>
+                      <Input
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        placeholder="Search models..."
+                        className="h-8 text-sm"
+                      />
+                      <div className="grid gap-2 max-h-[350px] overflow-y-auto pr-2">
+                        {filteredModels.length === 0 ? (
+                          <div className="text-center py-8 text-muted-foreground text-sm">
+                            {searchQuery ? 'No models match your search' : 'No models available'}
+                          </div>
+                        ) : (
+                          filteredModels.map((model) => (
+                            <div
+                              key={model.id}
+                              onClick={() => toggleModel(model.id)}
+                              className={cn(
+                                'flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all',
+                                modelStates[model.id]
+                                  ? 'bg-muted border-muted-foreground/30 hover:bg-muted/80'
+                                  : 'bg-secondary/30 border-border/50 hover:bg-secondary/50'
+                              )}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div
+                                  className={cn(
+                                    'w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors',
+                                    modelStates[model.id]
+                                      ? 'bg-foreground border-foreground'
+                                      : 'border-muted-foreground/30'
+                                  )}
+                                >
+                                  {modelStates[model.id] && (
+                                    <Check className="h-3 w-3 text-primary-foreground" />
+                                  )}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className={cn(
+                                      'text-sm font-medium',
+                                      modelStates[model.id] ? 'text-foreground' : 'text-muted-foreground'
+                                    )}>
+                                      {model.name}
+                                    </span>
+                                    {allModels.openrouter.some(m => m.id === model.id && m.enabled) && (
+                                      <span title="Recommended">
+                                        <Sparkles className="h-3 w-3 text-amber-500" />
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-muted-foreground font-mono">
+                                    {model.id}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {(model.contextWindow / 1000).toFixed(0)}K ctx
+                              </div>
+
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className={cn(
+                                  "h-8 w-8 ml-2",
+                                  settings.defaultModelId === model.id ? "text-yellow-400 hover:text-yellow-500" : "text-muted-foreground/30 hover:text-yellow-400"
+                                )}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateSetting('defaultModelId', model.id);
+                                }}
+                                title="Set as default model"
+                              >
+                                <Star className="h-4 w-4" fill={settings.defaultModelId === model.id ? "currentColor" : "none"} />
+                              </Button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {formData.type === 'custom' && (
+                <div className="p-4 rounded-lg bg-secondary/30 border border-border/50">
+                  <p className="text-sm text-muted-foreground">
+                    For custom providers, models will be auto-detected or you can manually configure them after saving.
+                  </p>
+                </div>
+              )}
+
+              {testResult && (
+                <div className={cn(
+                  "p-3 rounded-lg text-sm flex items-start gap-2",
+                  testResult.success ? "bg-green-500/10 text-green-500 border border-green-500/20" : "bg-destructive/10 text-destructive border border-destructive/20"
+                )}>
+                  {testResult.success ? <Check className="h-4 w-4 mt-0.5" /> : <X className="h-4 w-4 mt-0.5" />}
+                  <div>
+                    <p className="font-medium">{testResult.success ? 'Connection Verified' : 'Connection Failed'}</p>
+                    <p className="text-xs opacity-90 mt-1">{testResult.message}</p>
+                    {testResult.response && (
+                      <p className="text-xs font-mono mt-1 opacity-75">Response: "{testResult.response}"</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="ghost" size="sm" onClick={handleCancel}>
+                  <X className="h-4 w-4 mr-1" />
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleTestConnection}
+                  disabled={isTesting || !formData.apiKey}
+                >
+                  {isTesting ? <CircularLoader className="h-4 w-4 mr-2" /> : <Wifi className="h-4 w-4 mr-2" />}
+                  Test Connection
+                </Button>
+                <Button size="sm" onClick={handleSave} disabled={enabledCount === 0 && formData.type !== 'custom'}>
+                  <Check className="h-4 w-4 mr-1" />
+                  Save
+                </Button>
               </div>
             </div>
           )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" size="sm" onClick={handleCancel}>
-              <X className="h-4 w-4 mr-1" />
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={handleTestConnection}
-              disabled={isTesting || !formData.apiKey}
-            >
-              {isTesting ? <CircularLoader className="h-4 w-4 mr-2" /> : <Wifi className="h-4 w-4 mr-2" />}
-              Test Connection
-            </Button>
-            <Button size="sm" onClick={handleSave} disabled={enabledCount === 0 && formData.type !== 'custom'}>
-              <Check className="h-4 w-4 mr-1" />
-              Save
-            </Button>
-          </div>
-        </div>
-      )}
 
-
-      <div className="space-y-3">
-        {modelProviders.map((provider) => (
-          <div
-            key={provider.id}
-            className="flex items-center justify-between p-4 border border-border rounded-lg bg-card"
-          >
-            <div className="flex items-center gap-3">
+          <div className="space-y-3">
+            {modelProviders.map((provider) => (
               <div
-                className={`w-2 h-2 rounded-full ${provider.enabled ? 'bg-green-500' : 'bg-muted'}`}
-              />
-              <div>
-                <h3 className="font-medium">{provider.id === 'system-default' ? 'Reavion' : provider.name}</h3>
-                <p className="text-xs text-muted-foreground">
-                  {provider.id === 'system-default' ? `${provider.models.length} model` : `${provider.type} · ${provider.models.length} models`}
-                </p>
-                {provider.models.find(m => m.id === settings.defaultModelId) ? (
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <span className="inline-flex items-center gap-1 text-[10px] bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 px-2 py-0.5 rounded font-medium border border-yellow-500/20">
-                      <Star className="w-3 h-3" fill="currentColor" />
-                      {provider.id === 'system-default' ? 'Default' : `Default: ${provider.models.find(m => m.id === settings.defaultModelId)?.name}`}
-                    </span>
-                  </div>
-                ) : (
-                  provider.enabled && provider.models.length > 0 && !settings.defaultModelId && (
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <span className="inline-flex items-center gap-1 text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium border border-border">
-                        <Star className="w-3 h-3 text-muted-foreground/50" />
-                        No default selected
-                      </span>
-                    </div>
-                  )
-                )}
-                {/* Fallback Badge for System Default Provider only implies it is a system-wide default if no local is set anywhere. 
+                key={provider.id}
+                className="flex items-center justify-between p-4 border border-border rounded-lg bg-card"
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-2 h-2 rounded-full ${provider.enabled ? 'bg-green-500' : 'bg-muted'}`}
+                  />
+                  <div>
+                    <h3 className="font-medium">{provider.id === 'system-default' ? 'Reavion' : provider.name}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {provider.id === 'system-default' ? `${provider.models.length} model` : `${provider.type} · ${provider.models.length} models`}
+                    </p>
+                    {provider.models.find(m => m.id === settings.defaultModelId) ? (
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 px-2 py-0.5 rounded font-medium border border-yellow-500/20">
+                          <Star className="w-3 h-3" fill="currentColor" />
+                          {provider.id === 'system-default' ? 'Default' : `Default: ${provider.models.find(m => m.id === settings.defaultModelId)?.name}`}
+                        </span>
+                      </div>
+                    ) : (
+                      provider.enabled && provider.models.length > 0 && !settings.defaultModelId && (
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <span className="inline-flex items-center gap-1 text-[10px] bg-muted text-muted-foreground px-2 py-0.5 rounded font-medium border border-border">
+                            <Star className="w-3 h-3 text-muted-foreground/50" />
+                            No default selected
+                          </span>
+                        </div>
+                      )
+                    )}
+                    {/* Fallback Badge for System Default Provider only implies it is a system-wide default if no local is set anywhere. 
                     However, finding 'settings.defaultModelId' works globally. 
                     So the above conditional is correct for specific providers. 
                     What if we want to show 'System Default' usage badge? 
                     If !settings.defaultModelId, the system default is implicitly active. 
                 */}
-                {provider.id === 'system-default' && !settings.defaultModelId && (
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    <span className="inline-flex items-center gap-1 text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded font-medium border border-blue-500/20">
-                      <Check className="w-3 h-3" />
-                      Active
-                    </span>
+                    {provider.id === 'system-default' && !settings.defaultModelId && (
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span className="inline-flex items-center gap-1 text-[10px] bg-blue-500/10 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded font-medium border border-blue-500/20">
+                          <Check className="w-3 h-3" />
+                          Active
+                        </span>
+                      </div>
+                    )}
+
                   </div>
-                )}
-
-              </div>
-            </div>
-            <div className="flex items-center gap-1">
-              {provider.id === 'system-default' ? (
-                <div className="flex items-center px-3 py-1 bg-secondary/50 rounded text-xs text-muted-foreground">
-                  System Managed
                 </div>
-              ) : (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleEdit(provider)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => deleteModelProvider(provider.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </>
-              )}
-            </div>
-          </div>
-        ))}
+                <div className="flex items-center gap-1">
+                  {provider.id === 'system-default' ? (
+                    <div className="flex items-center px-3 py-1 bg-secondary/50 rounded text-xs text-muted-foreground">
+                      System Managed
+                    </div>
+                  ) : (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => handleEdit(provider)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        onClick={() => deleteModelProvider(provider.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ))}
 
-        {modelProviders.length === 0 && !isAdding && (
-          <div className="text-center py-8 text-muted-foreground">
-            <p>No model providers configured.</p>
-            <p className="text-sm">Add a provider to start using the Reavion Agent.</p>
+            {modelProviders.length === 0 && !isAdding && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No model providers configured.</p>
+                <p className="text-sm">Add a provider to start using the Reavion Agent.</p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </div >
+        </>
+      )}
+    </div>
   );
 }

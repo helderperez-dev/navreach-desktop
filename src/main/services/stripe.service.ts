@@ -139,6 +139,20 @@ export class StripeService {
                 }
             }
 
+            // 0. Clean up any existing incomplete subscriptions to prevent duplicate open invoices
+            try {
+                const existingIncomplete = await this.stripe.subscriptions.list({
+                    customer: customerId,
+                    status: 'incomplete',
+                });
+
+                for (const sub of existingIncomplete.data) {
+                    await this.stripe.subscriptions.cancel(sub.id);
+                }
+            } catch (e) {
+                console.warn('[StripeService] Failed to cleanup incomplete subscriptions:', e);
+            }
+
             // 1. Create the subscription with deep expansion
             // This expansion helps see the discount on the latest_invoice immediately.
             const subscription = await this.stripe.subscriptions.create({

@@ -12,9 +12,10 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 
 export function TargetListSidebar() {
-    const { lists, selectedListId, setSelectedListId, addList, deleteList, updateList } = useTargetsStore();
+    const { lists, selectedListId, setSelectedListId, addList, deleteList, updateList, isLoading } = useTargetsStore();
     const { isPro } = useSubscriptionStore();
     const [isAdding, setIsAdding] = useState(false);
     const [newListName, setNewListName] = useState('');
@@ -105,6 +106,12 @@ export function TargetListSidebar() {
 
             <ScrollArea className="flex-1 w-full">
                 <div className="p-2 space-y-1">
+                    {isLoading && lists.length === 0 && (
+                        <div className="flex justify-center p-4">
+                            <CircularLoader className="h-4 w-4 text-muted-foreground" />
+                        </div>
+                    )}
+
                     {isAdding && (
                         <form onSubmit={handleAddList} className="px-2 py-2">
                             <Input

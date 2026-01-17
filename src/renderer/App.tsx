@@ -4,6 +4,12 @@ import { AuthScreen } from '@/components/layout/AuthScreen';
 import { useAppStore } from '@/stores/app.store';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useAuthStore } from '@/stores/auth.store';
+import { useBillingStore } from '@/stores/billing.store';
+import { useSubscriptionStore } from '@/stores/subscription.store';
+import { useTargetsStore } from '@/stores/targets.store';
+import { useChatStore } from '@/stores/chat.store';
+import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useBrowserStore } from '@/stores/browser.store';
 import { supabase } from '@/lib/supabase';
 import { Toaster } from 'sonner';
 
@@ -51,6 +57,21 @@ export function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       console.log('[App] Auth state change event:', event, session?.user?.email || 'no-user');
       setSession(session);
+
+      if (event === 'SIGNED_IN') {
+        loadSettings();
+      }
+
+      if (event === 'SIGNED_OUT') {
+        useBillingStore.getState().reset();
+        useSubscriptionStore.getState().reset();
+        useTargetsStore.getState().reset();
+        useChatStore.getState().reset();
+        useWorkspaceStore.getState().reset();
+        useBrowserStore.getState().resetBrowserState();
+        useSettingsStore.getState().reset();
+        useAppStore.getState().reset();
+      }
     });
 
     // Listen for deep link auth callbacks (Google login)

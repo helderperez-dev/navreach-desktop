@@ -22,6 +22,7 @@ import { playbookService } from '@/services/playbookService';
 import { supabase } from '@/lib/supabase';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useSubscriptionStore } from '@/stores/subscription.store';
+import { useBillingStore } from '@/stores/billing.store';
 import { toast } from 'sonner';
 
 
@@ -148,7 +149,18 @@ export function ChatPanel() {
     setPendingPrompt,
   } = useChatStore();
 
-  const { dailyUsage, limits, canRunAIAction, trackAIAction, isPro, isUpgradeModalOpen, closeUpgradeModal, openUpgradeModal, modalTitle, modalDescription } = useSubscriptionStore();
+  const { dailyUsage, limits, trackAIAction, incrementAIActionLocal, isUpgradeModalOpen, closeUpgradeModal, openUpgradeModal, modalTitle, modalDescription } = useSubscriptionStore();
+  const subscription = useBillingStore(state => state.subscription);
+  const isPro = subscription?.status === 'active' || subscription?.status === 'trialing';
+
+  // Local helper to check action allowance based on reactive state
+  const canRunAIAction = () => {
+    if (isPro) return true;
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (dailyUsage.date !== today) return true;
+    return dailyUsage.aiActions < limits.ai_actions_limit;
+  };
 
   const { currentWorkspace } = useWorkspaceStore();
 
@@ -292,7 +304,18 @@ export function ChatPanel() {
         streamingContentRef.current = '';
       } else {
         const content = data.content;
-        const streamData = data as any; // toolCall, toolResult, isNewTurn
+        const streamData = data as any; // toolCall, toolResult, isNewTurn, limitReached
+
+        // Handling limit reached signal from main process
+        if (streamData.limitReached) {
+          setIsStreaming(false);
+          setAgentStartTime(null);
+          openUpgradeModal(
+            "Daily Limit Reached",
+            `You've reached your ${limits.ai_actions_limit} free AI actions for today. Upgrade to Pro to continue your automation.`
+          );
+          return;
+        }
 
         // 0. Handle New Turn Signal (Starts a fresh chronological block)
         if (streamData.isNewTurn && activeConversationId) {
@@ -337,18 +360,11 @@ export function ChatPanel() {
 
         // 2. Handle Tool Call Start
         if (streamData.toolCall) {
-          // Track AI action for Free users
-          trackAIAction();
+          // Update local usage UI immediately
+          incrementAIActionLocal();
 
-          // If limit reached, stop immediately
-          if (!canRunAIAction()) {
-            window.api.ai.stop().catch(console.error);
-            openUpgradeModal(
-              "Daily Limit Reached",
-              "You've reached your 10 free AI actions for today. Upgrade to Pro to continue your automation."
-            );
-            return;
-          }
+          // Note: Tracking and limit enforcement moved to Main Process for reliability
+          // and to prevent double-counting.
 
           // Clear pending narration tracking before starting a tool without double-merging
           streamingContentRef.current = '';
@@ -594,6 +610,15 @@ export function ChatPanel() {
     }
 
     try {
+      if (!canRunAIAction()) {
+        setIsStreaming(false);
+        openUpgradeModal(
+          "Daily Limit Reached",
+          `You've reached your ${limits.ai_actions_limit} free AI actions for today. Upgrade to Pro to continue your automation.`
+        );
+        return;
+      }
+
       // The backend expects the whole history including the new message
       // If isolated, we only send the current message to ensure a fresh, independent instance
       const messagesPayload = isIsolated
@@ -1016,9 +1041,9 @@ export function ChatPanel() {
                 <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground/60">
                   <ModelSelector />
                   <MaxStepsSelector />
-                  {!isPro() && (
+                  {!isPro && (
                     <div className="flex items-center gap-1 text-[10px] text-primary/60 font-medium">
-                      <Rocket className="h-2.5 w-2.5 fill-current" />
+                      <Zap className="h-2.5 w-2.5 fill-current" />
                       <span>{Math.max(0, limits.ai_actions_limit - dailyUsage.aiActions)} actions left today</span>
                     </div>
                   )}

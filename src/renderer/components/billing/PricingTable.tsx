@@ -1,7 +1,8 @@
-import { Check, CreditCard, Calendar, Rocket } from 'lucide-react';
+import { Check, CreditCard, Calendar, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { format } from 'date-fns';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 
 interface PricingTableProps {
     onSubscribe: (priceId: string) => void;
@@ -71,7 +72,7 @@ export function PricingTable({ onSubscribe, onManageSubscription, isLoading, sub
                             onClick={() => onSubscribe(proPriceId)}
                             disabled={isLoading || !proPriceId}
                         >
-                            Upgrade to Pro
+                            {isLoading ? <CircularLoader className="h-4 w-4" /> : "Upgrade to Pro"}
                         </Button>
                     )}
                     {isPro && (
@@ -81,7 +82,11 @@ export function PricingTable({ onSubscribe, onManageSubscription, isLoading, sub
                             onClick={onManageSubscription}
                             disabled={isLoading}
                         >
-                            {subscription.cancel_at_period_end ? 'Keep Subscription' : 'Cancel Subscription'}
+                            {isLoading ? (
+                                <CircularLoader className="h-4 w-4" />
+                            ) : (
+                                subscription.cancel_at_period_end ? 'Keep Subscription' : 'Cancel Subscription'
+                            )}
                         </Button>
                     )}
                 </CardFooter>
@@ -91,7 +96,7 @@ export function PricingTable({ onSubscribe, onManageSubscription, isLoading, sub
             <Card className={`flex flex-col border-primary/20 ${isPro ? 'opacity-80' : ''}`}>
                 <CardHeader>
                     <div className="flex items-center gap-2">
-                        <Rocket className="h-5 w-5 text-primary" />
+                        <Zap className="h-5 w-5 text-primary fill-current" />
                         <CardTitle>Pro Plan</CardTitle>
                     </div>
                     <CardDescription className="text-primary font-medium">$49.99/month</CardDescription>
@@ -112,7 +117,11 @@ export function PricingTable({ onSubscribe, onManageSubscription, isLoading, sub
                         onClick={() => onSubscribe(proPriceId)}
                         disabled={isLoading || isPro}
                     >
-                        {isPro ? 'Current Plan' : 'Get Started'}
+                        {isLoading && !isPro ? (
+                            <CircularLoader className="h-4 w-4" />
+                        ) : (
+                            isPro ? 'Current Plan' : 'Get Started'
+                        )}
                     </Button>
                 </CardFooter>
             </Card>

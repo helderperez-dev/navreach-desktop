@@ -1,5 +1,6 @@
 import { useTargetsStore } from '@/stores/targets.store';
 import { Target } from '@/types/targets';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { ExternalLink, MoreHorizontal, Trash2, Edit2, Tag, ChevronUp, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -126,10 +127,9 @@ export function TargetTable({
 
     if (isLoading && targets.length === 0) {
         return (
-            <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                    <div key={i} className="h-16 w-full rounded-xl bg-muted/40 animate-pulse" />
-                ))}
+            <div className="flex flex-col items-center justify-center p-12 space-y-4">
+                <CircularLoader className="h-8 w-8 text-primary" />
+                <p className="text-sm text-muted-foreground animate-pulse">Loading targets...</p>
             </div>
         );
     }

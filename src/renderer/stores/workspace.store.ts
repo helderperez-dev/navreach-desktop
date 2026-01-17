@@ -14,6 +14,7 @@ interface WorkspaceState {
     setCurrentWorkspace: (id: string) => void;
     createWorkspace: (name: string) => Promise<void>;
     updateWorkspace: (id: string, updates: Partial<Workspace>) => Promise<void>;
+    reset: () => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -106,5 +107,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             console.error('Failed to update workspace:', error);
             toast.error(`Failed to update workspace: ${error.message}`);
         }
+    },
+
+    reset: () => {
+        set({
+            workspaces: [],
+            currentWorkspace: null
+        });
+        localStorage.removeItem('reavion_current_workspace_id');
     }
 }));

@@ -1,7 +1,7 @@
 import { IpcMain, powerSaveBlocker } from 'electron';
 import Store from 'electron-store';
-import { supabase } from '../lib/supabase';
-import type { AppSettings, ModelProvider, MCPServer, APITool, ModelConfig } from '../../shared/types';
+import { supabase, getScopedSupabase, getUserIdFromToken } from '../lib/supabase';
+import type { AppSettings, ModelProvider, MCPServer, APITool } from '../../shared/types';
 
 let sleepBlockerId: number | null = null;
 
@@ -40,6 +40,12 @@ const store = new Store<AppSettings>({
 });
 
 // Initialize on startup
+// CRITICAL: Force clear complex objects from local store to ensure we only use DB data
+// This prevents stale/other user's data from persisting locally
+store.set('mcpServers', []);
+store.set('modelProviders', []);
+store.set('apiTools', []);
+
 updatePowerSaveBlocker(store.get('preventSleep'));
 
 export function setupSettingsHandlers(ipcMain: IpcMain): void {
@@ -55,27 +61,77 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
     return { success: true };
   });
 
-  ipcMain.handle('settings:get-all', async () => {
+  ipcMain.handle('settings:get-all', async (_event, accessToken?: string) => {
     const localSettings = store.store;
 
-    try {
-      // Fetch system settings for managed AI provider
-      const { data: systemData } = await supabase
-        .from('system_settings')
-        .select('key, value');
+    // CLEANUP: Remove legacy local data that should now be in DB
+    if (store.has('modelProviders')) store.delete('modelProviders' as any);
+    if (store.has('mcpServers')) store.delete('mcpServers' as any);
+    if (store.has('apiTools')) store.delete('apiTools' as any);
 
-      const sysSettings = (systemData || []).reduce((acc: any, curr: any) => {
+    // Filter out DB-backed fields from local storage to prevent leakage
+    // of other users' data if the machine is shared or if persistent store
+    // has stale data.
+    const safeLocalSettings = {
+      ...localSettings,
+      modelProviders: [],
+      mcpServers: [],
+      apiTools: []
+    };
+
+    if (!accessToken) return safeLocalSettings;
+
+    try {
+      const scopedSupabase = await getScopedSupabase(accessToken);
+
+      // Fetch all user-scoped settings
+      const [providersRes, serversRes, toolsRes, sysSettingsRes] = await Promise.all([
+        scopedSupabase.from('model_providers').select('*').order('created_at'),
+        scopedSupabase.from('mcp_servers').select('*').order('created_at'),
+        scopedSupabase.from('api_tools').select('*').order('created_at'),
+        scopedSupabase.from('system_settings').select('key, value')
+      ]);
+
+      const sysSettings = (sysSettingsRes.data || []).reduce((acc: any, curr: any) => {
         acc[curr.key] = curr.value;
         return acc;
       }, {});
 
       const defaultProviderType = sysSettings['default_ai_provider'];
       const defaultModelId = sysSettings['default_ai_model'];
-      const hasSystemKey = !!sysSettings['system_ai_api_key'];
 
-      // Always prepend the System Default provider if configured, even if key is missing (visibility preference)
+      const modelProviders = (providersRes.data || []).map(p => ({
+        id: p.id,
+        name: p.name,
+        type: p.type,
+        apiKey: p.api_key,
+        baseUrl: p.base_url,
+        models: p.models,
+        enabled: p.enabled
+      }));
+
+      const mcpServers = (serversRes.data || []).map(s => ({
+        id: s.id,
+        name: s.name,
+        type: s.type,
+        enabled: s.enabled,
+        config: s.config
+      }));
+
+      const apiTools = (toolsRes.data || []).map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        enabled: t.enabled,
+        endpoint: t.endpoint,
+        method: t.method,
+        headers: t.headers,
+        bodyTemplate: t.body_template,
+        responseMapping: t.response_mapping
+      }));
+
+      // In-memory merge with system defaults
       if (defaultProviderType && defaultModelId) {
-        // Create the system managed provider
         const systemProvider: ModelProvider = {
           id: 'system-default',
           name: 'Reavion',
@@ -93,20 +149,27 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
           ]
         };
 
-        // If local settings already have providers, system default goes first.
-        // We filter out any previous system-default if it somehow got saved to disk (unlikely but safe)
-        const cleanLocalProviders = (localSettings.modelProviders || []).filter(p => p.id !== 'system-default');
+        const finalProviders = [systemProvider, ...modelProviders.filter(p => p.id !== 'system-default')];
 
         return {
           ...localSettings,
-          modelProviders: [systemProvider, ...cleanLocalProviders]
+          modelProviders: finalProviders,
+          mcpServers,
+          apiTools
         };
       }
-    } catch (error) {
-      console.error('Failed to fetch system settings:', error);
-    }
 
-    return localSettings;
+      return {
+        ...localSettings,
+        modelProviders,
+        mcpServers,
+        apiTools
+      };
+
+    } catch (error) {
+      console.error('Failed to fetch settings from DB:', error);
+      return safeLocalSettings;
+    }
   });
 
   ipcMain.handle('settings:reset', async () => {
@@ -117,84 +180,185 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
     return { success: true };
   });
 
-  ipcMain.handle('settings:add-model-provider', async (_event, provider: ModelProvider) => {
-    const providers = store.get('modelProviders') || [];
-    providers.push(provider);
-    store.set('modelProviders', providers);
+  // Model Providers
+  ipcMain.handle('settings:add-model-provider', async (_event, provider: ModelProvider, accessToken?: string) => {
+    if (!accessToken) return { success: false, error: 'Not authenticated' };
+
+    const userId = getUserIdFromToken(accessToken);
+    if (!userId) return { success: false, error: 'Invalid access token' };
+
+    const scopedSupabase = await getScopedSupabase(accessToken);
+
+    const { data, error } = await scopedSupabase
+      .from('model_providers')
+      .insert({
+        id: provider.id.length > 30 ? provider.id : undefined, // use existing if valid UUID, else let DB generate
+        user_id: userId, // Explicitly set user_id for RLS policy
+        name: provider.name,
+        type: provider.type,
+        api_key: provider.apiKey,
+        base_url: provider.baseUrl,
+        models: provider.models,
+        enabled: provider.enabled
+      })
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, provider: data };
+  });
+
+  ipcMain.handle('settings:update-model-provider', async (_event, provider: ModelProvider, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { error } = await scopedSupabase
+      .from('model_providers')
+      .update({
+        name: provider.name,
+        type: provider.type,
+        api_key: provider.apiKey,
+        base_url: provider.baseUrl,
+        models: provider.models,
+        enabled: provider.enabled,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', provider.id);
+
+    if (error) return { success: false, error: error.message };
     return { success: true, provider };
   });
 
-  ipcMain.handle('settings:update-model-provider', async (_event, provider: ModelProvider) => {
-    const providers = store.get('modelProviders') || [];
-    const index = providers.findIndex((p) => p.id === provider.id);
-    if (index === -1) {
-      return { success: false, reason: 'Provider not found' };
-    }
-    providers[index] = provider;
-    store.set('modelProviders', providers);
-    return { success: true, provider };
-  });
+  ipcMain.handle('settings:delete-model-provider', async (_event, providerId: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { error } = await scopedSupabase
+      .from('model_providers')
+      .delete()
+      .eq('id', providerId);
 
-  ipcMain.handle('settings:delete-model-provider', async (_event, providerId: string) => {
-    const providers = store.get('modelProviders') || [];
-    const filtered = providers.filter((p) => p.id !== providerId);
-    store.set('modelProviders', filtered);
+    if (error) return { success: false, error: error.message };
     return { success: true };
   });
 
-  ipcMain.handle('settings:add-mcp-server', async (_event, server: MCPServer) => {
-    const servers = store.get('mcpServers') || [];
-    servers.push(server);
-    store.set('mcpServers', servers);
-    return { success: true, server };
+  // MCP Servers
+  ipcMain.handle('settings:add-mcp-server', async (_event, server: MCPServer, accessToken?: string) => {
+    if (!accessToken) return { success: false, error: 'Not authenticated' };
+
+    const userId = getUserIdFromToken(accessToken);
+    if (!userId) return { success: false, error: 'Invalid access token' };
+
+    const scopedSupabase = await getScopedSupabase(accessToken);
+
+    const { data, error } = await scopedSupabase
+      .from('mcp_servers')
+      .insert({
+        id: server.id.length > 30 ? server.id : undefined,
+        user_id: userId, // Explicitly set user_id for RLS policy
+        name: server.name,
+        type: server.type,
+        enabled: server.enabled,
+        config: server.config
+      })
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, server: data };
   });
 
-  ipcMain.handle('settings:update-mcp-server', async (_event, server: MCPServer) => {
-    const servers = store.get('mcpServers') || [];
-    const index = servers.findIndex((s) => s.id === server.id);
-    if (index === -1) {
-      return { success: false, reason: 'Server not found' };
-    }
-    servers[index] = server;
-    store.set('mcpServers', servers);
-    return { success: true, server };
+  ipcMain.handle('settings:update-mcp-server', async (_event, server: MCPServer, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data, error } = await scopedSupabase
+      .from('mcp_servers')
+      .update({
+        name: server.name,
+        type: server.type,
+        enabled: server.enabled,
+        config: server.config,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', server.id)
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, server: data };
   });
 
-  ipcMain.handle('settings:delete-mcp-server', async (_event, serverId: string) => {
-    const servers = store.get('mcpServers') || [];
-    const filtered = servers.filter((s) => s.id !== serverId);
-    store.set('mcpServers', filtered);
+  ipcMain.handle('settings:delete-mcp-server', async (_event, serverId: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { error } = await scopedSupabase
+      .from('mcp_servers')
+      .delete()
+      .eq('id', serverId);
+
+    if (error) return { success: false, error: error.message };
     return { success: true };
   });
 
-  ipcMain.handle('settings:add-api-tool', async (_event, tool: APITool) => {
-    const tools = store.get('apiTools') || [];
-    tools.push(tool);
-    store.set('apiTools', tools);
+  // API Tools
+  ipcMain.handle('settings:add-api-tool', async (_event, tool: APITool, accessToken?: string) => {
+    if (!accessToken) return { success: false, error: 'Not authenticated' };
+
+    const userId = getUserIdFromToken(accessToken);
+    if (!userId) return { success: false, error: 'Invalid access token' };
+
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data, error } = await scopedSupabase
+      .from('api_tools')
+      .insert({
+        id: tool.id.length > 30 ? tool.id : undefined,
+        user_id: userId, // Explicitly set user_id for RLS policy
+        name: tool.name,
+        description: tool.description,
+        enabled: tool.enabled,
+        endpoint: tool.endpoint,
+        method: tool.method,
+        headers: tool.headers,
+        body_template: tool.bodyTemplate,
+        response_mapping: tool.responseMapping
+      })
+      .select()
+      .single();
+
+    if (error) return { success: false, error: error.message };
+    return { success: true, tool: data };
+  });
+
+  ipcMain.handle('settings:update-api-tool', async (_event, tool: APITool, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { error } = await scopedSupabase
+      .from('api_tools')
+      .update({
+        name: tool.name,
+        description: tool.description,
+        enabled: tool.enabled,
+        endpoint: tool.endpoint,
+        method: tool.method,
+        headers: tool.headers,
+        body_template: tool.bodyTemplate,
+        response_mapping: tool.responseMapping,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', tool.id);
+
+    if (error) return { success: false, error: error.message };
     return { success: true, tool };
   });
 
-  ipcMain.handle('settings:update-api-tool', async (_event, tool: APITool) => {
-    const tools = store.get('apiTools') || [];
-    const index = tools.findIndex((t) => t.id === tool.id);
-    if (index === -1) {
-      return { success: false, reason: 'Tool not found' };
-    }
-    tools[index] = tool;
-    store.set('apiTools', tools);
-    return { success: true, tool };
-  });
+  ipcMain.handle('settings:delete-api-tool', async (_event, toolId: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { error } = await scopedSupabase
+      .from('api_tools')
+      .delete()
+      .eq('id', toolId);
 
-  ipcMain.handle('settings:delete-api-tool', async (_event, toolId: string) => {
-    const tools = store.get('apiTools') || [];
-    const filtered = tools.filter((t) => t.id !== toolId);
-    store.set('apiTools', filtered);
+    if (error) return { success: false, error: error.message };
     return { success: true };
   });
 
   // Platform Knowledge Handlers
-  ipcMain.handle('settings:get-platform-knowledge', async () => {
-    const { data, error } = await supabase
+  ipcMain.handle('settings:get-platform-knowledge', async (_event, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data, error } = await scopedSupabase
       .from('platform_knowledge')
       .select('*')
       .order('domain', { ascending: true });
@@ -206,10 +370,16 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
     return data;
   });
 
-  ipcMain.handle('settings:add-platform-knowledge', async (_event, record: any) => {
-    const { data, error } = await supabase
+  ipcMain.handle('settings:add-platform-knowledge', async (_event, record: any, accessToken?: string) => {
+    if (!accessToken) return { success: false, error: 'Not authenticated' };
+
+    const userId = getUserIdFromToken(accessToken);
+    if (!userId) return { success: false, error: 'Invalid access token' };
+
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data, error } = await scopedSupabase
       .from('platform_knowledge')
-      .insert(record)
+      .insert({ ...record, user_id: userId }) // Explicitly set user_id for RLS policy
       .select()
       .single();
 
@@ -220,9 +390,10 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
     return { success: true, data };
   });
 
-  ipcMain.handle('settings:update-platform-knowledge', async (_event, record: any) => {
+  ipcMain.handle('settings:update-platform-knowledge', async (_event, record: any, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
     const { id, ...updates } = record;
-    const { data, error } = await supabase
+    const { data, error } = await scopedSupabase
       .from('platform_knowledge')
       .update(updates)
       .eq('id', id)
@@ -236,8 +407,9 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
     return { success: true, data };
   });
 
-  ipcMain.handle('settings:delete-platform-knowledge', async (_event, id: string) => {
-    const { error } = await supabase
+  ipcMain.handle('settings:delete-platform-knowledge', async (_event, id: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { error } = await scopedSupabase
       .from('platform_knowledge')
       .delete()
       .eq('id', id);
@@ -250,26 +422,25 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
   });
 
   // Agent Profile Handlers
-  ipcMain.handle('settings:get-agent-profile', async () => {
-    // Check for any existing user settings row
-    const { data, error } = await supabase
+  ipcMain.handle('settings:get-agent-profile', async (_event, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data, error } = await scopedSupabase
       .from('user_settings')
       .select('agent_profile')
-      .limit(1)
-      .single();
+      .maybeSingle();
 
-    if (error) {
+    if (error || !data) {
       return { persona: '', icp: '', tone: '' };
     }
     return data.agent_profile || { persona: '', icp: '', tone: '' };
   });
 
-  ipcMain.handle('settings:update-agent-profile', async (_event, profile: any) => {
-    // Try to get the first user_id
-    const { data: existing } = await supabase.from('user_settings').select('user_id').limit(1).single();
+  ipcMain.handle('settings:update-agent-profile', async (_event, profile: any, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data: existing } = await scopedSupabase.from('user_settings').select('user_id').maybeSingle();
 
     if (existing) {
-      const { error } = await supabase
+      const { error } = await scopedSupabase
         .from('user_settings')
         .update({ agent_profile: profile, updated_at: new Date().toISOString() })
         .eq('user_id', existing.user_id);
@@ -277,38 +448,68 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       if (error) return { success: false, error: error.message };
       return { success: true };
     } else {
-      return { success: false, error: 'No user settings found. Please save general settings first to create a user record.' };
+      // Create user settings if not exists
+      const { error } = await scopedSupabase
+        .from('user_settings')
+        .insert({ agent_profile: profile });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
     }
   });
 
   // Dynamic Knowledge Base Handlers
-  ipcMain.handle('settings:get-knowledge-bases', async () => {
-    const { data, error } = await supabase.from('knowledge_bases').select('*').order('name');
+  ipcMain.handle('settings:get-knowledge-bases', async (_event, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data, error } = await scopedSupabase.from('knowledge_bases').select('*').order('name');
     return error ? [] : data;
   });
 
-  ipcMain.handle('settings:create-knowledge-base', async (_event, name: string, description?: string) => {
-    const { data, error } = await supabase.from('knowledge_bases').insert({ name, description }).select().single();
+  ipcMain.handle('settings:create-knowledge-base', async (_event, name: string, description?: string, accessToken?: string) => {
+    if (!accessToken) {
+      console.error('Create KB failed: Missing access token');
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    const userId = getUserIdFromToken(accessToken);
+    if (!userId) return { success: false, error: 'Invalid access token' };
+
+    const scopedSupabase = await getScopedSupabase(accessToken);
+
+    const { data, error } = await scopedSupabase
+      .from('knowledge_bases')
+      .insert({
+        user_id: userId, // Explicitly set user_id for RLS policy
+        name,
+        description
+      })
+      .select()
+      .single();
+
     return error ? { success: false, error: error.message } : { success: true, data };
   });
 
-  ipcMain.handle('settings:delete-knowledge-base', async (_event, id: string) => {
-    const { error } = await supabase.from('knowledge_bases').delete().eq('id', id);
+  ipcMain.handle('settings:delete-knowledge-base', async (_event, id: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { error } = await scopedSupabase.from('knowledge_bases').delete().eq('id', id);
     return { success: !error, error: error?.message };
   });
 
-  ipcMain.handle('settings:get-kb-content', async (_event, kbId: string) => {
-    const { data, error } = await supabase.from('knowledge_content').select('*').eq('kb_id', kbId).order('created_at');
+  ipcMain.handle('settings:get-kb-content', async (_event, kbId: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data, error } = await scopedSupabase.from('knowledge_content').select('*').eq('kb_id', kbId).order('created_at');
     return error ? [] : data;
   });
 
-  ipcMain.handle('settings:add-kb-content', async (_event, kbId: string, content: string, title?: string) => {
-    const { data, error } = await supabase.from('knowledge_content').insert({ kb_id: kbId, content, title }).select().single();
+  ipcMain.handle('settings:add-kb-content', async (_event, kbId: string, content: string, title?: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { data, error } = await scopedSupabase.from('knowledge_content').insert({ kb_id: kbId, content, title }).select().single();
     return error ? { success: false, error: error.message } : { success: true, data };
   });
 
-  ipcMain.handle('settings:delete-kb-content', async (_event, id: string) => {
-    const { error } = await supabase.from('knowledge_content').delete().eq('id', id);
+  ipcMain.handle('settings:delete-kb-content', async (_event, id: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const { error } = await scopedSupabase.from('knowledge_content').delete().eq('id', id);
     return { success: !error, error: error?.message };
   });
 }

@@ -1,6 +1,7 @@
 import { IpcMain } from 'electron';
 import { stripeService } from '../services/stripe.service';
 import { systemSettingsService } from '../services/settings.service';
+import { usageService } from '../services/usage.service';
 
 export function setupStripeHandlers(ipcMain: IpcMain) {
     ipcMain.handle('stripe:get-config', async () => {
@@ -146,11 +147,29 @@ export function setupStripeHandlers(ipcMain: IpcMain) {
         }
     });
 
-    ipcMain.handle('stripe:get-tier-limits', async (_, accessToken?: string) => {
+    ipcMain.handle('stripe:get-tier-limits', async (event: any, accessToken?: string) => {
         try {
             return await systemSettingsService.getTierLimits(accessToken);
         } catch (error: any) {
             console.error('[IPC] stripe:get-tier-limits error:', error);
+            throw new Error(error.message);
+        }
+    });
+
+    ipcMain.handle('stripe:get-usage', async (_: any, accessToken: string, type: string) => {
+        try {
+            return await usageService.getUsage(accessToken, type);
+        } catch (error: any) {
+            console.error('[IPC] stripe:get-usage error:', error);
+            throw new Error(error.message);
+        }
+    });
+
+    ipcMain.handle('stripe:track-usage', async (_: any, { accessToken, type, incrementBy }: { accessToken: string; type: string; incrementBy?: number }) => {
+        try {
+            return await usageService.incrementUsage(accessToken, type, incrementBy);
+        } catch (error: any) {
+            console.error('[IPC] stripe:track-usage error:', error);
             throw new Error(error.message);
         }
     });

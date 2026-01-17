@@ -25,6 +25,7 @@ interface TargetsState {
     updateTarget: (id: string, updates: Partial<Target>) => Promise<void>;
     deleteTarget: (id: string) => Promise<void>;
     bulkAddTargets: (targets: any[]) => Promise<void>;
+    reset: () => void;
 }
 
 export const useTargetsStore = create<TargetsState>((set, get) => ({
@@ -265,5 +266,13 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             get().fetchLists(); // Sync counts with DB
             toast.success(`Successfully imported ${data.length} targets`);
         }
-    }
+    },
+
+    reset: () => set({
+        lists: [],
+        selectedListId: null,
+        targets: [],
+        isLoading: false,
+        error: null
+    })
 }));

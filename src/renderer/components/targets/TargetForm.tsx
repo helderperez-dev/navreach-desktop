@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, Globe, User, Building2, FileText, Link as LinkIcon, Mail, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { useTargetsStore } from '@/stores/targets.store';
 import { TargetType, Target } from '@/types/targets';
 import { cn } from '@/lib/utils';
@@ -249,7 +250,11 @@ export function TargetForm({ open, onOpenChange, target }: TargetDetailsDrawerPr
                                 className="w-full h-12 bg-secondary hover:bg-secondary/80 text-secondary-foreground font-semibold rounded-xl shadow-sm border border-border/20 transition-all active:scale-[0.98]"
                                 disabled={isLoading}
                             >
-                                {isLoading ? (target ? "Saving..." : "Creating...") : (target ? "Save Changes" : "Create Target")}
+                                {isLoading ? (
+                                    <CircularLoader className="h-4 w-4" />
+                                ) : (
+                                    target ? "Save Changes" : "Create Target"
+                                )}
                             </Button>
                         </div>
                     </form>

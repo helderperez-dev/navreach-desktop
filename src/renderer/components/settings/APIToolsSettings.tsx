@@ -3,13 +3,14 @@ import { Plus, Pencil, Trash2, Check, X } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { useSettingsStore } from '@/stores/settings.store';
 import type { APITool } from '@shared/types';
 
 const httpMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 
 export function APIToolsSettings() {
-  const { apiTools, loadSettings, addAPITool, updateAPITool, deleteAPITool } = useSettingsStore();
+  const { apiTools, loadSettings, addAPITool, updateAPITool, deleteAPITool, isLoading } = useSettingsStore();
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<APITool>>({
@@ -177,46 +178,54 @@ export function APIToolsSettings() {
       )}
 
       <div className="space-y-3">
-        {apiTools.map((tool) => (
-          <div
-            key={tool.id}
-            className="flex items-center justify-between p-4 border border-border rounded-lg bg-card"
-          >
-            <div className="flex items-center gap-3">
-              <div className={`w-2 h-2 rounded-full ${tool.enabled ? 'bg-green-500' : 'bg-muted'}`} />
-              <div>
-                <h3 className="font-medium">{tool.name}</h3>
-                <p className="text-xs text-muted-foreground">
-                  {tool.method} · {tool.endpoint.slice(0, 50)}{tool.endpoint.length > 50 ? '...' : ''}
-                </p>
+        {isLoading ? (
+          <div className="flex justify-center py-8">
+            <CircularLoader className="h-8 w-8 text-primary" />
+          </div>
+        ) : (
+          <>
+            {apiTools.map((tool) => (
+              <div
+                key={tool.id}
+                className="flex items-center justify-between p-4 border border-border rounded-lg bg-card"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-2 h-2 rounded-full ${tool.enabled ? 'bg-green-500' : 'bg-muted'}`} />
+                  <div>
+                    <h3 className="font-medium">{tool.name}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {tool.method} · {tool.endpoint.slice(0, 50)}{tool.endpoint.length > 50 ? '...' : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleEdit(tool)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-destructive hover:text-destructive"
+                    onClick={() => deleteAPITool(tool.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => handleEdit(tool)}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 text-destructive hover:text-destructive"
-                onClick={() => deleteAPITool(tool.id)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        ))}
+            ))}
 
-        {apiTools.length === 0 && !isAdding && (
-          <div className="text-center py-8 text-muted-foreground">
-            <p>No API tools configured.</p>
-            <p className="text-sm">Add an API tool to extend AI capabilities.</p>
-          </div>
+            {apiTools.length === 0 && !isAdding && (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No API tools configured.</p>
+                <p className="text-sm">Add an API tool to extend AI capabilities.</p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

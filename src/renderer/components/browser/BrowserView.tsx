@@ -12,8 +12,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useDebugStore } from '@/stores/debug.store';
 import { useAppStore } from '@/stores/app.store';
 import { useChatStore } from '@/stores/chat.store';
-import reavionLogoWhite from '@assets/reavion-white-welcome.png';
-import reavionLogoBlack from '@assets/reavion-black-welcome.png';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 
 const INITIAL_URL = 'about:blank';
 
@@ -360,16 +359,7 @@ export function BrowserView() {
               transition={{ duration: 0.3 }}
             >
               <div className="flex flex-col items-center">
-                <img
-                  src={reavionLogoWhite}
-                  alt="Reavion"
-                  className="h-8 opacity-70 hidden dark:block"
-                />
-                <img
-                  src={reavionLogoBlack}
-                  alt="Reavion"
-                  className="h-8 opacity-70 block dark:hidden"
-                />
+                <CircularLoader className="h-8 w-8" />
               </div>
             </motion.div>
           )}

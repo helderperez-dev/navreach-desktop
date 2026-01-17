@@ -15,6 +15,7 @@ import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import type { Conversation } from '@shared/types';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 
 import reavionLogoWhite from '@assets/reavion-white-welcome.png';
 import reavionLogoBlack from '@assets/reavion-black-welcome.png';
@@ -446,7 +447,12 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.4 }}
           >
-            <div className={`flex flex-wrap gap-2 justify-center transition-opacity duration-500 ${isSuggesting ? 'opacity-50' : 'opacity-100'}`}>
+            <div className={`relative flex flex-wrap gap-2 justify-center transition-opacity duration-500 ${isSuggesting ? 'opacity-50' : 'opacity-100'}`}>
+              {isSuggesting && (
+                <div className="absolute inset-0 flex items-center justify-center z-10">
+                  <CircularLoader className="h-4 w-4 text-primary" />
+                </div>
+              )}
               {suggestions.map((suggestion, idx) => (
                 <button
                   key={idx}

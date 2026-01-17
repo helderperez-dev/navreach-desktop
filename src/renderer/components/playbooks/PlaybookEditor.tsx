@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 
 import { TooltipProvider } from '@/components/ui/tooltip';
 import ReactFlow, {
@@ -62,6 +63,7 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
     const [selectedNode, setSelectedNode] = useState<any>(null);
     const [saving, setSaving] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [executionLogs, setExecutionLogs] = useState<{ id: string, msg: string, type: 'info' | 'success' | 'error' | 'running', time: string, timestamp: number }[]>([]);
     const [layoutDirection, setLayoutDirection] = useState<'TB' | 'LR'>('TB');
@@ -256,6 +258,7 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
 
     const loadPlaybook = async (id: string) => {
+        setIsLoading(true);
         try {
             const data = await playbookService.getPlaybookById(id);
             if (data) {
@@ -290,6 +293,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
             }
         } catch (error) {
             toast.error('Failed to load playbook');
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -788,6 +793,14 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         capabilities,
         execution_defaults: defaults
     }), [description, version, capabilities, defaults]);
+
+    if (isLoading) {
+        return (
+            <div className="flex-1 flex items-center justify-center bg-background">
+                <CircularLoader className="h-8 w-8 text-primary" />
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-col h-full bg-background no-drag">
