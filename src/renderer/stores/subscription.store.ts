@@ -62,7 +62,8 @@ export const useSubscriptionStore = create<SubscriptionState>()(
             },
 
             isPro: () => {
-                return true; // Forced pro by default
+                const sub = useBillingStore.getState().subscription;
+                return sub?.status === 'active' || sub?.status === 'trialing';
             },
 
             getTier: () => {

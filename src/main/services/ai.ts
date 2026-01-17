@@ -13,11 +13,12 @@ import { createSiteTools } from './site-tools';
 import { createIntegrationTools } from './integration-tools';
 import { createUtilityTools } from './utility-tools';
 import { DynamicStructuredTool } from '@langchain/core/tools';
-import { supabase, getScopedSupabase } from '../lib/supabase';
+import { supabase, getScopedSupabase, getUserIdFromToken } from '../lib/supabase';
 import Store from 'electron-store';
 import type { AppSettings } from '../../shared/types';
 import { systemSettingsService } from './settings.service';
 import { usageService } from './usage.service';
+import { stripeService } from './stripe.service';
 
 export const store = new Store<AppSettings>({
     name: 'settings',
@@ -1125,21 +1126,68 @@ You are in FAST mode.
                 let disableVision = false;
 
                 // --- USAGE TRACKING INITIALIZATION ---
-                let isPro = true; // Forced pro by default
-                let aiActionsLimit = 10000; // High limit for default pro
+                let isPro = false;
+                let aiActionsLimit = 10;
                 let currentUsage = 0;
 
                 if (accessToken) {
                     try {
+                        const userId = getUserIdFromToken(accessToken);
                         const [subRes, limits, usage] = await Promise.all([
-                            scopedSupabase.from('subscriptions').select('status').in('status', ['active', 'trialing']).limit(1).maybeSingle(),
+                            scopedSupabase
+                                .from('subscriptions')
+                                .select('status')
+                                .eq('user_id', userId)
+                                .in('status', ['active', 'trialing'])
+                                .limit(1)
+                                .maybeSingle(),
                             systemSettingsService.getTierLimits(accessToken),
                             usageService.getUsage(accessToken, 'ai_actions')
                         ]);
-                        isPro = true; // Force pro regardless of DB result
-                        aiActionsLimit = limits.ai_actions_limit || 10000;
+
+                        isPro = !!subRes.data;
+                        aiActionsLimit = limits.ai_actions_limit;
                         currentUsage = usage?.count || 0;
-                        console.log(`[AI Service] Usage Init: ${currentUsage}/${aiActionsLimit} (FORCED PRO)`);
+
+                        // FALLBACK TO STRIPE DIRECTLY IF SUPABASE RECORD MISSING
+                        // This ensures Pro users are never blocked even if webhooks/DB sync is delayed
+                        if (!isPro && userId) {
+                            try {
+                                const { data: profile } = await scopedSupabase
+                                    .from('profiles')
+                                    .select('stripe_customer_id, email')
+                                    .eq('id', userId)
+                                    .maybeSingle();
+
+                                if (profile) {
+                                    let cid = profile.stripe_customer_id;
+
+                                    // If CID missing, try recovering by email
+                                    if (!cid && profile.email) {
+                                        const customer = await stripeService.createCustomer(profile.email);
+                                        cid = customer.id;
+                                        // Proactively update profile in background
+                                        scopedSupabase.from('profiles').update({ stripe_customer_id: cid }).eq('id', userId).then();
+                                    }
+
+                                    if (cid) {
+                                        const stripeSubs = await stripeService.getSubscriptions(cid);
+                                        const activeSub = stripeSubs.find((s: any) => s.status === 'active' || s.status === 'trialing');
+                                        if (activeSub) {
+                                            isPro = true;
+                                            console.log(`[AI Service] Pro status recovered via Stripe email lookup (${profile.email}) for user ${userId}`);
+                                        }
+                                    }
+                                }
+                            } catch (stripeErr) {
+                                console.error('[AI Service] Stripe fallback verification failed:', stripeErr);
+                            }
+                        }
+
+                        console.log(`[AI Service] Usage Init: ${currentUsage}/${aiActionsLimit} (Pro: ${isPro}, User: ${userId})`);
+                        if (subRes.error) {
+                            console.error('[AI Service] Subscription query error:', subRes.error);
+                        }
                     } catch (e) {
                         console.error('[AI Service] Limit initialization error:', e);
                     }

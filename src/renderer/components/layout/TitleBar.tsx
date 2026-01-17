@@ -12,13 +12,23 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LogOut, Settings, User } from 'lucide-react';
+import { LogOut, Settings, User, Zap } from 'lucide-react';
 import { WorkspaceSelector } from './WorkspaceSelector';
+import { useBillingStore } from '@/stores/billing.store';
+import { Badge } from '@/components/ui/badge';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 export function TitleBar() {
   const { user, signOut } = useAuthStore();
   const { setActiveView } = useAppStore();
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const { subscription, isLoading } = useBillingStore();
+  const isPro = subscription?.status === 'active' || subscription?.status === 'trialing';
 
   useEffect(() => {
     const unsubscribe = (window as any).api?.window?.onFullScreenChange?.((fs: boolean) => {
@@ -51,11 +61,33 @@ export function TitleBar() {
       </div>
 
       <div className="flex items-center gap-4 pr-4 no-drag">
-        <WorkspaceSelector />
+        <TooltipProvider delayDuration={400}>
+          {!isLoading && isPro && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="cursor-default">
+                  <Badge
+                    variant="outline"
+                    className="h-[20px] px-2 border-border bg-white/[0.03] text-muted-foreground hover:text-foreground hover:bg-white/[0.05] transition-all duration-300"
+                  >
+                    <span className="text-[9px] font-bold tracking-[0.1em] uppercase">Pro</span>
+                  </Badge>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="flex flex-col gap-1 p-3">
+                <p className="font-bold text-[11px] text-primary">Pro Status Active</p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  You have unlimited AI actions and all premium features unlocked.
+                </p>
+              </TooltipContent>
+            </Tooltip>
+          )}
+          <WorkspaceSelector />
+        </TooltipProvider>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button className="flex items-center justify-center transition-opacity hover:opacity-80 outline-none">
-              <Avatar className="h-8 w-8 border border-border">
+            <button className="flex items-center justify-center transition-opacity hover:opacity-80 outline-none relative group">
+              <Avatar className="h-8 w-8 border border-border group-hover:border-primary/50 transition-colors">
                 <AvatarImage src={avatarUrl} alt={user?.email || 'User'} className="object-cover" />
                 <AvatarFallback className="bg-muted text-[10px] font-bold text-muted-foreground">
                   {userInitials}

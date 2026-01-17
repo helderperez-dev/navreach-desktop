@@ -93,7 +93,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
             } else {
                 // 2. Fallback: If no Supabase record, check Stripe directly
                 // (This handles cases where webhook hasn't fired or sync is broken)
-                const cid = get().customerId || await get().loadCustomerId();
+                const cid = get().customerId || await get().ensureCustomer();
 
                 if (cid) {
                     const stripeSubs = await window.api.stripe.getSubscriptions(cid);
@@ -111,28 +111,10 @@ export const useBillingStore = create<BillingState>((set, get) => ({
                         console.log('[BillingStore] Recovered subscription from Stripe:', mappedSub);
                         set({ subscription: mappedSub });
                     } else {
-                        // Force Pro for now
-                        set({
-                            subscription: {
-                                id: 'forced_pro',
-                                status: 'active',
-                                price_id: 'pro',
-                                cancel_at_period_end: false,
-                                current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-                            }
-                        });
+                        set({ subscription: null });
                     }
                 } else {
-                    // Force Pro for now
-                    set({
-                        subscription: {
-                            id: 'forced_pro',
-                            status: 'active',
-                            price_id: 'pro',
-                            cancel_at_period_end: false,
-                            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-                        }
-                    });
+                    set({ subscription: null });
                 }
             }
         } catch (err) {

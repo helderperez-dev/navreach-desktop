@@ -120,7 +120,7 @@ export function Sidebar() {
 
             {(() => {
               const remaining = Math.max(0, limits.ai_actions_limit - dailyUsage.aiActions);
-              const percentRemaining = (remaining / limits.ai_actions_limit) * 100;
+              // const percentRemaining = (remaining / limits.ai_actions_limit) * 100;
               const isLow = remaining <= 5;
               const isWarning = remaining <= 20;
 
@@ -165,6 +165,8 @@ export function Sidebar() {
             </Button>
           </div>
         )}
+
+
 
         <div className={cn("py-2 border-t border-border/30", sidebarCollapsed ? "px-2" : "px-3")}>
           <Tooltip>
