@@ -190,6 +190,7 @@ export function Sidebar() {
               </TooltipContent>
             )}
           </Tooltip>
+
         </div>
       </motion.aside>
     </TooltipProvider >

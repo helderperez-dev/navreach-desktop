@@ -321,16 +321,35 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
 
   // MIMIC CHROME: Set a modern Chrome User-Agent
   // This ensures social networks see us as a regular browser, not Electron
-  const chromeUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36';
+  const chromeUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
   contents.setUserAgent(chromeUA);
 
   // MIMIC CHROME: Mask Electron/Automation signals and Spoof Fingerprinting
   // We use a high-quality masking script to bypass advanced detection
+  // This script is now injected into EVERY frame (including iframes) to handle challenges like Turnstile
   const maskSignalsScript = `
     (function() {
-      // 1. Hide navigator.webdriver
-      if (Object.getOwnPropertyDescriptor(navigator, 'webdriver')) {
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      // 1. Ensure navigator properties match a real Chrome
+      const chromeUA = '${chromeUA}';
+      
+      const overrides = {
+        webdriver: false,
+        userAgent: chromeUA,
+        appVersion: chromeUA.replace('Mozilla/', ''),
+        platform: 'MacIntel',
+        vendor: 'Google Inc.',
+        languages: ['en-US', 'en'],
+        deviceMemory: 8,
+        hardwareConcurrency: 8
+      };
+
+      for (const [prop, value] of Object.entries(overrides)) {
+        try {
+          Object.defineProperty(navigator, prop, {
+            get: () => value,
+            configurable: true
+          });
+        } catch (e) {}
       }
       
       // 2. Mock chrome object (essential for "Is Chrome" checks)
@@ -341,15 +360,7 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
         app: {}
       };
 
-      // 3. Ensure navigator properties match a real Chrome
-      const chromeUA = '${chromeUA}';
-      Object.defineProperty(navigator, 'userAgent', { get: () => chromeUA, configurable: true });
-      Object.defineProperty(navigator, 'appVersion', { get: () => chromeUA.replace('Mozilla/', ''), configurable: true });
-      Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel', configurable: true });
-      Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.', configurable: true });
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'], configurable: true });
-      
-      // 4. Mock Plugins & Hardware (standard Chrome profiles)
+      // 3. Mock Plugins (standard Chrome profiles)
       if (!navigator.plugins.length) {
         const mockPlugins = [
           { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
@@ -359,39 +370,76 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
         Object.defineProperty(navigator, 'plugins', { get: () => mockPlugins, configurable: true });
       }
       
-      // Hardware Concurrency & Memory (standard high-end Mac)
-      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8, configurable: true });
-      if (navigator.deviceMemory === undefined) {
-        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8, configurable: true });
-      }
-
-      // 5. Spoof Screen & Dimensions (Avoid "Headless" signatures)
+      // 4. Spoof Screen & Dimensions (Avoid "Headless" signatures)
       Object.defineProperty(Screen.prototype, 'colorDepth', { get: () => 24, configurable: true });
       Object.defineProperty(Screen.prototype, 'pixelDepth', { get: () => 24, configurable: true });
 
-      // 6. Hide common automation properties and Electron leaks
+      // 5. Hide common automation properties and Electron leaks
+      // We set them to undefined rather than deleting to avoid Proxy traps/errors
       try {
-        delete window.process;
-        delete window.electron;
-        delete window.__REAVION_RECORDER_ACTIVE__;
+        window.process = undefined;
+        (window as any).electron = undefined;
+        (window as any).ipcRenderer = undefined;
       } catch(e) {}
       
-      // Ensure specific global checks for Electron fail
-      window.process = undefined;
-      window.ipcRenderer = undefined;
+      // 6. Advanced evasion for Google/ReCAPTCHA/Turnstile
+      const removeCDC = () => {
+        for (const prop in window) {
+          if (prop.match(/^cdc_[a-z0-9]+$/)) {
+            try { (window as any)[prop] = undefined; } catch(e) {}
+          }
+        }
+      };
+      removeCDC();
+      
+      // Spoof WebGL fingerprint consistently
+      try {
+          const getParameter = WebGLRenderingContext.prototype.getParameter;
+          WebGLRenderingContext.prototype.getParameter = function(parameter) {
+            if (parameter === 37445) return 'Intel Inc.';
+            if (parameter === 37446) return 'Intel(R) Iris(TM) Plus Graphics';
+            return getParameter.apply(this, arguments as any);
+          };
+      } catch(e) {}
     })();
   `;
 
-  // MIMIC CHROME: Inject mask signals as early as possible on every load
+  // MIMIC CHROME: Inject mask signals into every frame as soon as it loads
+  // This is critical because Turnstile/ReCAPTCHA run in iframes
+  contents.on('did-frame-finish-load', (_event, _isMainFrame, _frameProcessId, frameRoutingId) => {
+    try {
+      // executeJavaScript only works on the main frame by default via contents object,
+      // so we must find the frame object to inject into sub-frames.
+      const findFrame = (root: any, id: number): any => {
+        if (root.routingId === id) return root;
+        for (const child of root.frames) {
+          const found = findFrame(child, id);
+          if (found) return found;
+        }
+        return null;
+      };
+
+      const frame = findFrame(contents.mainFrame, frameRoutingId);
+      if (frame) {
+        frame.executeJavaScript(maskSignalsScript).catch(() => { });
+      } else {
+        contents.executeJavaScript(maskSignalsScript).catch(() => { });
+      }
+    } catch (e) {
+      contents.executeJavaScript(maskSignalsScript).catch(() => { });
+    }
+  });
+
   contents.on('dom-ready', () => {
+    // Re-inject on dom-ready just in case
     contents.executeJavaScript(maskSignalsScript).catch(() => { });
 
-    // Inject high-visibility CSS cursor (Black with white border)
+    // Inject high-visibility CSS cursor - LESS AGGRESSIVE
     contents.insertCSS(`
-      * {
-        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='%23000000' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0, auto !important;
+      html, body {
+        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='%23000000' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0, auto;
       }
-      a, button, [role="button"], input, textarea, select {
+      a, button, [role="button"], input, textarea, select, .click-target {
         cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='%23000000' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0, pointer !important;
       }
       #reavion-pointer-host { 
@@ -733,37 +781,59 @@ const SCRIPT_HELPERS = `
     await window.wait(400);
     
     const rect = clickable.getBoundingClientRect();
-    const x = Math.round(rect.left + rect.width / 2);
-    const y = Math.round(rect.top + rect.height / 2);
+    // Offset support for IFrames
+    const ox = (clickable as any).__REAVION_OX__ || 0;
+    const oy = (clickable as any).__REAVION_OY__ || 0;
+    
+    const x = Math.round(ox + rect.left + rect.width / 2);
+    const y = Math.round(oy + rect.top + rect.height / 2);
     
     await window.movePointer(x, y);
     await window.wait(100); 
     
     const finalRect = clickable.getBoundingClientRect();
     return { 
-      x: Math.round(finalRect.left + finalRect.width / 2), 
-      y: Math.round(finalRect.top + finalRect.height / 2), 
+      x: Math.round(ox + finalRect.left + finalRect.width / 2), 
+      y: Math.round(oy + finalRect.top + finalRect.height / 2), 
       element: clickable 
     };
   };
 
   window.querySelectorAllPierce = function(selector, root = document) {
     const results = [];
-    const queue = [root];
+    const queue = [{ root, ox: 0, oy: 0 }];
     const visited = new Set();
     while (queue.length > 0) {
-      const curr = queue.shift();
+      const { root: curr, ox, oy } = queue.shift();
       if (!curr || visited.has(curr)) continue;
       visited.add(curr);
       try {
         const matches = curr.querySelectorAll(selector);
         for (let i = 0; i < matches.length; i++) {
-          if (!results.includes(matches[i])) results.push(matches[i]);
+          const el = matches[i];
+          if (!results.includes(el)) {
+            // Attach temporary offsets for coordinate calculation if inside iframe
+            (el as any).__REAVION_OX__ = ox;
+            (el as any).__REAVION_OY__ = oy;
+            results.push(el);
+          }
         }
       } catch (e) {}
-      const walker = document.createTreeWalker(curr, 1, function(n) { return n.shadowRoot ? 1 : 3; });
-      let host;
-      while (host = walker.nextNode()) if (host.shadowRoot) queue.push(host.shadowRoot);
+      
+      // Pierce Shadow DOM and accessible IFrames
+      const walker = document.createTreeWalker(curr, 1, function(n: any) { 
+        try { return (n.shadowRoot || (n.tagName === 'IFRAME' && n.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
+      } as any);
+      let host: any;
+      while (host = walker.nextNode()) {
+        if (host.shadowRoot) queue.push({ root: host.shadowRoot, ox, oy });
+        try { 
+          if (host.tagName === 'IFRAME' && host.contentDocument) {
+            const rect = host.getBoundingClientRect();
+            queue.push({ root: host.contentDocument, ox: ox + rect.left, oy: oy + rect.top });
+          }
+        } catch(e) {}
+      }
     }
     return results;
   };
@@ -776,20 +846,19 @@ const SCRIPT_HELPERS = `
   window.querySelectorAria = (ariaLabel, index = 0) => {
     if (!ariaLabel) return null;
     const clean = ariaLabel.replace(/['"]/g, '').trim().toLowerCase();
-    const results = [];
-    const queue = [document];
+    const results: any[] = [];
+    const queue = [{ root: document as any, ox: 0, oy: 0 }];
     const visited = new Set();
     
-    // Breadth-first search to find candidates
     while (queue.length > 0) {
-      const curr = queue.shift();
+      const { root: curr, ox, oy } = queue.shift();
       if (!curr || visited.has(curr)) continue;
       visited.add(curr);
       
       const walker = document.createTreeWalker(curr, 1, null);
-      let el;
+      let el: any;
       while (el = walker.nextNode()) {
-        if (results.length > 100) break; // Limit candidate pool for specific search
+        if (results.length > 150) break;
 
         let score = 0;
         const attrs = {
@@ -803,49 +872,42 @@ const SCRIPT_HELPERS = `
             text: (el.innerText || '').slice(0, 50).toLowerCase().trim()
         };
 
-        // Scoring Logic
-        // 1. Exact matches (highest priority)
         if (attrs.aria === clean) score += 100;
         else if (attrs.placeholder === clean) score += 95;
-        else if (attrs.itemprop === clean) score += 95; // Google specific
         else if (attrs.name === clean) score += 90;
         else if (attrs.testId === clean) score += 85;
-        
-        // 2. Starts with (high priority)
         else if (attrs.aria.startsWith(clean + ' ')) score += 60;
         else if (attrs.placeholder.startsWith(clean)) score += 55;
-        else if (attrs.name.startsWith(clean)) score += 50;
-
-        // 3. Contains (medium/low)
         else if (attrs.aria.includes(clean)) score += 30;
-        else if (attrs.placeholder.includes(clean)) score += 25;
-        else if (attrs.testId.includes(clean)) score += 20;
-        else if (attrs.title.includes(clean)) score += 15;
-        else if (attrs.alt.includes(clean)) score += 10;
         
-        // 4. Role/Text fallbacks (lowest)
-        // Only if we haven't found a strong attribute match
         if (score === 0) { 
              if (attrs.role === clean) score += 5;
-             // Text match: risky, can match random content. Give it low score.
-             // But if it's a button/link with exact text, bump it up.
              if (attrs.text === clean && (el.tagName === 'BUTTON' || el.tagName === 'A')) score += 40;
         }
 
         if (score > 0) {
+           el.__REAVION_OX__ = ox;
+           el.__REAVION_OY__ = oy;
            results.push({ el, score });
         }
       }
       
-      const hosts = document.createTreeWalker(curr, 1, function(n) { return n.shadowRoot ? 1 : 3; });
-      let h;
-      while (h = hosts.nextNode()) queue.push(h.shadowRoot);
+      const hosts = document.createTreeWalker(curr, 1, function(n: any) { 
+        try { return (n.shadowRoot || (n.tagName === 'IFRAME' && n.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
+      } as any);
+      let h: any;
+      while (h = hosts.nextNode()) {
+          if (h.shadowRoot) queue.push({ root: h.shadowRoot, ox, oy });
+          try {
+              if (h.tagName === 'IFRAME' && h.contentDocument) {
+                  const rect = h.getBoundingClientRect();
+                  queue.push({ root: h.contentDocument, ox: ox + rect.left, oy: oy + rect.top });
+              }
+          } catch(e) {}
+      }
     }
 
-    // Sort by score descending
     results.sort((a, b) => b.score - a.score);
-    
-    // Return the request index from the sorted list
     const match = results[index] || results[0];
     return match ? match.el : null;
   };
@@ -853,27 +915,42 @@ const SCRIPT_HELPERS = `
   window.findElementByText = (text, root = document) => {
     const clean = (text || '').toString().replace(/['"]/g, '').trim().toLowerCase();
     if (!clean) return null;
-    const queue = [root];
+    const queue = [{ root: root as any, ox: 0, oy: 0 }];
     const visited = new Set();
     while (queue.length > 0) {
-      const curr = queue.shift();
+      const { root: curr, ox, oy } = queue.shift();
       if (!curr || visited.has(curr)) continue;
       visited.add(curr);
+      
       const walker = document.createTreeWalker(curr, 4, null);
-      let node;
+      let node: any;
       while (node = walker.nextNode()) {
         const txt = node.textContent.toLowerCase();
         if (txt.includes(clean)) {
           const p = node.parentElement;
           if (p && p.offsetWidth > 0 && p.offsetHeight > 0) {
-              // Prefer exact matches or buttons/links
-              if (txt.trim() === clean || p.tagName === 'A' || p.tagName === 'BUTTON') return p;
+              if (txt.trim() === clean || p.tagName === 'A' || p.tagName === 'BUTTON') {
+                  p.__REAVION_OX__ = ox;
+                  p.__REAVION_OY__ = oy;
+                  return p;
+              }
           }
         }
       }
-      const hosts = document.createTreeWalker(curr, 1, function(n) { return n.shadowRoot ? 1 : 3; });
-      let h;
-      while (h = hosts.nextNode()) queue.push(h.shadowRoot);
+      
+      const hosts = document.createTreeWalker(curr, 1, function(n: any) { 
+        try { return (n.shadowRoot || (n.tagName === 'IFRAME' && n.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
+      } as any);
+      let h: any;
+      while (h = hosts.nextNode()) {
+          if (h.shadowRoot) queue.push({ root: h.shadowRoot, ox, oy });
+          try {
+              if (h.tagName === 'IFRAME' && h.contentDocument) {
+                  const rect = h.getBoundingClientRect();
+                  queue.push({ root: h.contentDocument, ox: ox + rect.left, oy: oy + rect.top });
+              }
+          } catch(e) {}
+      }
     }
     return null;
   };
@@ -1287,27 +1364,42 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                 return true;
             }
 
-            const selector = 'button, a, input, textarea, select, summary, [role], [data-testid], [tabindex]:not([tabindex="-1"]), [contenteditable], [onclick]';
+            const selector = 'button, a, input, textarea, select, summary, [role], [data-testid], [tabindex]:not([tabindex="-1"]), [contenteditable], [onclick], iframe';
             
-            function collect(root) {
+            function collect(root, ox = 0, oy = 0) {
                 const candidates = root.querySelectorAll(selector);
                 candidates.forEach(node => {
                     const role = node.getAttribute('role');
-                    const isActuallyInteractive = 
+                    const tag = node.tagName.toLowerCase();
+                    const isIframe = tag === 'iframe';
+                    
+                    let isActuallyInteractive = 
                         ['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY'].includes(node.tagName) ||
                         ['button', 'link', 'checkbox', 'menuitem', 'option', 'tab', 'switch', 'textbox', 'combobox', 'searchbox', 'listbox'].includes(role) ||
                         node.hasAttribute('onclick') ||
                         node.hasAttribute('contenteditable');
 
+                    // FORCE reCAPTCHA Visibility and optimized targeting
+                    if (isIframe && (node.src?.includes('recaptcha') || node.name?.includes('recaptcha'))) {
+                        isActuallyInteractive = true;
+                        // reCAPTCHA Checkbox iframe is usually ~304x78. The checkbox is at ~28,39 relative to top-left.
+                        if (rect.width > 200 && rect.width < 400 && rect.height < 100) {
+                             (node as any).__REAVION_CUSTOM_POS__ = { 
+                                 x: Math.round(ox + rect.left + 28), 
+                                 y: Math.round(oy + rect.top + 39) 
+                             };
+                             name = 'I am not a robot checkbox';
+                        }
+                    }
+
                     if (isActuallyInteractive && isVisible(node)) {
                         const i = elements.length;
-                        const tag = node.tagName.toLowerCase();
                         const testId = node.getAttribute('data-testid');
                         
                         let ariaLabel = node.getAttribute('aria-label');
                         if (!ariaLabel && node.getAttribute('aria-labelledby')) {
                             const ids = node.getAttribute('aria-labelledby').split(' ');
-                            ariaLabel = ids.map(id => document.getElementById(id)?.innerText).filter(Boolean).join(' ');
+                            ariaLabel = ids.map(id => root.getElementById(id)?.innerText).filter(Boolean).join(' ');
                         }
 
                         const title = node.getAttribute('title');
@@ -1318,13 +1410,16 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
                         let name = ariaLabel || testId || title || placeholder || innerText || '';
                         
+                        if (isIframe && !name) {
+                            name = 'reCAPTCHA Challenge Container';
+                        }
+
                         if (!name && (tag === 'input' || tag === 'textarea' || tag === 'select') && node.id) {
-                            const labelEl = document.querySelector('label[for="' + node.id + '"]');
+                            const labelEl = root.querySelector('label[for="' + node.id + '"]');
                             if (labelEl) name = labelEl.innerText;
                         }
 
                         if (!name) {
-                            // Deep icon search
                             const icon = node.querySelector('svg, i, img');
                             if (icon) {
                                 name = icon.getAttribute('aria-label') || icon.getAttribute('title') || icon.getAttribute('alt') || icon.querySelector('title')?.innerText || '';
@@ -1333,40 +1428,25 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
 
                         name = name.replace(/\\s+/g, ' ').trim().slice(0, 80);
                         let description = (innerText && name !== innerText) ? innerText.replace(/\\s+/g, ' ').trim().slice(0, 120) : undefined;
-                        
-                        // Filter out repetitive boilerplate
                         if (description && (description.length < 2 || description === name)) description = undefined;
                         
-                        // Even if it has no name, we include it if it's a button/input/link as it's clearly interactive
                         const rect = node.getBoundingClientRect();
                         const state = [];
                         if (node.getAttribute('aria-expanded') === 'true') state.push('expanded');
                         const ariaSelected = node.getAttribute('aria-selected') === 'true';
                         const hasActiveClass = node.classList.contains('active') || node.classList.contains('selected');
-                        // X specific: active tab often has a bold font weight or a specific underline div helper
-                        let isXActiveTab = false;
-                        if (!ariaSelected && !hasActiveClass && (node.getAttribute('role') === 'tab')) {
-                            const style = window.getComputedStyle(node);
-                            if (style.fontWeight === '700' || parseInt(style.fontWeight) >= 700) {
-                                isXActiveTab = !!node.querySelector('div[style*="background-color"]');
-                            }
-                        }
-
-                        if (ariaSelected || hasActiveClass || isXActiveTab) state.push('selected');
+                        
+                        if (ariaSelected || hasActiveClass) state.push('selected');
                         if (node.disabled) state.push('disabled');
                         if (node.checked) state.push('checked');
 
                         node.setAttribute('data-reavion-id', i.toString());
 
-                        // Calculate the most robust selector
                         let suggested = '';
                         if (testId) suggested = '[data-testid="' + testId + '"]';
                         else if (ariaLabel && ariaLabel.length < 50) suggested = 'aria/' + ariaLabel;
                         else if (node.id && !node.id.match(/^ember\d+/i) && !node.id.match(/^[a-z0-9]{8,}$/)) suggested = '#' + node.id;
                         else if (name && name.length < 50 && (tag === 'button' || tag === 'a' || role === 'button' || role === 'link')) suggested = 'text/' + name;
-                        else if (node.id) suggested = '#' + node.id; 
-                        else if (tag === 'input' && node.getAttribute('name')) suggested = 'input[name="' + node.getAttribute('name') + '"]';
-                        else if (tag === 'textarea' && node.getAttribute('name')) suggested = 'textarea[name="' + node.getAttribute('name') + '"]';
                         else suggested = 'id/' + i; 
 
                         elements.push({
@@ -1382,17 +1462,28 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                             nameAttr: node.getAttribute('name') || undefined,
                             value: (tag === 'input' || tag === 'textarea') ? value : undefined,
                             href: (tag === 'a') ? href : undefined,
-                            pos: { x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) },
+                            pos: (node as any).__REAVION_CUSTOM_POS__ || { 
+                                x: Math.round(ox + rect.left + rect.width / 2), 
+                                y: Math.round(oy + rect.top + rect.height / 2) 
+                            },
                             state: state.length > 0 ? state.join(', ') : undefined
                         });
                     }
                 });
 
-                // Traverse Shadow DOM
-                const walker = document.createTreeWalker(root, 1, function(node) { return node.shadowRoot ? 1 : 3; });
-                let host;
+                // Traverse Shadow DOM and IFrames
+                const walker = document.createTreeWalker(root, 1, function(node: any) { 
+                    try { return (node.shadowRoot || (node.tagName === 'IFRAME' && node.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
+                } as any);
+                let host: any;
                 while (host = walker.nextNode()) {
-                    collect(host.shadowRoot);
+                    if (host.shadowRoot) collect(host.shadowRoot, ox, oy);
+                    try {
+                        if (host.tagName === 'IFRAME' && host.contentDocument) {
+                            const iRect = host.getBoundingClientRect();
+                            collect(host.contentDocument, ox + iRect.left, oy + iRect.top);
+                        }
+                    } catch(e) {}
                 }
             }
 

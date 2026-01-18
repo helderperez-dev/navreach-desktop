@@ -12,6 +12,7 @@ interface AppState {
   hasStarted: boolean;
   showPlaybookBrowser: boolean;
   playbookBrowserMaximized: boolean;
+  showOnboarding: boolean;
   toggleSidebar: () => void;
   toggleChatPanel: () => void;
   togglePlaybookBrowser: () => void;
@@ -21,6 +22,7 @@ interface AppState {
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setActiveView: (view: 'browser' | 'settings' | 'targets' | 'playbooks') => void | Promise<void>;
   setHasStarted: (started: boolean) => void;
+  setShowOnboarding: (show: boolean) => void;
   reset: () => void;
 }
 
@@ -35,6 +37,7 @@ export const useAppStore = create<AppState>()(
       hasStarted: false,
       showPlaybookBrowser: false,
       playbookBrowserMaximized: false,
+      showOnboarding: false,
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       toggleChatPanel: () => set((state) => ({ chatPanelCollapsed: !state.chatPanelCollapsed })),
       togglePlaybookBrowser: () => set((state) => ({ showPlaybookBrowser: !state.showPlaybookBrowser, playbookBrowserMaximized: false })),
@@ -82,11 +85,13 @@ export const useAppStore = create<AppState>()(
         // Force chat panel to open if we are starting a session
         chatPanelCollapsed: hasStarted ? false : state.chatPanelCollapsed
       })),
+      setShowOnboarding: (show) => set({ showOnboarding: show }),
       reset: () => set({
         hasStarted: false,
         activeView: 'browser',
         showPlaybookBrowser: false,
-        playbookBrowserMaximized: false
+        playbookBrowserMaximized: false,
+        showOnboarding: false
       })
     }),
     {

@@ -12,7 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { LogOut, Settings, User, Zap } from 'lucide-react';
+import { LogOut, Settings, User, Zap, HelpCircle } from 'lucide-react';
 import { WorkspaceSelector } from './WorkspaceSelector';
 import { useBillingStore } from '@/stores/billing.store';
 import { Badge } from '@/components/ui/badge';
@@ -109,6 +109,13 @@ export function TitleBar() {
             >
               <Settings className="mr-2 h-4 w-4" />
               <span>Settings</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="cursor-pointer"
+              onClick={() => useAppStore.getState().setShowOnboarding(true)}
+            >
+              <HelpCircle className="mr-2 h-4 w-4" />
+              <span>Help & Guide</span>
             </DropdownMenuItem>
             <DropdownMenuItem
               className="cursor-pointer text-destructive focus:text-destructive"

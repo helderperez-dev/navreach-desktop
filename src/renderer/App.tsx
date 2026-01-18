@@ -16,6 +16,8 @@ import { analytics } from '@/lib/posthog'; // Still keep for helper functions if
 import { Toaster } from 'sonner';
 
 import { CircularLoader } from '@/components/ui/CircularLoader';
+import { ConnectivityBanner } from '@/components/ui/ConnectivityBanner';
+import { OnboardingGuide } from '@/components/onboarding/OnboardingGuide';
 
 export function App() {
   const { theme, setTheme } = useAppStore();
@@ -138,6 +140,8 @@ export function App() {
 
   return (
     <>
+      <ConnectivityBanner />
+      <OnboardingGuide />
       {session ? <MainLayout /> : <AuthScreen />}
       <Toaster position="bottom-right" theme={theme as 'light' | 'dark' | 'system'} />
     </>

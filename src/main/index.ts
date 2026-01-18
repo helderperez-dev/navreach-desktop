@@ -15,6 +15,12 @@ import { config } from 'dotenv';
 // Load environment variables for Main process
 config();
 
+// MASK SIGNALS: Disable blink automation signals app-wide
+// This is the most effective way to set navigator.webdriver to false
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
+app.commandLine.appendSwitch('disable-infobars');
+app.commandLine.appendSwitch('no-sandbox'); // Be careful with this, but often helpful for evasion in isolated environments
+
 // Initialize Analytics & Logging
 analytics.init();
 initOTLPLogging();
