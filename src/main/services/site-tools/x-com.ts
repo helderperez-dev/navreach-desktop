@@ -455,6 +455,62 @@ async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
 
   return { success: false, error: 'Follow target not found (tried Direct, Caret, and Hover)' };
 }
+
+async function typeHumanLike(el, text) {
+  if (!el) return;
+  el.focus();
+  
+  const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
+  
+  // Initial pause before starting to type
+  await wait(200 + Math.random() * 300);
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    
+    // 1. TYPO CHANCE (2% chance for a minor mistake)
+    if (i > 3 && i < text.length - 2 && Math.random() < 0.02) {
+       const keys = "qwertyuiopasdfghjklzxcvbnm";
+       const typo = keys[Math.floor(Math.random() * keys.length)];
+       document.execCommand('insertText', false, typo);
+       await wait(80 + Math.random() * 120);
+       document.execCommand('delete', false); // Backspace
+       await wait(120 + Math.random() * 180);
+    }
+
+    document.execCommand('insertText', false, char);
+
+    // 2. MICRO MOUSE MOVEMENTS (5% chance to move mouse slightly while typing)
+    if (Math.random() < 0.05 && typeof window.movePointer === 'function' && window.__LAST_MOUSE_POS__) {
+       const jitterX = window.__LAST_MOUSE_POS__.x + (Math.random() * 10 - 5);
+       const jitterY = window.__LAST_MOUSE_POS__.y + (Math.random() * 10 - 5);
+       // We don't await this to not block typing
+       window.movePointer(jitterX, jitterY).catch(() => {});
+    }
+
+    // 3. KEYSTROKE DELAY
+    // Base delay 40-120ms
+    let delay = 40 + Math.random() * 80;
+    
+    // 4. PUNCTUATION/LOGICAL PAUSE
+    if (['.', '!', '?', ',', ';'].includes(char)) {
+       delay += 250 + Math.random() * 400;
+    } else if (char === ' ') {
+       delay += 30 + Math.random() * 60;
+    }
+    
+    // 5. BIG HESITATION (1% chance to pause for 1-2 seconds)
+    if (Math.random() < 0.01) {
+       delay += 1000 + Math.random() * 1000;
+    }
+
+    await wait(delay * multiplier);
+  }
+  
+  // Final verification events
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+}
 `;
 
 const WAIT_FOR_RESULTS_SCRIPT = `
@@ -908,8 +964,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                   await safeClick(composer, 'Composer');
                   // Soft focus
                   composer.focus({ preventScroll: true });
-                  document.execCommand('selectAll', false, null);
-                  document.execCommand('insertText', false, ${JSON.stringify(text)});
+                  await typeHumanLike(composer, ${JSON.stringify(text)});
                   await wait(800);
                   const send = document.querySelector('[data-testid="tweetButton"]');
                   if (send) {
@@ -987,8 +1042,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             await safeClick(composer, 'Composer', { focusWait: 50, afterWait: 200 });
             // Soft focus - preventScroll helps avoid window jumping
             composer.focus({ preventScroll: true });
-            document.execCommand('selectAll', false, null);
-            document.execCommand('insertText', false, ${JSON.stringify(text)});
+            await typeHumanLike(composer, ${JSON.stringify(text)});
             await wait(500);
             
             const send = root.querySelector('[data-testid="tweetButton"]');
@@ -1051,8 +1105,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             await safeClick(composer, 'Composer');
             // Soft focus
             composer.focus({ preventScroll: true });
-            document.execCommand('insertText', false, ${JSON.stringify(text)});
-            composer.dispatchEvent(new Event('input', { bubbles: true }));
+            await typeHumanLike(composer, ${JSON.stringify(text)});
             await wait(500);
 
             const send = document.querySelector('[data-testid="tweetButton"]');
@@ -1532,7 +1585,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                             if (composer) {
                                 await safeClick(composer, 'Reply Composer');
                                 composer.focus({ preventScroll: true });
-                                document.execCommand('insertText', false, rText);
+                                await typeHumanLike(composer, rText);
                                 await wait(500);
                                 const send = modal.querySelector('[data-testid="tweetButton"]');
                                 if (send) {
@@ -1619,8 +1672,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                           const input = inputs[i];
                           if (input) {
                               input.focus();
+                              await wait(150 + Math.random() * 250);
                               document.execCommand('insertText', false, pinStr[i] || "");
-                              await wait(200);
+                              await wait(100 + Math.random() * 150);
                           }
                       }
                       await wait(2500); // Wait for decryption/redirect
@@ -1634,7 +1688,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
               await safeClick(dmComposer, 'DM Composer');
               dmComposer.focus({ preventScroll: true });
-              document.execCommand('insertText', false, ${JSON.stringify(text)});
+              await typeHumanLike(dmComposer, ${JSON.stringify(text)});
               await wait(800);
 
               const sendBtn = document.querySelector('[data-testid="dm-composer-send-button"]');
