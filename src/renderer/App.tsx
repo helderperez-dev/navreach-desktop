@@ -11,6 +11,8 @@ import { useChatStore } from '@/stores/chat.store';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useBrowserStore } from '@/stores/browser.store';
 import { supabase } from '@/lib/supabase';
+import { usePostHog } from 'posthog-js/react';
+import { analytics } from '@/lib/posthog'; // Still keep for helper functions if needed elsewhere
 import { Toaster } from 'sonner';
 
 import { CircularLoader } from '@/components/ui/CircularLoader';
@@ -58,11 +60,16 @@ export function App() {
       console.log('[App] Auth state change event:', event, session?.user?.email || 'no-user');
       setSession(session);
 
+      if (session?.user) {
+        analytics.identify(session.user.id, session.user.email);
+      }
+
       if (event === 'SIGNED_IN') {
         loadSettings();
       }
 
       if (event === 'SIGNED_OUT') {
+        analytics.reset();
         useBillingStore.getState().reset();
         useSubscriptionStore.getState().reset();
         useTargetsStore.getState().reset();

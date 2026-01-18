@@ -138,6 +138,11 @@ const authAPI = {
   },
 };
 
+const analyticsAPI = {
+  identify: (userId: string, email?: string) => ipcRenderer.invoke('analytics:identify', { userId, email }),
+  group: (type: string, key: string, properties?: any) => ipcRenderer.invoke('analytics:group', { type, key, properties }),
+};
+
 const stripeAPI = {
   getConfig: () => ipcRenderer.invoke('stripe:get-config'),
   createPaymentIntent: (amount: number, currency: string, metadata?: any, customerId?: string) =>
@@ -191,6 +196,7 @@ contextBridge.exposeInMainWorld('api', {
   ai: aiAPI,
   debug: debugAPI,
   auth: authAPI,
+  analytics: analyticsAPI,
   stripe: stripeAPI,
 });
 
@@ -206,6 +212,7 @@ declare global {
       ai: typeof aiAPI;
       debug: DebugAPI;
       auth: typeof authAPI;
+      analytics: typeof analyticsAPI;
       stripe: typeof stripeAPI;
     };
   }

@@ -19,6 +19,7 @@ import type { AppSettings } from '../../shared/types';
 import { systemSettingsService } from './settings.service';
 import { usageService } from './usage.service';
 import { stripeService } from './stripe.service';
+import { analytics } from './analytics';
 
 export const store = new Store<AppSettings>({
     name: 'settings',
@@ -781,6 +782,14 @@ CRITICAL:
             if (effectiveProvider.id !== provider.id || effectiveModel.id !== model.id) {
                 console.log(`[AI Service] Using Resolved Config: ${effectiveProvider.type}/${effectiveModel.id}`);
             }
+
+            // Track AI Action Start
+            analytics.track('AI Action Started', {
+                modelId: effectiveModel.id,
+                providerId: effectiveProvider.type,
+                isPlaybookRun: isPlaybookRun,
+                infiniteMode: infiniteMode,
+            });
 
             /* 
             // --- Resolve AI Configuration (System Defaults & User Overrides) ---

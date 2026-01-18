@@ -8,10 +8,16 @@ import { setupMCPHandlers } from './ipc/mcp';
 import { setupAIHandlers } from './services/ai';
 import { setupStripeHandlers } from './ipc/stripe';
 import { setupMenu } from './menu';
+import { analytics, setupAnalyticsHandlers } from './services/analytics';
+import { initOTLPLogging, shutdownLogging } from './services/logging';
 import { config } from 'dotenv';
 
 // Load environment variables for Main process
 config();
+
+// Initialize Analytics & Logging
+analytics.init();
+initOTLPLogging();
 
 // Force app name for dev and production
 app.name = 'Reavion';
@@ -131,6 +137,7 @@ if (!gotTheLock) {
     setupMCPHandlers(ipcMain);
     setupAIHandlers(ipcMain);
     setupStripeHandlers(ipcMain);
+    setupAnalyticsHandlers(ipcMain);
 
     ipcMain.handle('window:minimize', () => {
       mainWindow?.minimize();
@@ -155,6 +162,8 @@ if (!gotTheLock) {
         createWindow();
       }
     });
+
+    analytics.track('App Started', { isDev: is.dev });
   });
 }
 
@@ -166,5 +175,12 @@ app.on('open-url', (event, url) => {
 
 app.on('window-all-closed', () => {
   app.quit();
+});
+
+app.on('will-quit', async () => {
+  await Promise.all([
+    analytics.shutdown(),
+    shutdownLogging()
+  ]);
 });
 
