@@ -7,6 +7,7 @@ import { useWorkspaceStore } from './workspace.store';
 interface ChatState {
   conversations: Conversation[];
   activeConversationId: string | null;
+  runningConversationId: string | null;
   selectedModel: ModelConfig | null;
   isStreaming: boolean;
   maxIterations: number;
@@ -17,6 +18,7 @@ interface ChatState {
   pendingPrompt: string | { content: string, isIsolated?: boolean, playbookId?: string } | null;
   createConversation: () => string;
   setActiveConversation: (id: string | null) => void;
+  setRunningConversationId: (id: string | null) => void;
   addMessage: (conversationId: string, message: Omit<Message, 'id' | 'timestamp'>) => void;
   updateMessage: (conversationId: string, messageId: string, content: string) => void;
   mergeMessage: (conversationId: string, message: Partial<Message> & { role: 'assistant' | 'system' }) => void;
@@ -40,6 +42,7 @@ export const useChatStore = create<ChatState>()(
     (set, get) => ({
       conversations: [],
       activeConversationId: null,
+      runningConversationId: null,
       selectedModel: null,
       isStreaming: false,
       maxIterations: 30,
@@ -73,6 +76,7 @@ export const useChatStore = create<ChatState>()(
       },
 
       setActiveConversation: (id) => set({ activeConversationId: id }),
+      setRunningConversationId: (id) => set({ runningConversationId: id }),
 
       addMessage: (conversationId, message) => {
         const newMessage: Message = {
@@ -242,6 +246,7 @@ export const useChatStore = create<ChatState>()(
         set({
           conversations: [],
           activeConversationId: null,
+          runningConversationId: null,
           currentSessionTime: 0,
           pendingPrompt: null,
           isStreaming: false,

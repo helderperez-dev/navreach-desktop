@@ -111,6 +111,7 @@ declare global {
         onPlaybookStatus: (callback: (data: { nodeId: string; status: 'running' | 'success' | 'error'; message?: string }) => void) => () => void;
         suggest: (request: any) => Promise<{ success: boolean; suggestions?: { label: string; prompt: string }[]; error?: string }>;
         resetContext: (workspaceId?: string) => Promise<{ success: boolean; error?: string }>;
+        updateSession: (tokens: { accessToken: string; refreshToken: string }) => Promise<{ success: boolean; error?: string }>;
       };
       debug: {
         onLog: (callback: (data: { type: string; message: string; data?: any }) => void) => () => void;
@@ -147,6 +148,11 @@ declare global {
         }>;
         getUsage: (accessToken: string, type: string) => Promise<any>;
         trackUsage: (accessToken: string, type: string, incrementBy?: number) => Promise<any>;
+      };
+      engagement: {
+        getLogs: (accessToken: string, options?: any) => Promise<import('@shared/types/engagement.types').EngagementLog[]>;
+        getStats: (accessToken: string) => Promise<import('@shared/types/engagement.types').EngagementStats>;
+        exportCsv: (accessToken: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
       };
     };
   }

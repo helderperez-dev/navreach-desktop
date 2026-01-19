@@ -24,6 +24,9 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useSubscriptionStore } from '@/stores/subscription.store';
 import { useBillingStore } from '@/stores/billing.store';
 import { toast } from 'sonner';
+import { knowledgeService } from '@/services/knowledgeService';
+import type { KnowledgeBase, KnowledgeContent } from '@shared/types';
+
 
 
 
@@ -175,6 +178,8 @@ export function ChatPanel() {
   const [playbooks, setPlaybooks] = useState<any[]>([]);
 
   const { session } = useAuthStore();
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeContent[]>([]);
 
   const filteredConversations = useMemo(() => {
     return conversations.filter((conv: Conversation) =>
@@ -209,11 +214,40 @@ export function ChatPanel() {
 
       refreshData();
       fetchLists();
+
+      const fetchKnowledge = async () => {
+        try {
+          const kbs = await knowledgeService.getKnowledgeBases();
+          setKnowledgeBases(kbs);
+          const allContent = await Promise.all(kbs.map(kb => knowledgeService.getKBContent(kb.id)));
+          setKnowledgeItems(allContent.flat());
+        } catch (err) {
+          console.error('[ChatPanel] Failed to fetch knowledge:', err);
+        }
+      };
+      fetchKnowledge();
     }
-  }, [session, fetchLists, currentWorkspace?.id]); // Re-run when session or workspace changes
+  }, [session, fetchLists, currentWorkspace?.id]);
 
   const getGlobalVariables = useCallback(() => {
     const groups: { nodeName: string; variables: { label: string; value: string; example?: string }[] }[] = [];
+
+    // 1. Knowledge Bases (Priority)
+    if (knowledgeItems.length > 0) {
+      knowledgeBases.forEach(kb => {
+        const items = knowledgeItems.filter(item => item.kb_id === kb.id);
+        if (items.length > 0) {
+          groups.push({
+            nodeName: kb.name,
+            variables: items.map(item => ({
+              label: item.title || 'Untitled',
+              value: `{{kb.${item.id}}}`,
+              example: item.content
+            }))
+          });
+        }
+      });
+    }
 
     if (playbooks.length > 0) {
       groups.push({
@@ -259,8 +293,10 @@ export function ChatPanel() {
       });
     }
 
+
+
     return groups;
-  }, [playbooks, lists, mcpServers, apiTools]);
+  }, [playbooks, lists, mcpServers, apiTools, knowledgeBases, knowledgeItems]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -281,16 +317,20 @@ export function ChatPanel() {
   const savedMessagesRef = useRef<Set<string>>(new Set());
 
   const saveNarrationMessage = useCallback((content: string) => {
-    if (!activeConversationId || !content.trim()) return;
+    const { runningConversationId, activeConversationId } = useChatStore.getState();
+    const targetId = runningConversationId || activeConversationId;
+    if (!targetId || !content.trim()) return;
 
-    mergeMessage(activeConversationId, {
+    mergeMessage(targetId, {
       role: 'assistant',
       content: content.trim(),
     });
-  }, [activeConversationId, mergeMessage]);
+  }, [mergeMessage]);
 
   useEffect(() => {
     const unsubscribe = window.api.ai.onStreamChunk((data) => {
+      const { setRunningConversationId } = useChatStore.getState();
+
       if (data.done) {
         setIsStreaming(false);
         setAgentStartTime(null);
@@ -298,17 +338,24 @@ export function ChatPanel() {
         setLiveNarration([]);
         setCurrentToolCalls([]);
 
+        // Clear running state
+        setRunningConversationId(null);
+
         toolHistoryRef.current = [];
         committedNarrativeLinesRef.current = 0;
         savedMessagesRef.current.clear();
         streamingContentRef.current = '';
       } else {
+        const { runningConversationId, activeConversationId } = useChatStore.getState();
+        const targetId = runningConversationId || activeConversationId;
+
         const content = data.content;
         const streamData = data as any; // toolCall, toolResult, isNewTurn, limitReached
 
         // Handling limit reached signal from main process
         if (streamData.limitReached) {
           setIsStreaming(false);
+          setRunningConversationId(null);
           setAgentStartTime(null);
           openUpgradeModal(
             "Daily Limit Reached",
@@ -318,13 +365,13 @@ export function ChatPanel() {
         }
 
         // 0. Handle New Turn Signal (Starts a fresh chronological block)
-        if (streamData.isNewTurn && activeConversationId) {
+        if (streamData.isNewTurn && targetId) {
           // Clear tracking for the new turn without double-merging
           streamingContentRef.current = '';
           setStreamingContent('');
 
           // Add a fresh assistant message that subsequent chunks will merge into
-          addMessage(activeConversationId, {
+          addMessage(targetId, {
             role: 'assistant',
             content: '',
           });
@@ -341,16 +388,16 @@ export function ChatPanel() {
             setStreamingContent(streamingContentRef.current);
 
             // Proactively merge into the current assistant message to show it in the turn list immediately
-            if (activeConversationId) {
-              mergeMessage(activeConversationId, {
+            if (targetId) {
+              mergeMessage(targetId, {
                 role: 'assistant',
                 content: content,
               });
             }
           } else {
             // It is a final response part
-            if (activeConversationId) {
-              mergeMessage(activeConversationId, {
+            if (targetId) {
+              mergeMessage(targetId, {
                 role: 'assistant',
                 content: content.trim(),
               });
@@ -421,7 +468,7 @@ export function ChatPanel() {
           });
 
           // Save the completed tool interaction to history
-          if (activeConversationId) {
+          if (targetId) {
             const toolCallObj = {
               id: resolvedToolCallId || uuidv4(),
               name: fallbackToolParams.name,
@@ -434,7 +481,7 @@ export function ChatPanel() {
               error: result.error
             } as any;
 
-            mergeMessage(activeConversationId, {
+            mergeMessage(targetId, {
               role: 'assistant',
               content: '',
               toolCalls: [toolCallObj],
@@ -451,7 +498,7 @@ export function ChatPanel() {
     });
 
     return () => unsubscribe();
-  }, [activeConversationId, addMessage, setIsStreaming, addLog, saveNarrationMessage]);
+  }, [addMessage, setIsStreaming, addLog, saveNarrationMessage, incrementAIActionLocal]);
 
   useEffect(() => {
     if (!showMaxStepsPopover) return;
@@ -562,6 +609,7 @@ export function ChatPanel() {
     }
 
     setIsStreaming(true);
+    useChatStore.getState().setRunningConversationId(conversationId); // Track running agent conversation
     setAgentStartTime(Date.now());
     setHasStarted(true);
 
@@ -1058,6 +1106,7 @@ export function ChatPanel() {
                       e.stopPropagation();
                       // Tool actions are already saved immediately when they complete
                       // Clear streaming state
+                      // Clear streaming state
                       setIsStreaming(false);
                       setAgentStartTime(null);
                       setStreamingContent('');
@@ -1065,6 +1114,9 @@ export function ChatPanel() {
                       setLiveNarration([]);
                       toolHistoryRef.current = [];
                       savedMessagesRef.current.clear();
+
+                      // Clear running state
+                      useChatStore.getState().setRunningConversationId(null);
 
                       // Add a simple stop indicator
                       if (activeConversationId) {

@@ -66,8 +66,15 @@ export function App() {
         analytics.identify(session.user.id, session.user.email);
       }
 
-      if (event === 'SIGNED_IN') {
-        loadSettings();
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (event === 'SIGNED_IN') loadSettings();
+
+        if (session && session.access_token && session.refresh_token) {
+          window.api.ai.updateSession({
+            accessToken: session.access_token,
+            refreshToken: session.refresh_token
+          }).catch(err => console.error('[App] Failed to update session in main process:', err));
+        }
       }
 
       if (event === 'SIGNED_OUT') {

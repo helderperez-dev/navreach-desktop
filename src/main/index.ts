@@ -7,6 +7,7 @@ import { setupSettingsHandlers } from './ipc/settings';
 import { setupMCPHandlers } from './ipc/mcp';
 import { setupAIHandlers } from './services/ai';
 import { setupStripeHandlers } from './ipc/stripe';
+import { setupEngagementHandlers } from './ipc/engagement';
 import { setupMenu } from './menu';
 import { analytics, setupAnalyticsHandlers } from './services/analytics';
 import { initOTLPLogging, shutdownLogging } from './services/logging';
@@ -144,6 +145,7 @@ if (!gotTheLock) {
     setupAIHandlers(ipcMain);
     setupStripeHandlers(ipcMain);
     setupAnalyticsHandlers(ipcMain);
+    setupEngagementHandlers(ipcMain);
 
     ipcMain.handle('window:minimize', () => {
       mainWindow?.minimize();

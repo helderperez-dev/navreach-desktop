@@ -14,8 +14,9 @@ import { MentionInput } from '@/components/ui/mention-input';
 import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
 import { useWorkspaceStore } from '@/stores/workspace.store';
-import type { Conversation } from '@shared/types';
+import type { Conversation, KnowledgeBase, KnowledgeContent } from '@shared/types';
 import { CircularLoader } from '@/components/ui/CircularLoader';
+import { knowledgeService } from '@/services/knowledgeService';
 
 import reavionLogoWhite from '@assets/reavion-white-welcome.png';
 import reavionLogoBlack from '@assets/reavion-black-welcome.png';
@@ -77,6 +78,8 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
   const { currentWorkspace } = useWorkspaceStore();
   const { session } = useAuthStore();
   const [playbooks, setPlaybooks] = useState<any[]>([]);
+  const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
+  const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeContent[]>([]);
 
   const filteredConversations = useMemo(() => {
     return conversations.filter((conv: Conversation) =>
@@ -89,11 +92,41 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     playbookService.getPlaybooks(currentWorkspace?.id).then(setPlaybooks);
     if (session) {
       fetchLists();
+
+      // Fetch Knowledge
+      const fetchKnowledge = async () => {
+        try {
+          const kbs = await knowledgeService.getKnowledgeBases();
+          setKnowledgeBases(kbs);
+          const allContent = await Promise.all(kbs.map(kb => knowledgeService.getKBContent(kb.id)));
+          setKnowledgeItems(allContent.flat());
+        } catch (err) {
+          console.error('[WelcomeScreen] Failed to fetch knowledge:', err);
+        }
+      };
+      fetchKnowledge();
     }
   }, [currentWorkspace?.id, session]);
 
   const getGlobalVariables = useCallback(() => {
     const groups: { nodeName: string; variables: { label: string; value: string; example?: string }[] }[] = [];
+
+    // 1. Knowledge Bases (Priority)
+    if (knowledgeItems.length > 0) {
+      knowledgeBases.forEach(kb => {
+        const items = knowledgeItems.filter(item => item.kb_id === kb.id);
+        if (items.length > 0) {
+          groups.push({
+            nodeName: kb.name,
+            variables: items.map(item => ({
+              label: item.title || 'Untitled',
+              value: `{{kb.${item.id}}}`,
+              example: item.content
+            }))
+          });
+        }
+      });
+    }
 
     if (playbooks.length > 0) {
       groups.push({
@@ -140,7 +173,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     }
 
     return groups;
-  }, [playbooks, lists, mcpServers, apiTools]);
+  }, [playbooks, lists, mcpServers, apiTools, knowledgeBases, knowledgeItems]);
 
   const debouncedInput = useDebounce(input, 1000);
   const [suggestions, setSuggestions] = useState<Suggestion[]>(STATIC_STARTERS);

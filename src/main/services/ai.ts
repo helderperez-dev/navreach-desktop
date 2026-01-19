@@ -602,6 +602,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
 
     // Track stop signals per window
     const stopSignals = new Map<number, boolean>();
+    const activeSupabaseClients = new Map<number, any>(); // Store active Supabase clients by window ID
 
     ipcMain.handle('ai:stop', async (event) => {
         const window = BrowserWindow.fromWebContents(event.sender);
@@ -629,6 +630,35 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
             }
         }
 
+        if (window && activeSupabaseClients.has(window.id)) {
+            activeSupabaseClients.delete(window.id);
+        }
+
+        return { success: true };
+    });
+
+    ipcMain.handle('ai:update-session', async (event, { accessToken, refreshToken }: { accessToken: string; refreshToken: string }) => {
+        const window = BrowserWindow.fromWebContents(event.sender);
+        if (window) {
+            const client = activeSupabaseClients.get(window.id);
+            if (client) {
+                console.log(`[AI Service] Updating session for window ${window.id}`);
+                try {
+                    const { error } = await client.auth.setSession({
+                        access_token: accessToken,
+                        refresh_token: refreshToken
+                    });
+                    if (error) {
+                        console.error('[AI Service] Failed to update session:', error);
+                        return { success: false, error: error.message };
+                    }
+                    return { success: true };
+                } catch (e: any) {
+                    console.error('[AI Service] Exception updating session:', e);
+                    return { success: false, error: e.message };
+                }
+            }
+        }
         return { success: true };
     });
 
@@ -773,6 +803,10 @@ CRITICAL:
                 console.warn('[AI Service] No access token provided, using anonymous client');
             }
 
+            if (window) {
+                activeSupabaseClients.set(window.id, scopedSupabase);
+            }
+
             // Retrieve local default model ID from store
             const localDefaultModelId = store.get('defaultModelId');
 
@@ -878,7 +912,7 @@ CRITICAL:
             }
 
             // Re-create tools with context AND the scoped supabase client
-            const requestBrowserTools = createBrowserTools({ getSpeed, workspaceId: request.workspaceId });
+            const requestBrowserTools = createBrowserTools({ getSpeed, workspaceId: request.workspaceId, accessToken: request.accessToken });
             const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase, workspaceId: request.workspaceId });
             let requestPlaybookTools = createPlaybookTools({
                 playbooks,
@@ -1063,6 +1097,20 @@ CRITICAL:
                     contextInjection += "\n**NOTE**: When on these domains/paths, prioritize the recommended selectors and instructions above. They are verified by the system owner for maximum reliability.\n";
                 }
             } catch (e) { console.error('Error fetching platform knowledge:', e); }
+
+            // 5. User Knowledge Base
+            try {
+                const { data: userKBContent } = await scopedSupabase
+                    .from('knowledge_content')
+                    .select('id, title, content')
+                    .limit(50);
+                if (userKBContent && userKBContent.length > 0) {
+                    contextInjection += "\n**User Knowledge Base ({{kb.ID}}):**\n";
+                    userKBContent.forEach((c: any) => {
+                        contextInjection += `- ${c.title || 'Untitled Knowledge'}: {{kb.${c.id}}}\n  Content: ${c.content}\n`;
+                    });
+                }
+            } catch (e) { console.error('Error fetching user knowledge context:', e); }
 
             contextInjection += "\nUse these IDs when calling tools that require a list_id, playbook_id, etc. The user may write them as tags like 'Run {{playbooks.xyz}}', which translates to the ID 'xyz'.";
 
@@ -1526,6 +1574,10 @@ Summarize briefly (1 line) and continue.`
                     // Some models (like DeepSeek via OpenRouter) return reasoning in a separate field
                     let agentNarration = "";
                     const assistantMsg = response as any;
+
+                    if (iteration >= hardStopIterations - 1 && !infiniteMode) {
+                        if (window) activeSupabaseClients.delete(window.id);
+                    }
 
                     // 1. Try dedicated reasoning fields
                     if (assistantMsg.additional_kwargs?.reasoning_content) {

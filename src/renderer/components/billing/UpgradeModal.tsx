@@ -74,8 +74,8 @@ export function UpgradeModal({
                             }}
                             className="w-full max-w-lg pointer-events-auto"
                         >
-                            <Card className="border-border/50 bg-card/95 shadow-2xl overflow-hidden backdrop-blur-md">
-                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 via-blue-400 to-sky-300" />
+                            <Card className="border-border/20 bg-card/95 shadow-2xl overflow-hidden backdrop-blur-md rounded-[2rem]">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600/50 via-blue-400/50 to-sky-300/50" />
 
                                 <button
                                     onClick={onClose}
@@ -89,15 +89,15 @@ export function UpgradeModal({
                                         initial={{ scale: 0.5, opacity: 0 }}
                                         animate={{ scale: 1, opacity: 1 }}
                                         transition={{ delay: 0.2, type: "spring" }}
-                                        className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-blue-500/10 mb-6 shadow-inner"
+                                        className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-blue-500/10 mb-6"
                                     >
-                                        <Zap className="h-6 w-6 text-blue-500 fill-current" />
+                                        <Zap className="h-5 w-5 text-blue-500" />
                                     </motion.div>
                                     <motion.h2
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: 0.3 }}
-                                        className="text-2xl font-bold mb-2 tracking-tight"
+                                        className="text-xl font-semibold mb-2 tracking-tight"
                                     >
                                         {title}
                                     </motion.h2>
@@ -105,7 +105,7 @@ export function UpgradeModal({
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: 0.35 }}
-                                        className="text-muted-foreground text-sm max-w-sm mx-auto"
+                                        className="text-muted-foreground/60 text-xs max-w-sm mx-auto leading-relaxed"
                                     >
                                         {description}
                                     </motion.p>

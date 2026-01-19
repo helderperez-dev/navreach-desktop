@@ -55,12 +55,7 @@ export function PlaybooksView() {
     };
 
     const handleBack = async () => {
-        const { isStreaming, setIsStreaming } = useChatStore.getState();
-        if (isStreaming) {
-            console.log('[PlaybooksView] Leaving editor while playbook running. Stopping agent.');
-            await window.api.ai.stop();
-            setIsStreaming(false);
-        }
+
         setSelectedPlaybookId(null);
         setView('list');
         setShowPlaybookBrowser(false);

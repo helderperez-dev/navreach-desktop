@@ -17,6 +17,7 @@ import { TargetListView } from '@/components/targets/TargetListView';
 import { PlaybooksView } from '@/components/playbooks/PlaybooksView';
 import { UpgradeModal } from '@/components/billing/UpgradeModal';
 import { PaymentModal } from '@/components/billing/PaymentModal';
+import { EngagementDashboard } from '@/components/analytics/EngagementDashboard';
 
 export function MainLayout() {
   const { activeView, chatPanelCollapsed, chatPanelWidth, setChatPanelWidth, hasStarted, showPlaybookBrowser, playbookBrowserMaximized } = useAppStore();
@@ -211,6 +212,18 @@ export function MainLayout() {
                       )}
                     >
                       <PlaybooksView />
+                    </motion.div>
+                  )}
+                  {activeView === 'analytics' && (
+                    <motion.div
+                      key="analytics"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15 }}
+                      className="h-full bg-background relative z-10"
+                    >
+                      <EngagementDashboard />
                     </motion.div>
                   )}
                 </AnimatePresence>

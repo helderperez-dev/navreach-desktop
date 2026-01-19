@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard, Zap } from 'lucide-react';
+import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard, Zap, BarChart2 } from 'lucide-react';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
@@ -12,11 +12,12 @@ interface NavItem {
   id: string;
   label: string;
   icon: React.ReactNode;
-  view: 'browser' | 'settings' | 'targets' | 'playbooks';
+  view: 'browser' | 'settings' | 'targets' | 'playbooks' | 'analytics';
 }
 const navItems: NavItem[] = [
   { id: 'browser', label: 'Browser', icon: <Compass className="h-5 w-5" />, view: 'browser' },
   { id: 'targets', label: 'Targets', icon: <Users className="h-5 w-5" />, view: 'targets' },
+  { id: 'analytics', label: 'Analytics', icon: <BarChart2 className="h-5 w-5" />, view: 'analytics' },
   { id: 'playbooks', label: 'Playbooks', icon: <Workflow className="h-5 w-5" />, view: 'playbooks' },
   { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, view: 'settings' },
 ];

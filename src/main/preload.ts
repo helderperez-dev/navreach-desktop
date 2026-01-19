@@ -120,6 +120,7 @@ const aiAPI = {
     return () => ipcRenderer.removeListener('ai:playbook-status', handler);
   },
   resetContext: (workspaceId?: string) => ipcRenderer.invoke('ai:reset-context', workspaceId),
+  updateSession: (tokens: { accessToken: string; refreshToken: string }) => ipcRenderer.invoke('ai:update-session', tokens),
 };
 
 const debugAPI = {
@@ -181,6 +182,12 @@ const stripeAPI = {
     ipcRenderer.invoke('stripe:track-usage', { accessToken, type, incrementBy }),
 };
 
+const engagementAPI = {
+  getLogs: (accessToken: string, options?: any) => ipcRenderer.invoke('engagement:get-logs', { accessToken, ...options }),
+  getStats: (accessToken: string) => ipcRenderer.invoke('engagement:get-stats', { accessToken }),
+  exportCsv: (accessToken: string) => ipcRenderer.invoke('engagement:export-csv', { accessToken }),
+};
+
 console.log('Stripe API initialized with methods:', Object.keys(stripeAPI));
 
 export type BrowserAPI = typeof browserAPI;
@@ -198,6 +205,7 @@ contextBridge.exposeInMainWorld('api', {
   auth: authAPI,
   analytics: analyticsAPI,
   stripe: stripeAPI,
+  engagement: engagementAPI,
 });
 
 export type DebugAPI = typeof debugAPI;
@@ -214,6 +222,7 @@ declare global {
       auth: typeof authAPI;
       analytics: typeof analyticsAPI;
       stripe: typeof stripeAPI;
+      engagement: typeof engagementAPI;
     };
   }
 }

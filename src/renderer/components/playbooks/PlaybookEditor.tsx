@@ -749,6 +749,7 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
     const handleStop = () => {
         window.api.ai.stop();
         useChatStore.getState().setIsStreaming(false);
+        useChatStore.getState().setRunningConversationId(null);
 
         // Prevent auto-restart loops
         useChatStore.getState().setPendingPrompt(null);
@@ -767,17 +768,7 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
 
 
 
-    // Final safety: Stop agent on unmount
-    useEffect(() => {
-        return () => {
-            const { isStreaming, setIsStreaming } = useChatStore.getState();
-            if (isStreaming) {
-                console.log('[PlaybookEditor] Component unmounting. Ensuring agent is stopped.');
-                window.api.ai.stop();
-                setIsStreaming(false);
-            }
-        };
-    }, []);
+
 
     // Auto-reset statuses after execution finishes
     useEffect(() => {

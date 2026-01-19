@@ -46,6 +46,53 @@ export type Database = {
                     },
                 ]
             }
+            engagement_logs: {
+                Row: {
+                    action_type: string
+                    created_at: string
+                    id: string
+                    metadata: Json | null
+                    platform: string
+                    target_avatar_url: string | null
+                    target_details: Json | null
+                    target_name: string | null
+                    target_username: string
+                    user_id: string
+                }
+                Insert: {
+                    action_type: string
+                    created_at?: string
+                    id?: string
+                    metadata?: Json | null
+                    platform: string
+                    target_avatar_url?: string | null
+                    target_details?: Json | null
+                    target_name?: string | null
+                    target_username: string
+                    user_id: string
+                }
+                Update: {
+                    action_type?: string
+                    created_at?: string
+                    id?: string
+                    metadata?: Json | null
+                    platform?: string
+                    target_avatar_url?: string | null
+                    target_details?: Json | null
+                    target_name?: string | null
+                    target_username?: string
+                    user_id?: string
+                }
+                Relationships: [
+                    {
+                        foreignKeyName: "engagement_logs_user_id_fkey"
+                        columns: ["user_id"]
+                        isOneToOne: false
+                        referencedRelation: "profiles"
+                        referencedColumns: ["id"]
+                    },
+                ]
+            }
             credit_transactions: {
                 Row: {
                     amount: number

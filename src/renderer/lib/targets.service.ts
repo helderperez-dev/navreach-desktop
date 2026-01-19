@@ -67,6 +67,27 @@ export const targetService = {
         return { data: data as Target[], error };
     },
 
+    async getAllWorkspaceTargets(workspaceId: string) {
+        const { data, error } = await supabase
+            .from('targets')
+            .select('*, target_lists!inner(name, workspace_id)')
+            .eq('target_lists.workspace_id', workspaceId)
+            .order('created_at', { ascending: false });
+
+        return { data: data as (Target & { target_lists: { name: string } })[], error };
+    },
+
+    async getEngagedWorkspaceTargets(workspaceId: string) {
+        const { data, error } = await supabase
+            .from('targets')
+            .select('*, target_lists!inner(name, workspace_id)')
+            .eq('target_lists.workspace_id', workspaceId)
+            .not('last_interaction_at', 'is', null)
+            .order('last_interaction_at', { ascending: false });
+
+        return { data: data as (Target & { target_lists: { name: string } })[], error };
+    },
+
     async createTarget(input: CreateTargetInput) {
         const { data, error } = await supabase
             .from('targets')

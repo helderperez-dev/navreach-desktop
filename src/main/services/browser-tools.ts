@@ -1032,7 +1032,7 @@ async function ensureSpeedMultiplier(getSpeed: () => 'slow' | 'normal' | 'fast')
   }
 }
 
-export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal' | 'fast', workspaceId?: string, scrollWait?: number }): DynamicStructuredTool[] {
+export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal' | 'fast', workspaceId?: string, scrollWait?: number, accessToken?: string }): DynamicStructuredTool[] {
   const getSpeed = options?.getSpeed || (() => 'normal');
 
   const navigateTool = new DynamicStructuredTool({
@@ -1824,7 +1824,8 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     ...createSiteTools({
       getContents,
       getSpeed: (options?.getSpeed || (() => 'normal')),
-      workspaceId: options?.workspaceId
+      workspaceId: options?.workspaceId,
+      accessToken: options?.accessToken
     }),
   ];
 }

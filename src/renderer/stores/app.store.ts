@@ -8,19 +8,21 @@ interface AppState {
   chatPanelCollapsed: boolean;
   chatPanelWidth: number;
   theme: 'light' | 'dark' | 'system';
-  activeView: 'browser' | 'settings' | 'targets' | 'playbooks';
+  activeView: 'browser' | 'settings' | 'targets' | 'playbooks' | 'analytics';
   hasStarted: boolean;
   showPlaybookBrowser: boolean;
   playbookBrowserMaximized: boolean;
   showOnboarding: boolean;
+  targetSidebarCollapsed: boolean;
   toggleSidebar: () => void;
+  toggleTargetSidebar: () => void;
   toggleChatPanel: () => void;
   togglePlaybookBrowser: () => void;
   togglePlaybookBrowserMaximized: () => void;
   setShowPlaybookBrowser: (show: boolean) => void;
   setChatPanelWidth: (width: number) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
-  setActiveView: (view: 'browser' | 'settings' | 'targets' | 'playbooks') => void | Promise<void>;
+  setActiveView: (view: 'browser' | 'settings' | 'targets' | 'playbooks' | 'analytics') => void | Promise<void>;
   setHasStarted: (started: boolean) => void;
   setShowOnboarding: (show: boolean) => void;
   reset: () => void;
@@ -38,7 +40,9 @@ export const useAppStore = create<AppState>()(
       showPlaybookBrowser: false,
       playbookBrowserMaximized: false,
       showOnboarding: false,
+      targetSidebarCollapsed: false,
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      toggleTargetSidebar: () => set((state) => ({ targetSidebarCollapsed: !state.targetSidebarCollapsed })),
       toggleChatPanel: () => set((state) => ({ chatPanelCollapsed: !state.chatPanelCollapsed })),
       togglePlaybookBrowser: () => set((state) => ({ showPlaybookBrowser: !state.showPlaybookBrowser, playbookBrowserMaximized: false })),
       togglePlaybookBrowserMaximized: () => set((state) => ({ playbookBrowserMaximized: !state.playbookBrowserMaximized })),
@@ -57,26 +61,7 @@ export const useAppStore = create<AppState>()(
         const currentView = get().activeView;
         if (view === currentView) return;
 
-        // Force stop ANY agent running when switching views (Isolation)
-        const { isStreaming, setIsStreaming } = useChatStore.getState();
-        if (isStreaming) {
-          console.log(`[AppStore] View switch detected (${currentView} -> ${view}). Stopping active agent session.`);
-          await window.api.ai.stop();
-          setIsStreaming(false);
-          useChatStore.getState().setPendingPrompt(null);
 
-          // Cleanup browser if we were in playbooks
-          if (currentView === 'playbooks') {
-            set({ showPlaybookBrowser: false });
-            useBrowserStore.getState().resetBrowserState();
-          }
-        }
-
-        // 2. If entering browser, reset to Welcome screen (new chat context)
-        if (view === 'browser') {
-          useChatStore.getState().setActiveConversation(null);
-          set({ hasStarted: false });
-        }
 
         set({ activeView: view });
       },
@@ -101,6 +86,7 @@ export const useAppStore = create<AppState>()(
         chatPanelCollapsed: state.chatPanelCollapsed,
         chatPanelWidth: state.chatPanelWidth,
         theme: state.theme,
+        targetSidebarCollapsed: state.targetSidebarCollapsed,
       }),
     }
   )

@@ -238,21 +238,21 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
   const isSnapshot = toolCall.name === 'browser_snapshot';
 
   return (
-    <div className="my-0.5 rounded-lg border border-border bg-card/50 overflow-hidden transition-all duration-200">
+    <div className="my-1 rounded-xl border border-border/10 bg-secondary/5 overflow-hidden transition-all duration-200 hover:border-border/20">
       {/* Header - Always Visible */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left hover:bg-muted/50"
+        className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left hover:bg-muted/20"
       >
         <div className={cn(
-          "flex items-center justify-center w-6 h-6 rounded-md border text-xs shadow-sm",
-          isSuccess ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" :
-            isFailed ? "bg-destructive/10 border-destructive/20 text-destructive" :
-              "bg-primary/10 border-primary/20 text-primary"
+          "flex items-center justify-center w-5 h-5 rounded-lg border text-xs shadow-sm",
+          isSuccess ? "bg-emerald-500/5 border-emerald-500/10 text-emerald-500/70" :
+            isFailed ? "bg-destructive/5 border-destructive/10 text-destructive/70" :
+              "bg-primary/5 border-primary/10 text-primary/70"
         )}>
-          {isSuccess ? <Check className="h-3.5 w-3.5" /> :
-            isFailed ? <AlertCircle className="h-3.5 w-3.5" /> :
-              <CircularLoader className="h-3.5 w-3.5" />
+          {isSuccess ? <Check className="h-3 w-3" /> :
+            isFailed ? <AlertCircle className="h-3 w-3" /> :
+              <CircularLoader className="h-3 w-3" />
           }
         </div>
 
@@ -395,13 +395,12 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
     return null;
   }
 
-  // System messages
   if (isSystem) {
     return (
-      <div className="flex justify-center my-1.5">
-        <div className="bg-muted/30 border border-muted/50 rounded-full px-4 py-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-          <Square className="h-2.5 w-2.5" />
-          <span>System: {message.content}</span>
+      <div className="flex justify-center my-2">
+        <div className="bg-secondary/20 border border-border/10 rounded-full px-4 py-1 flex items-center gap-2 text-[10px] font-medium text-muted-foreground/60">
+          <Square className="h-2 w-2" />
+          <span>{message.content}</span>
         </div>
       </div>
     );
@@ -438,7 +437,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
         <div className={cn('flex-1 min-w-0 space-y-1 overflow-hidden', isUser && 'flex flex-col items-end')}>
 
           {isUser ? (
-            <div className="max-w-[90%] bg-secondary/80 hover:bg-secondary text-secondary-foreground px-4 py-2.5 rounded-2xl rounded-tr-sm text-sm leading-relaxed shadow-sm border border-white/5 mx-0 text-left break-words">
+            <div className="max-w-[85%] bg-secondary/40 hover:bg-secondary/60 text-foreground/90 px-5 py-3 rounded-2xl rounded-tr-[4px] text-[13px] leading-relaxed border border-border/5 mx-0 text-left break-words transition-colors">
               <div className="whitespace-pre-wrap break-words">
                 <ProcessedText text={message.content} variables={variables} />
               </div>
@@ -470,14 +469,14 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
               {blocks.map((block, idx) => {
                 if (block.type === 'thought') {
                   return (
-                    <div key={idx} className="bg-muted/30 rounded-lg border border-border overflow-hidden my-2">
+                    <div key={idx} className="bg-secondary/5 rounded-xl border border-border/5 overflow-hidden my-2.5 transition-all hover:border-border/10">
                       <button
                         onClick={() => setExpandedThoughts(!expandedThoughts)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-4 py-2 text-[11px] font-semibold text-muted-foreground/50 hover:bg-muted/20 transition-colors text-left"
                       >
-                        <Activity className="h-3.5 w-3.5" />
-                        <span>Thinking Process</span>
-                        {expandedThoughts ? <ChevronDown className="h-3.5 w-3.5 ml-auto" /> : <ChevronRight className="h-3.5 w-3.5 ml-auto" />}
+                        <Activity className="h-3 w-3" />
+                        <span className="uppercase tracking-wider">Reasoning</span>
+                        {expandedThoughts ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />}
                       </button>
                       {expandedThoughts && (
                         <div className="px-3 py-2 bg-muted/20 text-xs text-muted-foreground border-t border-border font-mono leading-relaxed whitespace-pre-wrap">

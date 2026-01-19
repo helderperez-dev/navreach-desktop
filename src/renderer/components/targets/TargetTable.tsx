@@ -1,7 +1,7 @@
 import { useTargetsStore } from '@/stores/targets.store';
 import { Target } from '@/types/targets';
 import { CircularLoader } from '@/components/ui/CircularLoader';
-import { ExternalLink, MoreHorizontal, Trash2, Edit2, Tag, ChevronUp, ChevronDown } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, Trash2, Edit2, Tag, ChevronUp, ChevronDown, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -11,19 +11,28 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { useState, useMemo, useRef } from 'react';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 interface TargetTableProps {
     onEdit: (target: Target) => void;
+    onViewHistory?: (target: {
+        username: string;
+        name?: string | null;
+        avatar_url?: string | null;
+        platform: string;
+    }) => void;
     searchQuery?: string;
     visibleColumns?: Record<string, boolean>;
     metadataKeys?: string[];
+    recentEngagedUsers?: any[];
 }
 
-type SortField = 'name' | 'email' | 'type' | 'created_at' | 'url';
+type SortField = 'name' | 'email' | 'type' | 'created_at' | 'url' | 'last_interaction_at';
 type SortOrder = 'asc' | 'desc';
 
 export function TargetTable({
     onEdit,
+    onViewHistory,
     searchQuery = '',
     visibleColumns = {
         name: true,
@@ -33,10 +42,11 @@ export function TargetTable({
         tags: true,
         created: true
     },
-    metadataKeys = []
+    metadataKeys = [],
+    recentEngagedUsers = []
 }: TargetTableProps) {
-    const { targets, isLoading, deleteTarget } = useTargetsStore();
-    const [sortField, setSortField] = useState<SortField>('created_at');
+    const { targets, isLoading, deleteTarget, viewMode } = useTargetsStore();
+    const [sortField, setSortField] = useState<SortField>(viewMode === 'engaged' ? 'last_interaction_at' : 'created_at');
     const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
     const tableRef = useRef<HTMLTableElement>(null);
 
@@ -111,9 +121,9 @@ export function TargetTable({
             let valA: any = a[sortField] || '';
             let valB: any = b[sortField] || '';
 
-            if (sortField === 'created_at') {
-                valA = new Date(a.created_at).getTime();
-                valB = new Date(b.created_at).getTime();
+            if (sortField === 'created_at' || sortField === 'last_interaction_at') {
+                valA = new Date((a as any)[sortField] || 0).getTime();
+                valB = new Date((b as any)[sortField] || 0).getTime();
             }
 
             if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
@@ -137,8 +147,20 @@ export function TargetTable({
     if (targets.length === 0) {
         return (
             <div className="h-[300px] flex flex-col items-center justify-center text-center bg-card/20 rounded-2xl border border-dashed border-border/50">
-                <p className="text-sm text-muted-foreground">This list is empty.</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">Add your first target to get started.</p>
+                <p className="text-sm text-muted-foreground">
+                    {viewMode === 'all'
+                        ? "No contacts found."
+                        : viewMode === 'engaged'
+                            ? "No engaged contacts yet."
+                            : "This list is empty."}
+                </p>
+                <p className="text-xs text-muted-foreground/60 mt-1">
+                    {viewMode === 'all'
+                        ? "Targets added to any list will appear here."
+                        : viewMode === 'engaged'
+                            ? "Users you've interacted with will appear in this list automatically."
+                            : "Add your first target to get started."}
+                </p>
             </div>
         );
     }
@@ -149,13 +171,13 @@ export function TargetTable({
     };
 
     return (
-        <div className="rounded-2xl border border-border/30 bg-card/10 overflow-hidden w-full h-full flex flex-col shadow-sm">
-            <div className="overflow-x-auto custom-scrollbar w-full">
+        <div className="w-full">
+            <div className="overflow-x-auto shadow-none">
                 <table
                     ref={tableRef}
-                    className="text-left border-collapse table-fixed w-full"
+                    className="text-left border-separate border-spacing-0 table-fixed w-full"
                 >
-                    <thead className="bg-card/30">
+                    <thead className="">
                         <tr className="border-b border-border/30">
                             {visibleColumns.name && (
                                 <th
@@ -264,27 +286,50 @@ export function TargetTable({
                             <th className="px-6 py-4 text-right w-[60px]"></th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/30">
+                    <tbody className="">
                         {filteredAndSortedTargets.map((target) => (
                             <tr
                                 key={target.id}
-                                className="hover:bg-accent/50 active:bg-accent/30 transition-colors group cursor-pointer"
+                                className="group relative hover:bg-accent/40 active:bg-accent/60 transition-all duration-200 cursor-pointer"
                                 onClick={() => onEdit(target)}
                             >
                                 {visibleColumns.name && (
-                                    <td className="px-6 py-4 overflow-hidden">
-                                        <div className="font-medium text-sm text-foreground group-hover:text-foreground/80 transition-colors truncate">
-                                            {target.name}
+                                    <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
+                                        <div className="flex items-center gap-3">
+                                            <Avatar className="h-8 w-8 rounded-lg border border-border/50 shrink-0">
+                                                <AvatarImage src={target.metadata?.avatar_url || target.metadata?.profile_image} className="object-cover" />
+                                                <AvatarFallback className="rounded-lg bg-muted text-[10px] font-bold text-muted-foreground">
+                                                    {(target.name || 'U').substring(0, 2).toUpperCase()}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            <div className="flex flex-col min-w-0 gap-0.5">
+                                                <div className="font-medium text-sm text-foreground group-hover:text-foreground/80 transition-colors truncate">
+                                                    {target.name}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {(target as any).target_lists?.name && (
+                                                        <span className="text-[9px] font-medium text-muted-foreground/70 bg-muted/50 px-1 py-0 rounded border border-border/40 truncate">
+                                                            {(target as any).target_lists.name}
+                                                        </span>
+                                                    )}
+                                                    {target.last_interaction_at && (
+                                                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground truncate">
+                                                            <Clock className="h-2.5 w-2.5" />
+                                                            <span>{new Date(target.last_interaction_at).toLocaleDateString()}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </div>
                                     </td>
                                 )}
                                 {visibleColumns.email && (
-                                    <td className="px-6 py-4 overflow-hidden">
+                                    <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
                                         <div className="text-sm text-muted-foreground truncate">{target.email || '-'}</div>
                                     </td>
                                 )}
                                 {visibleColumns.type && (
-                                    <td className="px-6 py-4 overflow-hidden">
+                                    <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
                                         <span className={cn(
                                             "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider shrink-0",
                                             target.type === 'profile' && "bg-muted text-muted-foreground border border-border/50",
@@ -298,7 +343,7 @@ export function TargetTable({
                                     </td>
                                 )}
                                 {visibleColumns.url && (
-                                    <td className="px-6 py-4 overflow-hidden">
+                                    <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
                                         <div className="flex items-center gap-1 group/link max-w-full">
                                             <a
                                                 href={target.url}
@@ -314,7 +359,7 @@ export function TargetTable({
                                     </td>
                                 )}
                                 {visibleColumns.tags && (
-                                    <td className="px-6 py-4 overflow-hidden">
+                                    <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
                                         <div className="flex items-center gap-1 h-6">
                                             <div className="flex flex-wrap gap-1 min-w-0 overflow-hidden h-full">
                                                 {target.tags?.slice(0, 2).map((tag, i) => (
@@ -331,49 +376,56 @@ export function TargetTable({
                                     </td>
                                 )}
                                 {visibleColumns.created && (
-                                    <td className="px-6 py-4 text-xs text-muted-foreground whitespace-nowrap overflow-hidden">
+                                    <td className="px-6 py-4 text-xs text-muted-foreground whitespace-nowrap overflow-hidden first:rounded-l-xl last:rounded-r-xl">
                                         {new Date(target.created_at).toLocaleDateString()}
                                     </td>
                                 )}
                                 {metadataKeys.map((key) => (
                                     visibleColumns[key] && (
-                                        <td key={key} className="px-6 py-4 text-xs text-muted-foreground overflow-hidden">
+                                        <td key={key} className="px-6 py-4 text-xs text-muted-foreground overflow-hidden first:rounded-l-xl last:rounded-r-xl">
                                             <div className="truncate w-full">
                                                 {target.metadata?.[key]?.toString() || '-'}
                                             </div>
                                         </td>
                                     )
                                 ))}
-                                <td className="px-6 py-4 text-right">
-                                    <DropdownMenu>
-                                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50 p-0">
-                                                <MoreHorizontal className="h-4 w-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end" className="w-40 bg-popover border-border shadow-2xl">
-                                            <DropdownMenuItem
-                                                className="gap-2 text-xs"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    onEdit(target);
-                                                }}
-                                            >
-                                                <Edit2 className="h-3 w-3" />
-                                                Edit Target
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                                className="gap-2 text-xs text-red-400 focus:text-red-400"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    deleteTarget(target.id);
-                                                }}
-                                            >
-                                                <Trash2 className="h-3 w-3" />
-                                                Delete
-                                            </DropdownMenuItem>
-                                        </DropdownMenuContent>
-                                    </DropdownMenu>
+                                <td className="px-6 py-4 text-right overflow-hidden first:rounded-l-xl last:rounded-r-xl">
+                                    <div className="flex items-center justify-end gap-2">
+
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted/50 p-0 rounded-lg">
+                                                    <MoreHorizontal className="h-4 w-4" />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            <DropdownMenuContent align="end" className="w-44 bg-popover border-border/50 shadow-2xl rounded-xl">
+                                                <DropdownMenuItem
+                                                    className="gap-2 text-xs focus:bg-primary/10 focus:text-primary cursor-pointer rounded-lg mx-1"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        onEdit(target);
+                                                    }}
+                                                >
+                                                    <Edit2 className="h-3.5 w-3.5" />
+                                                    Edit Contact
+                                                </DropdownMenuItem>
+
+                                                <div className="h-[1px] bg-border/40 my-1 mx-1" />
+                                                <DropdownMenuItem
+                                                    className="gap-2 text-xs text-red-400 focus:text-red-400 focus:bg-destructive/10 cursor-pointer rounded-lg mx-1"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm('Are you sure you want to delete this contact?')) {
+                                                            deleteTarget(target.id);
+                                                        }
+                                                    }}
+                                                >
+                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                    Delete
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </div>
                                 </td>
                             </tr>
                         ))}
