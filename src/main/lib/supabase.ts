@@ -56,18 +56,59 @@ export async function getScopedSupabase(accessToken?: string, refreshToken?: str
         }
     }
 
-    // Default/Fallback: Create a client with the Authorization header explicitly set.
-    // This is robust for stateless server-side operations using just the access token.
-    return createClient(supabaseUrl || '', supabaseAnonKey || '', {
-        global: {
-            headers: {
-                Authorization: `Bearer ${accessToken}`
-            }
-        },
+    // Default/Fallback: Create a client without hardcoded headers first
+    // This allows us to update the session later if needed (e.g. via ai:update-session)
+    const client = createClient(supabaseUrl || '', supabaseAnonKey || '', {
         auth: {
             persistSession: false,
             autoRefreshToken: false,
             detectSessionInUrl: false
         }
     });
+
+    if (accessToken) {
+        try {
+            // Attempt to set the session
+            // If we have a refresh token, this was handled in the block above (lines 38-57)
+            // So here we only have accessToken
+            const { error } = await client.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken || '' // Explicitly pass empty string if undefined to satisfy types if needed, or let it be.
+            });
+
+            if (error) {
+                console.warn('[Supabase Main] setSession failed for simple client, falling back to global headers:', error.message);
+                // If setSession fails, we fallback to creating a NEW client with hardcoded headers
+                // This is the "old" behavior which is robust for static requests but doesn't support updates
+                return createClient(supabaseUrl || '', supabaseAnonKey || '', {
+                    global: {
+                        headers: {
+                            Authorization: `Bearer ${accessToken}`
+                        }
+                    },
+                    auth: {
+                        persistSession: false,
+                        autoRefreshToken: false,
+                        detectSessionInUrl: false
+                    }
+                });
+            }
+        } catch (e) {
+            console.error('[Supabase Main] Exception setting session, using fallback:', e);
+            return createClient(supabaseUrl || '', supabaseAnonKey || '', {
+                global: {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`
+                    }
+                },
+                auth: {
+                    persistSession: false,
+                    autoRefreshToken: false,
+                    detectSessionInUrl: false
+                }
+            });
+        }
+    }
+
+    return client;
 }

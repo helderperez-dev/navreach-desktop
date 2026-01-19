@@ -181,7 +181,7 @@ export function TargetListSidebar() {
                                     <div
                                         className={cn(
                                             "group flex items-center px-4 py-2 rounded-xl transition-all cursor-pointer min-w-0 border border-transparent",
-                                            selectedListId === list.id
+                                            viewMode === 'list' && selectedListId === list.id
                                                 ? "bg-secondary/40 text-foreground border-border/10"
                                                 : "hover:bg-secondary/20 text-muted-foreground/70 hover:text-foreground"
                                         )}
@@ -261,7 +261,7 @@ export function TargetListSidebar() {
                             : "bg-transparent group-hover/handle:bg-border"
                     )} />
                 </div>
-            </div>
-        </motion.div>
+            </div >
+        </motion.div >
     );
 }

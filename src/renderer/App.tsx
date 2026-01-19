@@ -57,6 +57,22 @@ export function App() {
 
     checkSession();
 
+    /* 
+      We explicitly sync the session to Main process on startup if one exists. 
+      This ensures 'activeTokens' in Main is populated even before the first chat starts,
+      or if the renderer refreshed without a full app restart.
+    */
+    const syncInitialSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token && data?.session?.refresh_token) {
+        window.api.ai.updateSession({
+          accessToken: data.session.access_token,
+          refreshToken: data.session.refresh_token
+        }).catch((err: any) => console.error('[App] Failed to sync initial session:', err));
+      }
+    };
+    syncInitialSession();
+
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
       console.log('[App] Auth state change event:', event, session?.user?.email || 'no-user');

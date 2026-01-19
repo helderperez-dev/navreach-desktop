@@ -603,6 +603,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
     // Track stop signals per window
     const stopSignals = new Map<number, boolean>();
     const activeSupabaseClients = new Map<number, any>(); // Store active Supabase clients by window ID
+    const activeTokens = new Map<number, { accessToken: string; refreshToken: string }>();
 
     ipcMain.handle('ai:stop', async (event) => {
         const window = BrowserWindow.fromWebContents(event.sender);
@@ -640,23 +641,43 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
     ipcMain.handle('ai:update-session', async (event, { accessToken, refreshToken }: { accessToken: string; refreshToken: string }) => {
         const window = BrowserWindow.fromWebContents(event.sender);
         if (window) {
+            // ALWAYS update the active tokens store first
+            // This ensures that even if we don't have an active Supabase client instance (e.g., between chats),
+            // the next chat or the currently running loop will pick up the fresh token via getAccessToken()
+            console.log(`[AI Service] Updating session tokens for window ${window.id}`);
+            activeTokens.set(window.id, { accessToken, refreshToken });
+
             const client = activeSupabaseClients.get(window.id);
             if (client) {
-                console.log(`[AI Service] Updating session for window ${window.id}`);
+                console.log(`[AI Service] Updating active Supabase client session...`);
+                // Debug log (redacted)
+                console.log(`[AI Service] New Access Token: ${accessToken.substring(0, 10)}...`);
+
                 try {
-                    const { error } = await client.auth.setSession({
+                    const { data, error } = await client.auth.setSession({
                         access_token: accessToken,
                         refresh_token: refreshToken
                     });
+
                     if (error) {
-                        console.error('[AI Service] Failed to update session:', error);
-                        return { success: false, error: error.message };
+                        console.error('[AI Service] Failed to update Supabase client session:', error);
+                        // We do NOT return error here, because we successfully updated activeTokens
+                        // which is the primary source of truth for new operations.
+                        // return { success: false, error: error.message }; 
                     }
+
+                    if (data?.session) {
+                        console.log('[AI Service] Supabase client session successfully refreshed');
+                    }
+
                     return { success: true };
                 } catch (e: any) {
-                    console.error('[AI Service] Exception updating session:', e);
-                    return { success: false, error: e.message };
+                    console.error('[AI Service] Exception updating Supabase client session:', e);
+                    // Ditto, proceed as success since tokens are updated
+                    return { success: true, warning: e.message };
                 }
+            } else {
+                console.log(`[AI Service] No active Supabase client to update (idle?), but tokens refreshed for future requests.`);
             }
         }
         return { success: true };
@@ -805,6 +826,9 @@ CRITICAL:
 
             if (window) {
                 activeSupabaseClients.set(window.id, scopedSupabase);
+                if (accessToken && refreshToken) {
+                    activeTokens.set(window.id, { accessToken, refreshToken });
+                }
             }
 
             // Retrieve local default model ID from store
@@ -912,7 +936,12 @@ CRITICAL:
             }
 
             // Re-create tools with context AND the scoped supabase client
-            const requestBrowserTools = createBrowserTools({ getSpeed, workspaceId: request.workspaceId, accessToken: request.accessToken });
+            const getAccessToken = () => {
+                if (!window) return accessToken;
+                return activeTokens.get(window.id)?.accessToken || accessToken;
+            };
+
+            const requestBrowserTools = createBrowserTools({ getSpeed, workspaceId: request.workspaceId, getAccessToken });
             const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase, workspaceId: request.workspaceId });
             let requestPlaybookTools = createPlaybookTools({
                 playbooks,
@@ -1189,7 +1218,9 @@ You are in FAST mode.
 
                 if (accessToken) {
                     try {
-                        const userId = getUserIdFromToken(accessToken);
+                        const currentToken = getAccessToken();
+                        if (!currentToken) throw new Error('No access token available');
+                        const userId = getUserIdFromToken(currentToken);
                         const [subRes, limits, usage] = await Promise.all([
                             scopedSupabase
                                 .from('subscriptions')
@@ -1198,8 +1229,8 @@ You are in FAST mode.
                                 .in('status', ['active', 'trialing'])
                                 .limit(1)
                                 .maybeSingle(),
-                            systemSettingsService.getTierLimits(accessToken),
-                            usageService.getUsage(accessToken, 'ai_actions')
+                            systemSettingsService.getTierLimits(getAccessToken() || accessToken),
+                            usageService.getUsage(getAccessToken() || accessToken, 'ai_actions')
                         ]);
 
                         isPro = !!subRes.data;
@@ -1661,7 +1692,7 @@ Summarize briefly (1 line) and continue.`
                             // Track usage (Fire and forget DB update, but increment local for the loop)
                             try {
                                 currentUsage++;
-                                usageService.incrementUsage(accessToken, 'ai_actions').catch(e => {
+                                usageService.incrementUsage(getAccessToken() || accessToken, 'ai_actions').catch(e => {
                                     console.error('[AI Service] DB Usage increment failed:', e);
                                 });
                             } catch (e) {

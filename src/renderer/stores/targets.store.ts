@@ -6,6 +6,7 @@ import { targetService } from '@/lib/targets.service';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
+import { RealtimeChannel } from '@supabase/supabase-js';
 
 interface TargetsState {
     lists: TargetList[];
@@ -13,13 +14,15 @@ interface TargetsState {
     targets: Target[];
     isLoading: boolean;
     error: string | null;
+    recentLogs: any[];
 
     viewMode: 'list' | 'all' | 'engaged';
     setViewMode: (mode: 'list' | 'all' | 'engaged') => void;
 
-    fetchLists: () => Promise<void>;
+    fetchLists: (silent?: boolean) => Promise<void>;
     setSelectedListId: (id: string | null) => void;
-    fetchTargets: (listId?: string) => Promise<void>;
+    fetchTargets: (listId?: string, silent?: boolean) => Promise<void>;
+    fetchRecentLogs: () => Promise<void>;
 
     addList: (name: string, description?: string) => Promise<void>;
     updateList: (id: string, updates: Partial<TargetList>) => Promise<void>;
@@ -29,6 +32,9 @@ interface TargetsState {
     updateTarget: (id: string, updates: Partial<Target>) => Promise<void>;
     deleteTarget: (id: string) => Promise<void>;
     bulkAddTargets: (targets: any[]) => Promise<void>;
+    realtimeChannel: RealtimeChannel | null;
+    subscribeToChanges: () => void;
+    unsubscribe: () => void;
     reset: () => void;
 }
 
@@ -38,7 +44,9 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
     targets: [],
     isLoading: false,
     error: null,
+    recentLogs: [],
     viewMode: 'list',
+    realtimeChannel: null as RealtimeChannel | null,
 
     setViewMode: (mode) => {
         const currentMode = get().viewMode;
@@ -47,7 +55,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         set({ viewMode: mode });
 
         if (mode === 'all' || mode === 'engaged') {
-            set({ selectedListId: null });
+            get().fetchLists(true); // This also calls fetchRecentLogs()
             get().fetchTargets();
         } else if (mode === 'list' && !get().selectedListId && get().lists.length > 0) {
             // only select first list if we don't have one selected yet
@@ -55,8 +63,8 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
-    fetchLists: async () => {
-        set({ isLoading: true });
+    fetchLists: async (silent = false) => {
+        if (!silent) set({ isLoading: true });
         const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
         const { data, error } = await targetService.getTargetLists(workspaceId);
 
@@ -64,6 +72,9 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             set({ error: error.message, isLoading: false });
             toast.error(`Failed to fetch lists: ${error.message}`);
         } else {
+            // Also fetch recent logs to keep the activity feed fresh
+            get().fetchRecentLogs();
+
             const fetchedLists = data || [];
             const currentSelectedId = get().selectedListId;
 
@@ -84,6 +95,12 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 }
             } else {
                 set({ lists: fetchedLists, isLoading: false });
+                // Re-fetch targets for the current selection to ensure data is fresh
+                if (currentSelectedId) {
+                    get().fetchTargets(currentSelectedId, true);
+                } else if (get().viewMode === 'all' || get().viewMode === 'engaged') {
+                    get().fetchTargets(undefined, true);
+                }
             }
         }
     },
@@ -92,14 +109,25 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         set({ selectedListId: id });
         if (id) {
             get().fetchTargets(id);
-            get().fetchLists(); // Refresh counts when switching lists
+            get().fetchLists(true); // Refresh counts when switching lists
         } else {
             set({ targets: [] });
         }
     },
 
-    fetchTargets: async (listId) => {
-        set({ isLoading: true });
+    fetchRecentLogs: async () => {
+        const session = useAuthStore.getState().session;
+        if (!session?.access_token) return;
+        try {
+            const logs = await window.api.engagement.getLogs(session.access_token, { limit: 100 });
+            set({ recentLogs: logs });
+        } catch (error) {
+            console.error('[TargetsStore] Failed to fetch recent logs:', error);
+        }
+    },
+
+    fetchTargets: async (listId, silent = false) => {
+        if (!silent) set({ isLoading: true });
 
         let data, error;
 
@@ -201,7 +229,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
-    addList: async (name, description) => {
+    addList: async (name: string, description?: string) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
             toast.error('User not authenticated');
@@ -245,7 +273,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
-    updateList: async (id, updates) => {
+    updateList: async (id: string, updates: Partial<TargetList>) => {
         const { data, error } = await targetService.updateTargetList(id, updates as any);
         if (error) {
             toast.error(`Failed to update list: ${error.message}`);
@@ -257,7 +285,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
-    deleteList: async (id) => {
+    deleteList: async (id: string) => {
         const { error } = await targetService.deleteTargetList(id);
         if (error) {
             toast.error(`Failed to delete list: ${error.message}`);
@@ -277,7 +305,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
-    addTarget: async (targetInput) => {
+    addTarget: async (targetInput: any) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
             toast.error('User not authenticated');
@@ -309,12 +337,12 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 targets: [data, ...get().targets],
                 lists: get().lists.map(l => l.id === data.list_id ? { ...l, target_count: (l.target_count || 0) + 1 } : l)
             });
-            get().fetchLists(); // Sync counts with DB
+            get().fetchLists(true); // Sync counts with DB
             toast.success('Target added successfully');
         }
     },
 
-    updateTarget: async (id, updates) => {
+    updateTarget: async (id: string, updates: Partial<Target>) => {
         if (id.startsWith('virtual-')) {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) {
@@ -343,11 +371,12 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             if (error) {
                 toast.error(`Failed to save interaction contact: ${error.message}`);
             } else if (data) {
+                const listId = data.list_id;
                 set({
                     targets: get().targets.map(t => t.id === id ? data : t),
                     lists: get().lists.map(l => l.id === listId ? { ...l, target_count: (l.target_count || 0) + 1 } : l)
                 });
-                get().fetchLists();
+                get().fetchLists(true);
                 toast.success('Contact saved to list');
             }
             return;
@@ -364,7 +393,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
-    deleteTarget: async (id) => {
+    deleteTarget: async (id: string) => {
         if (id.startsWith('virtual-')) {
             set({
                 targets: get().targets.filter(t => t.id !== id)
@@ -382,12 +411,12 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 targets: get().targets.filter(t => t.id !== id),
                 lists: targetToDelete ? get().lists.map(l => l.id === targetToDelete.list_id ? { ...l, target_count: Math.max(0, (l.target_count || 0) - 1) } : l) : get().lists
             });
-            get().fetchLists(); // Sync counts with DB
+            get().fetchLists(true); // Sync counts with DB
             toast.success('Target deleted successfully');
         }
     },
 
-    bulkAddTargets: async (targetsInput) => {
+    bulkAddTargets: async (targetsInput: any[]) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
             toast.error('User not authenticated');
@@ -421,17 +450,83 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 targets: [...data, ...get().targets],
                 lists: get().lists.map(l => l.id === listId ? { ...l, target_count: (l.target_count || 0) + data.length } : l)
             });
-            get().fetchLists(); // Sync counts with DB
+            get().fetchLists(true); // Sync counts with DB
             toast.success(`Successfully imported ${data.length} targets`);
         }
     },
 
-    reset: () => set({
-        lists: [],
-        selectedListId: null,
-        targets: [],
-        isLoading: false,
-        error: null,
-        viewMode: 'list'
-    })
+    subscribeToChanges: () => {
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        const userId = useAuthStore.getState().session?.user?.id;
+
+        if (!workspaceId || !userId) return;
+
+        // Cleanup existing subscription if any
+        get().unsubscribe();
+
+        console.log('[Realtime] Subscribing to workspace:', workspaceId);
+
+        const channel = supabase
+            .channel(`targets-realtime-${workspaceId}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'target_lists',
+                filter: `workspace_id=eq.${workspaceId}`
+            }, () => {
+                get().fetchLists(true);
+            })
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'targets',
+            }, (payload) => {
+                // Since we can't easily filter targets by workspace_id across lists via postgres_changes filter
+                // we just refresh if the changed target belongs to our lists or if we are in 'all'/'engaged' mode
+                get().fetchTargets(undefined, true);
+                get().fetchLists(true); // Sync counts
+            })
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'engagement_logs',
+                filter: `user_id=eq.${userId}`
+            }, (payload) => {
+                console.log('[Realtime] New engagement log received:', payload.new);
+                set({ recentLogs: [payload.new, ...get().recentLogs].slice(0, 100) });
+                if (get().viewMode === 'engaged' || get().viewMode === 'all') {
+                    get().fetchTargets(undefined, true);
+                }
+                get().fetchLists(true);
+            })
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    console.log('[Realtime] Successfully subscribed to changes');
+                }
+            });
+
+        set({ realtimeChannel: channel });
+    },
+
+    unsubscribe: () => {
+        const channel = get().realtimeChannel;
+        if (channel) {
+            console.log('[Realtime] Unsubscribing from changes');
+            supabase.removeChannel(channel);
+            set({ realtimeChannel: null });
+        }
+    },
+
+    reset: () => {
+        get().unsubscribe();
+        set({
+            lists: [],
+            selectedListId: null,
+            targets: [],
+            isLoading: false,
+            error: null,
+            recentLogs: [],
+            viewMode: 'list'
+        });
+    }
 }));

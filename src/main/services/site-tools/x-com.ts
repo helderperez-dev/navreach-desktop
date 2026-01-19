@@ -959,8 +959,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         `);
 
         const parsedResult = result;
-        if (parsedResult.success && !parsedResult.already && ctx.accessToken && parsedResult.action === 'like') {
-          await engagementService.logEngagement(ctx.accessToken, {
+        const accessToken = ctx.getAccessToken?.();
+        if (parsedResult.success && !parsedResult.already && accessToken && parsedResult.action === 'like') {
+          await engagementService.logEngagement(accessToken, {
             platform: 'x.com',
             action_type: 'like',
             target_username: parsedResult.metadata.target_username || 'unknown',
@@ -1132,8 +1133,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             })()
         `);
         const parsedResult = result;
-        if (parsedResult.success && !parsedResult.skipped && ctx.accessToken) {
-          await engagementService.logEngagement(ctx.accessToken, {
+        const accessToken = ctx.getAccessToken?.();
+        if (parsedResult.success && !parsedResult.skipped && accessToken) {
+          await engagementService.logEngagement(accessToken, {
             platform: 'x.com',
             action_type: 'reply',
             target_username: parsedResult.metadata.target_username || 'unknown',
@@ -1211,8 +1213,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             })()
         `);
 
-        if (result.success && ctx.accessToken) {
-          await engagementService.logEngagement(ctx.accessToken, {
+        const accessToken = ctx.getAccessToken?.();
+        if (result.success && accessToken) {
+          await engagementService.logEngagement(accessToken, {
             platform: 'x.com',
             action_type: 'post',
             target_username: result.metadata.target_username || 'unknown',
@@ -1319,8 +1322,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
           })()
         `);
 
-        if (result.success && !result.already && ctx.accessToken && (result.action === 'follow' || result.message.includes('Followed'))) {
-          await engagementService.logEngagement(ctx.accessToken, {
+        const accessToken = ctx.getAccessToken?.();
+        if (result.success && !result.already && accessToken && (result.action === 'follow' || result.message.includes('Followed'))) {
+          await engagementService.logEngagement(accessToken, {
             platform: 'x.com',
             action_type: 'follow',
             target_username: result.metadata?.target_username || 'unknown',
@@ -1756,11 +1760,12 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
           })()
         `);
         const parsedResult = result;
-        if (parsedResult.success && ctx.accessToken && parsedResult.actions) {
+        const accessToken = ctx.getAccessToken?.();
+        if (parsedResult.success && accessToken && parsedResult.actions) {
           for (const action of parsedResult.actions) {
             if (['Liked', 'Followed', 'Replied'].includes(action.result)) {
               const actionMap: Record<string, string> = { 'Liked': 'like', 'Followed': 'follow', 'Replied': 'reply' };
-              await engagementService.logEngagement(ctx.accessToken, {
+              await engagementService.logEngagement(accessToken, {
                 platform: 'x.com',
                 action_type: actionMap[action.result] || action.type,
                 target_username: parsedResult.metadata.target_username || 'unknown',
@@ -1869,8 +1874,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
           })()
         `);
 
-        if (result.success && ctx.accessToken) {
-          await engagementService.logEngagement(ctx.accessToken, {
+        const accessToken = ctx.getAccessToken?.();
+        if (result.success && accessToken) {
+          await engagementService.logEngagement(accessToken, {
             platform: 'x.com',
             action_type: 'dm',
             target_username: handle,

@@ -10,6 +10,8 @@ import { useBillingStore } from '@/stores/billing.store';
 import { ChatPanel } from './ChatPanel';
 import { TitleBar } from './TitleBar';
 import { WelcomeScreen } from './WelcomeScreen';
+import { useWorkspaceStore } from '@/stores/workspace.store';
+import { useTargetsStore } from '@/stores/targets.store';
 import { BrowserView } from '@/components/browser/BrowserView';
 import { SettingsLayout } from '@/components/settings/SettingsLayout';
 import { DebugPanel } from '@/components/debug/DebugPanel';
@@ -51,7 +53,17 @@ export function MainLayout() {
       useSubscriptionStore.getState().fetchLimits(session?.access_token);
     };
     initLimits();
-  }, []);
+
+    // Global real-time subscription for targets/lists
+    const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+    if (workspaceId) {
+      useTargetsStore.getState().subscribeToChanges();
+    }
+
+    return () => {
+      useTargetsStore.getState().unsubscribe();
+    };
+  }, [useWorkspaceStore.getState().currentWorkspace?.id]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();

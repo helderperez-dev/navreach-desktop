@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { TargetListSidebar } from './TargetListSidebar';
 import { TargetTable } from './TargetTable';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Search, Users, X, Zap, Upload, SlidersHorizontal, LayoutGrid, Puzzle, Globe, PanelLeft } from 'lucide-react';
+import { Plus, Search, X, Zap, Upload, SlidersHorizontal, LayoutGrid, Puzzle, PanelLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/stores/app.store';
@@ -22,7 +22,8 @@ import { TargetForm } from './TargetForm';
 import { CSVImportDialog } from './CSVImportDialog';
 import { IntegrationDialog } from './IntegrationDialog';
 import { Target } from '@/types/targets';
-import { Code2, Clock } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth.store';
 import { EngagementLog } from '@shared/types/engagement.types';
@@ -31,7 +32,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 
 export function TargetListView() {
-    const { targets, fetchLists, selectedListId, fetchTargets, isLoading, viewMode, lists } = useTargetsStore();
+    const { targets, fetchLists, selectedListId, fetchTargets, isLoading, viewMode, lists, subscribeToChanges, unsubscribe, recentLogs, fetchRecentLogs } = useTargetsStore();
     const { currentWorkspace } = useWorkspaceStore();
     const { session } = useAuthStore();
     const { toggleTargetSidebar } = useAppStore();
@@ -44,7 +45,6 @@ export function TargetListView() {
     const [isImportOpen, setIsImportOpen] = useState(false);
     const [isIntegrationOpen, setIsIntegrationOpen] = useState(false);
     const [isViewOptionsOpen, setIsViewOptionsOpen] = useState(false);
-    const [recentLogs, setRecentLogs] = useState<EngagementLog[]>([]);
     const [selectedTargetForHistory, setSelectedTargetForHistory] = useState<{
         username: string;
         name?: string | null;
@@ -87,28 +87,35 @@ export function TargetListView() {
             ? 'Engaged Contacts'
             : (selectedList?.name || 'Targets');
 
-    // Fetch recent engagement logs
+    // Initial fetch on mount to ensure fresh data
     useEffect(() => {
-        const fetchRecent = async () => {
-            if (!session?.access_token) return;
-            try {
-                const logs = await window.api.engagement.getLogs(session.access_token, { limit: 20 });
-                setRecentLogs(logs);
-            } catch (error) {
-                console.error('Failed to fetch recent logs:', error);
-            }
-        };
-        fetchRecent();
-    }, [session?.access_token]);
+        if (currentWorkspace?.id) {
+            fetchLists();
+        }
+    }, [currentWorkspace?.id, fetchLists]);
+
+    // Initial fetch of recent activity logs
+    useEffect(() => {
+        if (session?.access_token) {
+            fetchRecentLogs();
+        }
+    }, [session?.access_token, fetchRecentLogs]);
 
     const recentEngagedUsers = useMemo(() => {
         const seen = new Set();
         return recentLogs.filter(log => {
             if (seen.has(log.target_username)) return false;
+
+            // Filter by targets if in a specific list
+            if (viewMode === 'list') {
+                const targetUsernames = new Set(targets.map(t => t.url?.split('/').pop()?.toLowerCase()).filter(Boolean));
+                if (!targetUsernames.has(log.target_username.toLowerCase())) return false;
+            }
+
             seen.add(log.target_username);
             return true;
-        }).slice(0, 8);
-    }, [recentLogs]);
+        }).slice(0, 16);
+    }, [recentLogs, viewMode, targets]);
 
     // Discover all unique metadata keys from targets
     const metadataKeys = useMemo(() => {
@@ -160,11 +167,6 @@ export function TargetListView() {
         setIsTargetFormOpen(true);
     };
 
-    useEffect(() => {
-        if (currentWorkspace?.id) {
-            fetchLists();
-        }
-    }, [fetchLists, currentWorkspace?.id]);
 
     const toggleColumn = (column: string) => {
         setVisibleColumns(prev => ({
@@ -190,15 +192,7 @@ export function TargetListView() {
                         >
                             <PanelLeft className="h-4 w-4" />
                         </Button>
-                        <div className="w-9 h-9 rounded-xl bg-muted/40 flex items-center justify-center border border-border/40 shadow-sm transition-all">
-                            {viewMode === 'all' ? (
-                                <Globe className="h-4 w-4 text-primary" />
-                            ) : viewMode === 'engaged' ? (
-                                <Clock className="h-4 w-4 text-primary" />
-                            ) : (
-                                <Users className="h-4 w-4 text-muted-foreground/70" />
-                            )}
-                        </div>
+
                         <h1 className="text-lg font-semibold text-foreground/90 tracking-tight">
                             {viewTitle}
                         </h1>
@@ -390,20 +384,16 @@ export function TargetListView() {
                 <ScrollArea className="flex-1">
                     <div className="p-6 pt-2 min-w-0 overflow-hidden space-y-8">
                         {/* Recent Activity Section */}
-                        {recentEngagedUsers.length > 0 && (viewMode === 'all' || viewMode === 'engaged') && (
+                        {recentEngagedUsers.length > 0 && (
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
-                                        <div className="w-1 h-3 bg-primary rounded-full" />
                                         <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Recent Activity</h3>
                                     </div>
-                                    <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground bg-muted/20 px-2 py-0.5 rounded-full border border-border/30 shadow-inner">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-                                        <span>Live</span>
-                                    </div>
+
                                 </div>
 
-                                <div className="flex items-center gap-6 overflow-x-auto pb-2 scrollbar-none">
+                                <div className="grid grid-cols-10 sm:grid-cols-12 md:grid-cols-14 lg:grid-cols-16 gap-1.5">
                                     {recentEngagedUsers.map((log) => (
                                         <button
                                             key={log.id}
@@ -413,19 +403,23 @@ export function TargetListView() {
                                                 avatar_url: log.target_avatar_url,
                                                 platform: log.platform
                                             })}
-                                            className="flex flex-col items-center gap-2 group shrink-0 transition-all hover:scale-105 active:scale-95"
+                                            className="group relative overflow-hidden rounded-md aspect-square bg-muted/10 border border-border/20 transition-all hover:shadow-md hover:scale-105 hover:z-10 duration-300 ease-out"
                                         >
-                                            <div className="relative p-0.5 rounded-full border border-border/40 bg-muted/10 transition-all shadow-sm">
-                                                <Avatar className="h-12 w-12 border-2 border-background shadow-md">
-                                                    <AvatarImage src={log.target_avatar_url || undefined} className="object-cover" />
-                                                    <AvatarFallback className="bg-muted text-[10px] font-bold text-muted-foreground">
-                                                        {(log.target_name || log.target_username || 'U').substring(0, 2).toUpperCase()}
-                                                    </AvatarFallback>
-                                                </Avatar>
+                                            <Avatar className="h-full w-full rounded-none">
+                                                <AvatarImage
+                                                    src={log.target_avatar_url || undefined}
+                                                    className="object-cover transition-transform duration-500 opacity-90 group-hover:opacity-100"
+                                                />
+                                                <AvatarFallback className="rounded-none bg-muted flex flex-col items-center justify-center text-muted-foreground/50 text-[8px]">
+                                                    {(log.target_name || log.target_username || 'U').substring(0, 1).toUpperCase()}
+                                                </AvatarFallback>
+                                            </Avatar>
+
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-1">
+                                                <span className="text-[7px] font-bold text-white/90 leading-none truncate pl-0.5 pb-0.5">
+                                                    {log.target_name || log.target_username}
+                                                </span>
                                             </div>
-                                            <span className="text-[10px] font-medium text-muted-foreground group-hover:text-foreground transition-colors max-w-[64px] truncate text-center">
-                                                {log.target_name || log.target_username}
-                                            </span>
                                         </button>
                                     ))}
                                 </div>
