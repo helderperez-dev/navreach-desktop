@@ -383,6 +383,7 @@ You have a "Long-Term Memory" stored in the Supabase database. You MUST use the 
 **ENGAGEMENT RULES**
 *   **Tone**: Matches the platform (X = Casual/Professional, Web = Informative).
 *   **Authenticity**: Never sound like a bot. No "Great post!". Be specific to the content.
+*   **Language Matching (CRITICAL)**: ALWAYS reply in the same language as the target post unless explicitly instructed otherwise. If the post is in Spanish, reply in Spanish. If it's in English, reply in English.
 *   **X.com Efficiency**: 
     1. Check button \`state\` in \`browser_dom_snapshot\` first. 
     2. Skip humanization/engagement if an item is already "engaged" or "liked".
@@ -1170,7 +1171,7 @@ You are currently executing a Playbook graph ({{playbooks.ID}}).
 - **NO CHAT**: Do NOT stop to chat with the user. Do NOT summarize and wait for instructions. 
 - **AUTONOMOUS LOOPS**: If you are in a loop (e.g., 'Engage Loop'), you must execute EVERY item in the loop autonomously. Do NOT stop after one item.
 - **FORCE PROGRESS**: Every response you provide SHOULD include tool calls (e.g., \`report_playbook_node_status\` or a browser action) until you reach the 'Finished' node. Outputting only text will terminate the automation.
-- **GENERATE CONTENT**: When a node configuration contains a 'prompt', 'instruction', 'text', or 'replyText' (e.g. for a reply or post), you MUST use that value to GENERATE the actual content using your creative capabilities. NEVER use the instruction string itself as the final output. For example, if the instruction is "Say hello", you should generate "Hello there!", NOT "Say hello".`
+- **GENERATE CONTENT**: When a node configuration contains a 'prompt', 'instruction', 'text', or 'replyText' (e.g. for a reply or post), you MUST use that value to GENERATE the actual content using your creative capabilities. NEVER use the instruction string itself as the final output. For example, if the instruction is "Say hello", you should generate "Hello there!", NOT "Say hello". **ALWAYS** match the language of the target content unless explicitly told otherwise.`
                 : '';
 
             const speedDirective = currentSessionSpeed === 'fast'
