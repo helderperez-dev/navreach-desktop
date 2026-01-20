@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, ArrowRight, RotateCw, X, Bug, Disc, StopCircle, Maximize2, Minimize2, ScanEye } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, X, Bug, Maximize2, Minimize2, ScanEye } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -18,7 +18,7 @@ const INITIAL_URL = 'about:blank';
 
 export function BrowserView() {
   const { currentWorkspace } = useWorkspaceStore();
-  const { tabId, url, title, isLoading, setUrl, setTitle, setIsLoading, setWebContentsId, isRecording, setIsRecording } = useBrowserStore();
+  const { tabId, url, title, isLoading, setUrl, setTitle, setIsLoading, setWebContentsId } = useBrowserStore();
   const { isDebugPanelOpen, toggleDebugPanel } = useDebugStore();
   const { activeView, showPlaybookBrowser, playbookBrowserMaximized, togglePlaybookBrowserMaximized } = useAppStore();
   const { isStreaming } = useChatStore();
@@ -195,15 +195,7 @@ export function BrowserView() {
     setIsLoading(false);
   };
 
-  const toggleRecording = async () => {
-    if (isRecording) {
-      setIsRecording(false);
-      await window.api.browser.stopRecording(tabId);
-    } else {
-      setIsRecording(true);
-      await window.api.browser.startRecording(tabId);
-    }
-  };
+
 
   const toggleInspector = async () => {
     if (isInspecting) {
@@ -303,16 +295,6 @@ export function BrowserView() {
 
           {activeView === 'playbooks' && (
             <div className="flex items-center gap-1 border-l border-border pl-2">
-              <Button
-                variant={isRecording ? "destructive" : "ghost"}
-                size="icon"
-                className={`h-8 w-8 ${isRecording ? 'animate-pulse' : ''}`}
-                onClick={toggleRecording}
-                title={isRecording ? "Stop Recording" : "Record Playbook Step"}
-              >
-                {isRecording ? <StopCircle className="h-4 w-4" /> : <Disc className="h-4 w-4 text-red-500" />}
-              </Button>
-
               {showPlaybookBrowser && (
                 <Button
                   variant="ghost"
