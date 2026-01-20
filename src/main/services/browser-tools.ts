@@ -264,7 +264,7 @@ export async function startRecording(tabId: string, initiator?: Electron.WebCont
   if (initiator) {
     recordingInitiators.set(tabId, initiator);
   }
-  const contents = getWebviewContents(tabId);
+  const contents = await getWebviewContents(tabId);
   if (contents) {
     try {
       await contents.executeJavaScript(RECORDING_SCRIPT);
@@ -274,10 +274,10 @@ export async function startRecording(tabId: string, initiator?: Electron.WebCont
   }
 }
 
-export function stopRecording(tabId: string) {
+export async function stopRecording(tabId: string) {
   recordingTabs.delete(tabId);
   recordingInitiators.delete(tabId);
-  const contents = getWebviewContents(tabId);
+  const contents = await getWebviewContents(tabId);
   if (contents) {
     contents.executeJavaScript('window.__REAVION_RECORDER_ACTIVE__ = false;').catch(() => { });
   }
@@ -288,7 +288,7 @@ export async function startInspector(tabId: string, initiator?: Electron.WebCont
   if (initiator) {
     inspectorInitiators.set(tabId, initiator);
   }
-  const contents = getWebviewContents(tabId);
+  const contents = await getWebviewContents(tabId);
   if (contents) {
     try {
       await contents.executeJavaScript(INSPECTOR_SCRIPT);
@@ -298,10 +298,10 @@ export async function startInspector(tabId: string, initiator?: Electron.WebCont
   }
 }
 
-export function stopInspector(tabId: string) {
+export async function stopInspector(tabId: string) {
   inspectorTabs.delete(tabId);
   inspectorInitiators.delete(tabId);
-  const contents = getWebviewContents(tabId);
+  const contents = await getWebviewContents(tabId);
   if (contents) {
     contents.executeJavaScript('if(window.disableReavionInspector) window.disableReavionInspector();').catch(() => { });
   }
@@ -318,6 +318,11 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
   (contents as any).__REAVION_REGISTERED__ = true;
 
   webviewContents.set(tabId, contents);
+
+  // Set background color to prevent white flashes
+  if ((contents as any).setBackgroundColor) {
+    (contents as any).setBackgroundColor('#0A0A0B');
+  }
 
   // MIMIC CHROME: Set a modern Chrome User-Agent
   // This ensures social networks see us as a regular browser, not Electron
@@ -580,9 +585,7 @@ export function unregisterWebviewContents(tabId: string) {
   webviewContents.delete(tabId);
 }
 
-export function getWebviewContents(tabId: string): Electron.WebContents | undefined {
-  return webviewContents.get(tabId);
-}
+
 
 const TAB_ID = 'main-tab';
 
@@ -1003,17 +1006,35 @@ function buildTaskScript(coreLogic: string): string {
     '})()';
 }
 
-function getContents(): Electron.WebContents {
-  const contents = webviewContents.get(TAB_ID);
-  if (!contents || contents.isDestroyed()) {
+/**
+ * Internal helper for tools to get the active webview contents.
+ * Throws an error if not found or destroyed after a short wait.
+ */
+async function getContents(): Promise<Electron.WebContents> {
+  const contents = await getWebviewContents(TAB_ID);
+  if (!contents) {
     throw new Error('Browser not ready or has crashed. Please refresh or wait for the page to load.');
   }
   return contents;
 }
 
+export async function getWebviewContents(tabId: string): Promise<Electron.WebContents | undefined> {
+  // Wait up to 2 seconds for registration (e.g. during startup or workspace switch)
+  for (let i = 0; i < 20; i++) {
+    const contents = webviewContents.get(tabId);
+    if (contents) {
+      // Defensive check for isDestroyed being a function
+      const isActuallyDestroyed = typeof contents.isDestroyed === 'function' ? contents.isDestroyed() : false;
+      if (!isActuallyDestroyed) return contents;
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  return undefined;
+}
+
 export async function resetBrowser(): Promise<void> {
   try {
-    const contents = getContents();
+    const contents = await getContents();
     await contents.loadURL('about:blank');
     console.log('[Browser Tools] Resetting browser context to about:blank');
   } catch (e) {
@@ -1025,7 +1046,7 @@ async function ensureSpeedMultiplier(getSpeed: () => 'slow' | 'normal' | 'fast')
   const speed = getSpeed();
   const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.2 : 1.0;
   try {
-    const contents = getContents();
+    const contents = await getContents();
     await contents.executeJavaScript(`window.__REAVION_SPEED_MULTIPLIER__ = ${multiplier};`);
   } catch (e) {
     // Ignore if browser not ready
@@ -1043,8 +1064,8 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     }),
     func: async ({ url }) => {
       try {
-        const contents = getContents();
-        if (contents.isDestroyed()) throw new Error('Browser crashed or closed');
+        const contents = await getContents();
+        if (typeof contents.isDestroyed === 'function' && contents.isDestroyed()) throw new Error('Browser crashed or closed');
 
         await ensureSpeedMultiplier(getSpeed);
         let targetUrl = url;
@@ -1069,7 +1090,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
           throw navError;
         }
 
-        if (contents.isDestroyed()) throw new Error('Browser closed after navigation');
+        if (typeof contents.isDestroyed === 'function' && contents.isDestroyed()) throw new Error('Browser closed after navigation');
         const finalUrl = contents.getURL();
         return JSON.stringify({ success: true, url: finalUrl, message: `Navigated to ${finalUrl}` });
       } catch (error) {
@@ -1087,7 +1108,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       index: z.number().describe('0-based index of element to click when multiple elements match the selector. Use 0 for first.'),
     }),
     func: async ({ selector, index }) => {
-      const contents = getContents();
+      const contents = await getContents();
       try {
         await ensureSpeedMultiplier(getSpeed);
 
@@ -1156,7 +1177,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       enter: z.boolean().optional().default(false).describe('Whether to press Enter after typing'),
     }),
     func: async ({ selector, text, index = 0, enter = false }) => {
-      const contents = getContents();
+      const contents = await getContents();
       try {
         await ensureSpeedMultiplier(getSpeed);
 
@@ -1258,7 +1279,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     }),
     func: async ({ direction, amount, behavior = 'smooth' }) => {
       try {
-        const contents = getContents();
+        const contents = await getContents();
         const scrollAmount = direction === 'down' ? amount : -amount;
 
         const result = await contents.executeJavaScript(`
@@ -1337,7 +1358,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       // If we pass 'true' to executeJS, it's baked in.
 
       try {
-        const contents = getContents();
+        const contents = await getContents();
         const result = await contents.executeJavaScript(`
           (function() {
             const elements = [];
@@ -1379,36 +1400,36 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                         node.hasAttribute('onclick') ||
                         node.hasAttribute('contenteditable');
 
+                    const rect = node.getBoundingClientRect();
+                    const testId = node.getAttribute('data-testid');
+                    let ariaLabel = node.getAttribute('aria-label');
+                    if (!ariaLabel && node.getAttribute('aria-labelledby')) {
+                        const ids = node.getAttribute('aria-labelledby').split(' ');
+                        ariaLabel = ids.map(id => root.getElementById(id)?.innerText).filter(Boolean).join(' ');
+                    }
+                    const title = node.getAttribute('title');
+                    const placeholder = node.getAttribute('placeholder') || node.getAttribute('aria-placeholder');
+                    const innerText = node.innerText?.trim();
+                    const value = node.value?.trim();
+                    const href = node.getAttribute('href');
+
+                    let name = ariaLabel || testId || title || placeholder || innerText || '';
+
                     // FORCE reCAPTCHA Visibility and optimized targeting
                     if (isIframe && (node.src?.includes('recaptcha') || node.name?.includes('recaptcha'))) {
                         isActuallyInteractive = true;
                         // reCAPTCHA Checkbox iframe is usually ~304x78. The checkbox is at ~28,39 relative to top-left.
                         if (rect.width > 200 && rect.width < 400 && rect.height < 100) {
-                             (node as any).__REAVION_CUSTOM_POS__ = { 
+                             node.__REAVION_CUSTOM_POS__ = { 
                                  x: Math.round(ox + rect.left + 28), 
                                  y: Math.round(oy + rect.top + 39) 
                              };
-                             name = 'I am not a robot checkbox';
+                             name = 'reCAPTCHA checkbox';
                         }
                     }
 
                     if (isActuallyInteractive && isVisible(node)) {
                         const i = elements.length;
-                        const testId = node.getAttribute('data-testid');
-                        
-                        let ariaLabel = node.getAttribute('aria-label');
-                        if (!ariaLabel && node.getAttribute('aria-labelledby')) {
-                            const ids = node.getAttribute('aria-labelledby').split(' ');
-                            ariaLabel = ids.map(id => root.getElementById(id)?.innerText).filter(Boolean).join(' ');
-                        }
-
-                        const title = node.getAttribute('title');
-                        const placeholder = node.getAttribute('placeholder') || node.getAttribute('aria-placeholder');
-                        const innerText = node.innerText?.trim();
-                        const value = node.value?.trim();
-                        const href = node.getAttribute('href');
-
-                        let name = ariaLabel || testId || title || placeholder || innerText || '';
                         
                         if (isIframe && !name) {
                             name = 'reCAPTCHA Challenge Container';
@@ -1430,7 +1451,6 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                         let description = (innerText && name !== innerText) ? innerText.replace(/\\s+/g, ' ').trim().slice(0, 120) : undefined;
                         if (description && (description.length < 2 || description === name)) description = undefined;
                         
-                        const rect = node.getBoundingClientRect();
                         const state = [];
                         if (node.getAttribute('aria-expanded') === 'true') state.push('expanded');
                         const ariaSelected = node.getAttribute('aria-selected') === 'true';
@@ -1511,7 +1531,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     schema: z.object({}),
     func: async () => {
       try {
-        const contents = getContents();
+        const contents = await getContents();
         // Capture full page is tricky in Electron without resizing, captureVisiblePage is standard
         const image = await contents.capturePage();
         const base64 = image.toDataURL();
@@ -1548,7 +1568,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       const adjustedDelay = Math.round(milliseconds * speedMultiplier);
       const startTime = Date.now();
       const endTime = startTime + adjustedDelay;
-      const contents = getContents();
+      const contents = await getContents();
 
       while (Date.now() < endTime) {
         // Check for stop signal injected into the webview or global state
@@ -1579,7 +1599,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     }),
     func: async ({ x, y }) => {
       try {
-        const contents = getContents();
+        const contents = await getContents();
         const logic = `
           window.movePointer(${x}, ${y});
           await window.wait(500); 
@@ -1615,7 +1635,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       focus: z.string().nullable().describe('Optional focus area or element to deeply analyze.').default(null)
     }),
     func: async ({ focus }) => {
-      const contents = getContents();
+      const contents = await getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
@@ -1744,7 +1764,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
     }),
     func: async ({ selector, index = 0 }) => {
       try {
-        const contents = getContents();
+        const contents = await getContents();
         await ensureSpeedMultiplier(getSpeed);
         const logic = `
           const selectorStr = ${JSON.stringify(selector)};
@@ -1792,7 +1812,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
       }),
       func: async ({ selector, timeout = 5000 }) => {
         try {
-          const contents = getContents();
+          const contents = await getContents();
           const logic = `
             const selectorStr = ${JSON.stringify(selector)};
             const startTime = Date.now();

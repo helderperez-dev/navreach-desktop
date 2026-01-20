@@ -3,7 +3,7 @@ import { registerWebviewContents, unregisterWebviewContents, getWebviewContents,
 
 export function setupBrowserHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('browser:navigate', async (_event, tabId: string, url: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) {
       throw new Error(`Tab ${tabId} not found`);
     }
@@ -19,7 +19,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:go-back', async (_event, tabId: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
     if (contents.canGoBack()) {
       contents.goBack();
@@ -29,7 +29,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:go-forward', async (_event, tabId: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
     if (contents.canGoForward()) {
       contents.goForward();
@@ -39,21 +39,21 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:reload', async (_event, tabId: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
     contents.reload();
     return { success: true };
   });
 
   ipcMain.handle('browser:stop', async (_event, tabId: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
     contents.stop();
     return { success: true };
   });
 
   ipcMain.handle('browser:click', async (_event, tabId: string, selector: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
 
     const result = await contents.executeJavaScript(`
@@ -68,7 +68,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:type', async (_event, tabId: string, selector: string, text: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
 
     const result = await contents.executeJavaScript(`
@@ -86,7 +86,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:screenshot', async (_event, tabId: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
 
     const image = await contents.capturePage();
@@ -94,7 +94,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:extract', async (_event, tabId: string, selector: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
 
     const result = await contents.executeJavaScript(`
@@ -108,7 +108,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:scroll', async (_event, tabId: string, direction: 'up' | 'down', amount: number) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
 
     const scrollAmount = direction === 'down' ? amount : -amount;
@@ -117,7 +117,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:evaluate', async (_event, tabId: string, script: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
 
     try {
@@ -129,7 +129,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('browser:get-page-content', async (_event, tabId: string) => {
-    const contents = getWebviewContents(tabId);
+    const contents = await getWebviewContents(tabId);
     if (!contents) throw new Error(`Tab ${tabId} not found`);
 
     const result = await contents.executeJavaScript(`
@@ -156,7 +156,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('browser:stop-recording', async (_event, tabId: string) => {
     try {
-      stopRecording(tabId);
+      await stopRecording(tabId);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };
@@ -174,7 +174,7 @@ export function setupBrowserHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('browser:stop-inspector', async (_event, tabId: string) => {
     try {
-      stopInspector(tabId);
+      await stopInspector(tabId);
       return { success: true };
     } catch (error) {
       return { success: false, error: String(error) };

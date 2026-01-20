@@ -20,77 +20,57 @@ export function BrowserView() {
   const { currentWorkspace } = useWorkspaceStore();
   const { tabId, url, title, isLoading, setUrl, setTitle, setIsLoading, setWebContentsId, isRecording, setIsRecording } = useBrowserStore();
   const { isDebugPanelOpen, toggleDebugPanel } = useDebugStore();
-  const { hasStarted, activeView, showPlaybookBrowser, playbookBrowserMaximized, togglePlaybookBrowserMaximized } = useAppStore();
+  const { activeView, showPlaybookBrowser, playbookBrowserMaximized, togglePlaybookBrowserMaximized } = useAppStore();
   const { isStreaming } = useChatStore();
   const [urlInput, setUrlInput] = useState(url || '');
   const webviewRef = useRef<HTMLElement | null>(null);
-  const [isRegistered, setIsRegistered] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [showLoader, setShowLoader] = useState(true);
   const [pageLoaded, setPageLoaded] = useState(false);
-  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
 
   // Inspector State
   const [isInspecting, setIsInspecting] = useState(false);
   const [inspectedElement, setInspectedElement] = useState<any>(null);
   const [instruction, setInstruction] = useState('');
 
-  // Minimum 2 second display time
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setMinTimeElapsed(true);
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Hide loader when page has loaded AND minimum time has passed
+  // Hide loader when page has loaded
   // OR if we are just on the welcome/blank page and NOT in the middle of a reset
   useEffect(() => {
     const isBlank = !url || url === 'about:blank';
 
-    // 1. If we have a real URL and it's fully loaded (plus min time), hide loader
-    if (!isBlank && pageLoaded && minTimeElapsed) {
+    // 1. If we have a real URL and it's fully loaded, hide loader
+    if (!isBlank && pageLoaded) {
       setShowLoader(false);
       return;
     }
 
     // 2. If we are on a blank page and NOT currently automated/streaming, hide loader
-    // This allows the Welcome Screen/New Tab to be visible immediately.
     if (isBlank && !isStreaming) {
       setShowLoader(false);
       return;
     }
 
-    // 3. Keep loader visible for:
-    // - Real pages that are still loading
-    // - Blank pages while an agent is streaming/running (preparing to navigate)
-    // - During the minimum 2s branding duration
+    // 3. Keep loader visible for real pages loading or while agent is streaming
     setShowLoader(true);
-  }, [pageLoaded, minTimeElapsed, url, isStreaming]);
+  }, [pageLoaded, url, isStreaming]);
 
   // Listen for store reset
   useEffect(() => {
     if (url === '') {
       setPageLoaded(false);
-      setMinTimeElapsed(false);
       setShowLoader(true);
-
-      const timer = setTimeout(() => {
-        setMinTimeElapsed(true);
-      }, 2000);
-      return () => clearTimeout(timer);
     }
-  }, [url]); // Only trigger when transition TO empty happens
+  }, [url]);
+
+
 
   // Navigate programmatically when url changes (after webview is ready)
   useEffect(() => {
     const webview = webviewRef.current as any;
     if (isReady && webview && url && webview.loadURL) {
-      // Only navigate if URL is different from current
       const currentWebviewUrl = webview.getURL?.() || '';
       if (url !== currentWebviewUrl) {
         webview.loadURL(url).catch((err: any) => {
-          // ERR_ABORTED on redirects is normal - ignore it
           if (err.code !== 'ERR_ABORTED' && err.errno !== -3) {
             console.error('Navigation error:', err);
           }
@@ -100,22 +80,38 @@ export function BrowserView() {
     setUrlInput(url || INITIAL_URL);
   }, [url, isReady]);
 
+  const registeredIdRef = useRef<number | null>(null);
+
   useEffect(() => {
     const webview = webviewRef.current as any;
     if (!webview) return;
 
-    const handleDomReady = async () => {
-      if (!isRegistered && webview.getWebContentsId) {
+    const register = async () => {
+      if (webview.getWebContentsId) {
         const webContentsId = webview.getWebContentsId();
-        setWebContentsId(webContentsId);
-        try {
-          await window.api.browser.registerWebview(tabId, webContentsId);
-        } catch (e) {
-          console.error('Failed to register webview:', e);
+        if (webContentsId && registeredIdRef.current !== webContentsId) {
+          console.log('[BrowserView] Registering webview:', webContentsId);
+          setWebContentsId(webContentsId);
+          try {
+            const result = await (window.api.browser.registerWebview(tabId, webContentsId) as any);
+            if (result && result.success) {
+              registeredIdRef.current = webContentsId;
+              setIsReady(true);
+            } else {
+              console.error('Failed to register webview:', result?.reason || 'Unknown reason');
+            }
+          } catch (e) {
+            console.error('Failed to register webview (IPC error):', e);
+          }
         }
-        setIsRegistered(true);
-        setIsReady(true);
       }
+    };
+
+    // Try immediate registration
+    register();
+
+    const handleDomReady = async () => {
+      register();
     };
 
     const handleStartLoading = () => {
@@ -124,7 +120,6 @@ export function BrowserView() {
 
     const handleStopLoading = () => {
       setIsLoading(false);
-      // Mark page as loaded to hide the loader (only for real pages, not about:blank)
       const currentUrl = webview.getURL?.() || '';
       if (!pageLoaded && currentUrl && currentUrl !== 'about:blank') {
         setPageLoaded(true);
@@ -140,9 +135,7 @@ export function BrowserView() {
       setUrlInput(e.url);
     };
 
-    // Allow all navigation like a regular browser - just update the URL bar
     const handleWillNavigate = (e: any) => {
-      console.log('Navigation to:', e.url);
       setUrlInput(e.url);
     };
 
@@ -163,7 +156,7 @@ export function BrowserView() {
       webview.removeEventListener('did-navigate', handleNavigateEvent);
       webview.removeEventListener('did-navigate-in-page', handleNavigateEvent);
     };
-  }, [tabId, isRegistered, setUrl, setTitle, setIsLoading, setWebContentsId]);
+  }, [tabId, setUrl, setTitle, setIsLoading, setWebContentsId, currentWorkspace?.id]);
 
   const handleNavigate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,9 +217,8 @@ export function BrowserView() {
 
   useEffect(() => {
     const removeListener = window.api.browser.onInspectorAction((data: any) => {
-      // We received an element click from the inspector script
       setInspectedElement(data);
-      setIsInspecting(false); // Stop inspecting after selection
+      setIsInspecting(false);
       window.api.browser.stopInspector(tabId);
     });
     return () => {
@@ -236,30 +228,24 @@ export function BrowserView() {
   }, [tabId, isInspecting]);
 
   const handleIndexElement = async () => {
-    // Structure the knowledge record to match database schema
     const knowledgeRecord = {
       domain: inspectedElement?.hostname,
       url: inspectedElement?.url,
       selector: inspectedElement?.selector,
       instruction: instruction,
-      action: 'interact', // Default action to satisfy not-null constraint
+      action: 'interact',
       element_details: inspectedElement,
       is_active: true
     };
 
-    // Save to the knowledge base (Supabase) via main process IPC
     try {
       const { error } = await window.api.settings.addPlatformKnowledge(knowledgeRecord);
       if (error) throw new Error(error);
-
       toast.success('Element added to Knowledge Base');
-      console.log('[Knowledge Base] Record Saved:', knowledgeRecord);
     } catch (error: any) {
       toast.error(`Failed to save: ${error.message}`);
-      console.error('[Knowledge Base] Error Saving:', error);
     }
 
-    // For now just close
     setInspectedElement(null);
     setInstruction('');
   };
@@ -327,7 +313,6 @@ export function BrowserView() {
                 {isRecording ? <StopCircle className="h-4 w-4" /> : <Disc className="h-4 w-4 text-red-500" />}
               </Button>
 
-              {/* Maximize Button - Only visible in Playbook View */}
               {showPlaybookBrowser && (
                 <Button
                   variant="ghost"
@@ -367,15 +352,14 @@ export function BrowserView() {
 
         <webview
           ref={webviewRef as any}
-          key={currentWorkspace ? currentWorkspace.id : 'default'}
+          key={currentWorkspace?.id || 'default'}
           src={INITIAL_URL}
           className="absolute inset-0 w-full h-full"
           // @ts-ignore - webview attributes
           partition={currentWorkspace ? `persist:workspace_${currentWorkspace.id}` : undefined}
           // @ts-ignore - webview attributes
           allowpopups="true"
-          // @ts-ignore - webview attributes
-          webpreferences="nativeWindowOpen=yes, backgroundThrottling=no"
+          webpreferences="nativeWindowOpen=yes,backgroundThrottling=no"
         />
       </div>
 

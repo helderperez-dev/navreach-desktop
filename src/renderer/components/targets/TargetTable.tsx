@@ -10,7 +10,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 
 interface TargetTableProps {
@@ -45,10 +45,33 @@ export function TargetTable({
     metadataKeys = [],
     recentEngagedUsers = []
 }: TargetTableProps) {
-    const { targets, isLoading, deleteTarget, viewMode } = useTargetsStore();
+    const { targets, isLoading, deleteTarget, viewMode, hasMore, isFetchingMore, loadMoreTargets } = useTargetsStore();
     const [sortField, setSortField] = useState<SortField>(viewMode === 'engaged' ? 'last_interaction_at' : 'created_at');
     const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
     const tableRef = useRef<HTMLTableElement>(null);
+    const observerTarget = useRef<HTMLTableRowElement>(null);
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                if (entries[0].isIntersecting && hasMore && !isFetchingMore && !isLoading) {
+                    loadMoreTargets();
+                }
+            },
+            { threshold: 0.1, rootMargin: '100px' }
+        );
+
+        if (observerTarget.current) {
+            observer.observe(observerTarget.current);
+        }
+
+        return () => {
+            if (observerTarget.current) {
+                observer.unobserve(observerTarget.current);
+            }
+        };
+    }, [hasMore, isFetchingMore, isLoading, loadMoreTargets, targets.length]); // Re-attach when targets change/grow
+
 
     // Column Resizing State (Percentages)
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
@@ -429,6 +452,18 @@ export function TargetTable({
                                 </td>
                             </tr>
                         ))}
+                        {hasMore && (
+                            <tr ref={observerTarget} className="bg-transparent border-none h-12">
+                                <td colSpan={10} className="p-4 text-center">
+                                    {(isFetchingMore) && (
+                                        <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground/50">
+                                            <CircularLoader className="h-4 w-4 opacity-50" />
+                                            <span>Loading more...</span>
+                                        </div>
+                                    )}
+                                </td>
+                            </tr>
+                        )}
                     </tbody>
                 </table>
             </div>

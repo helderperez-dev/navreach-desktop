@@ -36,6 +36,13 @@ interface TargetsState {
     subscribeToChanges: () => void;
     unsubscribe: () => void;
     reset: () => void;
+
+    // Pagination
+    page: number;
+    hasMore: boolean;
+    limit: number;
+    isFetchingMore: boolean;
+    loadMoreTargets: () => Promise<void>;
 }
 
 export const useTargetsStore = create<TargetsState>((set, get) => ({
@@ -48,11 +55,17 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
     viewMode: 'list',
     realtimeChannel: null as RealtimeChannel | null,
 
+    // Pagination defaults
+    page: 0,
+    hasMore: true,
+    limit: 50,
+    isFetchingMore: false,
+
     setViewMode: (mode) => {
         const currentMode = get().viewMode;
         if (currentMode === mode && mode === 'list') return; // No change needed
 
-        set({ viewMode: mode });
+        set({ viewMode: mode, page: 0, hasMore: true, targets: [] }); // Reset pagination and targets on view change
 
         if (mode === 'all' || mode === 'engaged') {
             get().fetchLists(true); // This also calls fetchRecentLogs()
@@ -94,7 +107,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                     get().fetchTargets(nextSelectedId);
                 }
             } else {
-                set({ lists: fetchedLists, isLoading: false });
+                set({ lists: fetchedLists, isLoading: false, page: 0, hasMore: true });
                 // Re-fetch targets for the current selection to ensure data is fresh
                 if (currentSelectedId) {
                     get().fetchTargets(currentSelectedId, true);
@@ -115,6 +128,91 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
+    loadMoreTargets: async () => {
+        const { page, limit, hasMore, isFetchingMore, viewMode, selectedListId } = get();
+        if (!hasMore || isFetchingMore) return;
+
+        set({ isFetchingMore: true });
+        const nextPage = page + 1;
+        const offset = nextPage * limit;
+
+        let newData: any[] = [];
+        let error = null;
+
+        try {
+            if (viewMode === 'all') {
+                const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+                if (workspaceId) {
+                    const result = await targetService.getAllWorkspaceTargets(workspaceId, offset, limit);
+                    newData = result.data || [];
+                    error = result.error;
+                }
+            } else if (viewMode === 'engaged') {
+                const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+                if (workspaceId) {
+                    // For engaged, later pages only fetch from DB. Virtual targets are only computed on page 0.
+                    const result = await targetService.getEngagedWorkspaceTargets(workspaceId, offset, limit);
+                    newData = result.data || [];
+                    error = result.error;
+                }
+            } else if (selectedListId) {
+                const result = await targetService.getTargets(selectedListId, offset, limit);
+                newData = result.data || [];
+                error = result.error;
+            }
+
+            if (error) throw error;
+
+            if (newData.length > 0) {
+                set((state) => {
+                    let updatedTargets = [...state.targets];
+
+                    // Smart merge for 'engaged' view to handle virtual targets
+                    if (viewMode === 'engaged') {
+                        newData.forEach(newTarget => {
+                            // Check if we have a virtual target for this user (same username/url)
+                            const newUsername = newTarget.metadata?.username?.toLowerCase() ||
+                                newTarget.url?.split('/').pop()?.split('?')[0].toLowerCase();
+
+                            const virtualIndex = updatedTargets.findIndex(t => {
+                                if (!t.id.startsWith('virtual-')) return false;
+                                const tUsername = t.metadata?.username?.toLowerCase() ||
+                                    t.url?.split('/').pop()?.split('?')[0].toLowerCase();
+                                return tUsername === newUsername;
+                            });
+
+                            if (virtualIndex !== -1) {
+                                // Replace virtual with real
+                                updatedTargets[virtualIndex] = newTarget;
+                            } else {
+                                // Only append if not already in list (safe check)
+                                const exists = updatedTargets.some(t => t.id === newTarget.id);
+                                if (!exists) {
+                                    updatedTargets.push(newTarget);
+                                }
+                            }
+                        });
+                    } else {
+                        updatedTargets = [...updatedTargets, ...newData];
+                    }
+
+                    return {
+                        targets: updatedTargets,
+                        page: nextPage,
+                        hasMore: newData.length === limit,
+                        isFetchingMore: false
+                    };
+                });
+            } else {
+                set({ hasMore: false, isFetchingMore: false });
+            }
+
+        } catch (err: any) {
+            toast.error(`Failed to load more targets: ${err.message}`);
+            set({ isFetchingMore: false });
+        }
+    },
+
     fetchRecentLogs: async () => {
         const session = useAuthStore.getState().session;
         if (!session?.access_token) return;
@@ -128,6 +226,9 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
 
     fetchTargets: async (listId, silent = false) => {
         if (!silent) set({ isLoading: true });
+        // Reset pagination when doing a fresh fetch
+        set({ page: 0, hasMore: true });
+        const limit = get().limit;
 
         let data, error;
 
@@ -137,7 +238,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 set({ isLoading: false });
                 return;
             }
-            ({ data, error } = await targetService.getAllWorkspaceTargets(workspaceId));
+            ({ data, error } = await targetService.getAllWorkspaceTargets(workspaceId, 0, limit));
         } else if (get().viewMode === 'engaged') {
             const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
             const session = useAuthStore.getState().session;
@@ -148,7 +249,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             }
 
             // 1. Fetch official engaged targets
-            const { data: targetsData, error: targetsError } = await targetService.getEngagedWorkspaceTargets(workspaceId);
+            const { data: targetsData, error: targetsError } = await targetService.getEngagedWorkspaceTargets(workspaceId, 0, limit);
 
             // 2. Fetch engagement logs to create "Virtual Targets" for ad-hoc engagements
             try {
@@ -218,14 +319,18 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 set({ targets: [], isLoading: false });
                 return;
             }
-            ({ data, error } = await targetService.getTargets(idToUse));
+            ({ data, error } = await targetService.getTargets(idToUse, 0, limit));
         }
 
         if (error) {
             set({ error: error.message, isLoading: false });
             toast.error(`Failed to fetch targets: ${error.message}`);
         } else {
-            set({ targets: data || [], isLoading: false });
+            set({
+                targets: data || [],
+                isLoading: false,
+                hasMore: (data || []).length === limit
+            });
         }
     },
 

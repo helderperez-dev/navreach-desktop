@@ -58,32 +58,36 @@ export const targetService = {
     },
 
     // Targets
-    async getTargets(listId?: string) {
+    async getTargets(listId?: string, offset: number = 0, limit: number = 50) {
         let query = supabase.from('targets').select('*');
         if (listId) {
             query = query.eq('list_id', listId);
         }
-        const { data, error } = await query.order('created_at', { ascending: false });
+        const { data, error } = await query
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1);
         return { data: data as Target[], error };
     },
 
-    async getAllWorkspaceTargets(workspaceId: string) {
+    async getAllWorkspaceTargets(workspaceId: string, offset: number = 0, limit: number = 50) {
         const { data, error } = await supabase
             .from('targets')
             .select('*, target_lists!inner(name, workspace_id)')
             .eq('target_lists.workspace_id', workspaceId)
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1);
 
         return { data: data as (Target & { target_lists: { name: string } })[], error };
     },
 
-    async getEngagedWorkspaceTargets(workspaceId: string) {
+    async getEngagedWorkspaceTargets(workspaceId: string, offset: number = 0, limit: number = 50) {
         const { data, error } = await supabase
             .from('targets')
             .select('*, target_lists!inner(name, workspace_id)')
             .eq('target_lists.workspace_id', workspaceId)
             .not('last_interaction_at', 'is', null)
-            .order('last_interaction_at', { ascending: false });
+            .order('last_interaction_at', { ascending: false })
+            .range(offset, offset + limit - 1);
 
         return { data: data as (Target & { target_lists: { name: string } })[], error };
     },

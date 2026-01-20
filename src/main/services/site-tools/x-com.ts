@@ -593,7 +593,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     }),
     func: async ({ query, filter }: { query: string; filter?: string | null }) => {
       try {
-        const contents = ctx.getContents();
+        const contents = await ctx.getContents();
         const filterMap: Record<string, string> = { latest: 'live', people: 'user', photos: 'image', videos: 'video' };
         const sanitizeQuery = (val: string): string => {
           if (!val) return '';
@@ -711,7 +711,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       questionsOnly?: boolean | null;
     }) => {
       try {
-        const contents = ctx.getContents();
+        const contents = await ctx.getContents();
         const queryParts: string[] = [];
 
         const sanitize = (val: any): string => {
@@ -907,7 +907,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended.'),
     }),
     func: async ({ index, action, expected_author }: { index: number | string | null; action: 'like' | 'unlike' | 'toggle' | null; expected_author?: string | null }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       const rIndex = parseInt(String(index ?? 0), 10);
       const rAction = action ?? 'like';
       try {
@@ -987,20 +987,23 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       index: z.union([z.number(), z.string()]).nullable().describe('0-based index of the post.').default(0),
       skip_self: z.boolean().nullable().describe('Whether to skip replying to own posts. Default is true.'),
       skip_verified: z.boolean().nullable().describe('Whether to skip verified users. Default is false.'),
+      skip_if_liked: z.boolean().nullable().describe('Skip if the post is already liked by the logged-in user. Default is true.'),
       skip_keywords: z.string().nullable().describe('Comma-separated keywords to skip. Default is empty string.'),
       expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended to prevent index mismatches.'),
     }),
-    func: async ({ text, index, skip_self, skip_verified, skip_keywords, expected_author }: {
+    func: async ({ text, index, skip_self, skip_verified, skip_if_liked, skip_keywords, expected_author }: {
       text: string;
       index: number | string | null;
       skip_self: boolean | null;
       skip_verified: boolean | null;
+      skip_if_liked: boolean | null;
       skip_keywords: string | null;
       expected_author: string | null;
     }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       const finalSkipSelf = skip_self ?? true;
       const finalSkipVerified = skip_verified ?? false;
+      const finalSkipIfLiked = skip_if_liked ?? true;
       const finalSkipKeywords = skip_keywords || '';
       const rIndex = parseInt(String(index ?? 0), 10);
       try {
@@ -1050,9 +1053,19 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             const verifiedIcon = tweetNode.querySelector('[data-testid="icon-verified"], [aria-label*="Verified"]');
             const socialContext = tweetNode.querySelector('[data-testid="socialContext"]')?.innerText.toLowerCase() || '';
             const isMyRetweet = socialContext.includes('you retweeted') || socialContext.includes('tu retuiteaste');
+            const isLiked = !!tweetNode.querySelector('[data-testid="unlike"]');
             
+            // Only skip "self" if myHandle is actually resolved, or if it's explicitly a "You Retweeted" context
             if (${finalSkipSelf} && (isMyRetweet || (myHandle && authorHandle === myHandle))) {
-              return { success: true, skipped: true, reason: 'self', message: 'Skipped: Logged-in user post or retweet' + (myHandle ? ' (Handle: @' + myHandle + ')' : '') };
+              return { 
+                  success: true, 
+                  skipped: true, 
+                  reason: 'self', 
+                  message: 'Skipped: Logged-in user post or retweet (My: ' + myHandle + ', Author: ' + authorHandle + ')' 
+              };
+            }
+            if (${finalSkipIfLiked} && isLiked) {
+              return { success: true, skipped: true, reason: 'liked', message: 'Skipped: Already liked by user' };
             }
             if (${finalSkipVerified} && verifiedIcon) {
               return { success: true, skipped: true, reason: 'verified', message: 'Skipped: Verified profile' };
@@ -1160,7 +1173,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     description: 'On X.com (Twitter), create a new post.',
     schema: z.object({ text: z.string().min(1).describe('The DIRECT content of the post. STRICTLY the message only. NO narration.') }),
     func: async ({ text }: { text: string }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
@@ -1243,7 +1256,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended for timeline followers.'),
     }),
     func: async ({ index, action, expected_author }: { index: number | string | null; action: 'follow' | 'unfollow' | 'toggle' | null; expected_author?: string | null }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       const rIndex = parseInt(String(index ?? 0), 10);
       const rAction = action ?? 'follow';
       try {
@@ -1356,7 +1369,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       filter: z.enum(['top', 'latest']).nullable().describe('Filter for Niche/Community modes.').default('latest'),
     }),
     func: async ({ mode, target, limit, filter }: { mode: 'niche' | 'community' | 'followers'; target: string; limit: number | null; filter?: string | null }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       const lim = limit ?? 10;
 
       try {
@@ -1536,7 +1549,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       should_follow: z.boolean().default(false).describe('If true, will follow the user if not already followed.'),
     }),
     func: async ({ mode, username, should_follow }: { mode: 'me' | 'target'; username?: string; should_follow?: boolean }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       const followRequested = should_follow ?? false;
       try {
         if (mode === 'me') {
@@ -1650,9 +1663,11 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       actions: z.string().describe('Comma-separated list of actions to take: like, follow, retweet, reply.'),
       replyText: z.string().optional().describe('Required if "reply" action is specified.'),
       expected_author: z.string().nullable().optional().describe('Handle of the author (without @) to verify target. Highly recommended.'),
+      skip_self: z.boolean().default(true).describe('Skip if the target post is by the logged-in user. Default is true.'),
+      skip_if_liked: z.boolean().default(true).describe('Skip if the post is already liked by the logged-in user. Default is true.'),
     }),
-    func: async ({ targetIndex, actions, replyText, expected_author }) => {
-      const contents = ctx.getContents();
+    func: async ({ targetIndex, actions, replyText, expected_author, skip_self, skip_if_liked }) => {
+      const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function () {
@@ -1663,6 +1678,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 const actionList = ${JSON.stringify(actions)}.split(',').map(a => a.trim().toLowerCase());
                 const rText = ${JSON.stringify(replyText || '')};
                 const expAuth = ${JSON.stringify(expected_author || null)};
+                const skipSelf = ${skip_self ?? true};
+                const skipIfLiked = ${skip_if_liked ?? true};
 
                 // 1. Find Tweet
                 const findResult = await findTweetRobustly(index, expAuth);
@@ -1675,6 +1692,24 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 const target_avatar_url = getTweetAuthorAvatar(tweet);
                 const tweet_id = window.location.pathname.split('/').pop() || '';
                 const target_tweet_text = tweet.querySelector('[data-testid="tweetText"]')?.innerText || '';
+                
+                // --- CHECKS ---
+                const myHandle = getMyHandle();
+                const isLiked = !!tweet.querySelector('[data-testid="unlike"]'); // Red heart
+                const isMyRetweet = tweet.querySelector('[data-testid="socialContext"]')?.innerText.toLowerCase().includes('you retweeted');
+
+                if (skipSelf && (isMyRetweet || (myHandle && target_username === myHandle))) {
+                     return { 
+                         success: true, 
+                         skipped: true, 
+                         reason: 'self', 
+                         message: 'Skipped: Logged-in user post (My: ' + myHandle + ', Target: ' + target_username + ')' 
+                     };
+                }
+
+                if (skipIfLiked && isLiked) {
+                     return { success: true, skipped: true, reason: 'liked', message: 'Skipped: Already liked' };
+                }
 
                 const results = [];
 
@@ -1798,7 +1833,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       pin: z.string().optional().describe('4-digit PIN for encrypted chats. If prompted for a passcode, you MUST provide this.'),
     }),
     func: async ({ username, text, pin }: { username: string; text: string; pin?: string }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       const handle = (username || '').replace('@', '').trim();
       try {
         await contents.loadURL(`https://x.com/${handle}`);
@@ -1904,7 +1939,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       limit: z.number().default(20).describe('Max number of notifications to extract.'),
     }),
     func: async ({ filter, limit }: { filter: 'all' | 'verified' | 'mentions'; limit: number }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
@@ -2005,7 +2040,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       tab_name: z.string().describe('The label of the tab to switch to (e.g., "Following", "Latest", "People", "Media", "Lists").'),
     }),
     func: async ({ tab_name }: { tab_name: string }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
@@ -2097,7 +2132,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       expected_author: z.string().nullable().describe('Expected author handle.'),
     }),
     func: async ({ index, expected_author }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
@@ -2129,7 +2164,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       scroll_bottom: z.boolean().nullable().describe('Whether to scroll down after scanning to load new posts. Set to true if you are looping or need new results.').default(false),
     }),
     func: async ({ limit, scroll_bottom }: { limit: number | null, scroll_bottom?: boolean }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
@@ -2208,7 +2243,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       force_reload: z.boolean().default(false).describe('Force a full page reload if no specific error UI is found.'),
     }),
     func: async ({ force_reload }) => {
-      const contents = ctx.getContents();
+      const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function() {

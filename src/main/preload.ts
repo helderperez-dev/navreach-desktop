@@ -30,7 +30,7 @@ const browserAPI = {
     ipcRenderer.on('inspector:action', handler);
     return () => ipcRenderer.removeListener('inspector:action', handler);
   },
-  registerWebview: (tabId: string, webContentsId: number) => ipcRenderer.invoke('browser:register-webview', tabId, webContentsId),
+  registerWebview: (tabId: string, webContentsId: number) => ipcRenderer.invoke('browser:register-webview', tabId, webContentsId) as Promise<{ success: boolean; reason?: string }>,
   unregisterWebview: (tabId: string) => ipcRenderer.invoke('browser:unregister-webview', tabId),
   allowNavigation: (url: string) => ipcRenderer.invoke('browser:allow-navigation', url),
   openExternal: (url: string) => ipcRenderer.invoke('browser:open-external', url),

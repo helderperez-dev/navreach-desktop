@@ -75,6 +75,7 @@
     "react-router-dom": "^6.28.0",
     "react-syntax-highlighter": "^15.6.6",
     "reactflow": "^11.11.4",
+    "recharts": "^3.6.0",
     "sonner": "^1.7.0",
     "stripe": "^20.1.2",
     "tailwind-merge": "^2.5.4",

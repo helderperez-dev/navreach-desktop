@@ -45,70 +45,34 @@ export async function getScopedSupabase(accessToken?: string, refreshToken?: str
         });
 
         try {
-            await client.auth.setSession({
+            const { error } = await client.auth.setSession({
                 access_token: accessToken,
                 refresh_token: refreshToken
             });
-            return client;
+
+            if (!error) {
+                return client;
+            }
+            console.warn('[Supabase Main] Failed to set scoped session with refresh token, falling back to stateless:', error.message);
         } catch (e) {
-            console.error('[Supabase Main] Failed to set scoped session:', e);
+            console.error('[Supabase Main] Exception setting scoped session:', e);
             // Fallback to header method below
         }
     }
 
-    // Default/Fallback: Create a client without hardcoded headers first
-    // This allows us to update the session later if needed (e.g. via ai:update-session)
-    const client = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+    // Fallback: Create a client with explicit Authorization header
+    // This works even without a valid refresh token (stateless mode)
+    // and avoids the "Auth session missing!" error from setSession
+    return createClient(supabaseUrl || '', supabaseAnonKey || '', {
+        global: {
+            headers: {
+                Authorization: `Bearer ${accessToken}`
+            }
+        },
         auth: {
             persistSession: false,
             autoRefreshToken: false,
             detectSessionInUrl: false
         }
     });
-
-    if (accessToken) {
-        try {
-            // Attempt to set the session
-            // If we have a refresh token, this was handled in the block above (lines 38-57)
-            // So here we only have accessToken
-            const { error } = await client.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken || '' // Explicitly pass empty string if undefined to satisfy types if needed, or let it be.
-            });
-
-            if (error) {
-                console.warn('[Supabase Main] setSession failed for simple client, falling back to global headers:', error.message);
-                // If setSession fails, we fallback to creating a NEW client with hardcoded headers
-                // This is the "old" behavior which is robust for static requests but doesn't support updates
-                return createClient(supabaseUrl || '', supabaseAnonKey || '', {
-                    global: {
-                        headers: {
-                            Authorization: `Bearer ${accessToken}`
-                        }
-                    },
-                    auth: {
-                        persistSession: false,
-                        autoRefreshToken: false,
-                        detectSessionInUrl: false
-                    }
-                });
-            }
-        } catch (e) {
-            console.error('[Supabase Main] Exception setting session, using fallback:', e);
-            return createClient(supabaseUrl || '', supabaseAnonKey || '', {
-                global: {
-                    headers: {
-                        Authorization: `Bearer ${accessToken}`
-                    }
-                },
-                auth: {
-                    persistSession: false,
-                    autoRefreshToken: false,
-                    detectSessionInUrl: false
-                }
-            });
-        }
-    }
-
-    return client;
 }

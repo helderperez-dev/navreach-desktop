@@ -612,8 +612,8 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
         }
 
         // Also signal the renderer execution to stop immediately
-        const contents = getWebviewContents('main-tab');
-        if (contents && !contents.isDestroyed()) {
+        const contents = await getWebviewContents('main-tab');
+        if (contents && (typeof contents.isDestroyed !== 'function' || !contents.isDestroyed())) {
             try {
                 contents.stop(); // Stop any pending navigation or loading
                 await contents.executeJavaScript(`
@@ -995,8 +995,8 @@ CRITICAL:
             console.log(`[AI Service] Final Tool Count: ${deduplicatedTools.length} (out of ${requestToolsRaw.length} raw)`);
 
             // Reset renderer stop signal
-            const contents = getWebviewContents('main-tab');
-            if (contents && !contents.isDestroyed()) {
+            const contents = await getWebviewContents('main-tab');
+            if (contents && (typeof contents.isDestroyed !== 'function' || !contents.isDestroyed())) {
                 try {
                     await contents.executeJavaScript('window.__REAVION_STOP__ = false;');
                 } catch (e) {
