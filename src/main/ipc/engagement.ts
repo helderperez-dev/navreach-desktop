@@ -6,8 +6,8 @@ export function setupEngagementHandlers(ipcMain: IpcMain) {
         return await engagementService.logEngagement(accessToken, log);
     });
 
-    ipcMain.handle('engagement:get-logs', async (_event, { accessToken, limit, target_username }) => {
-        return await engagementService.getEngagementLogs(accessToken, { limit, target_username });
+    ipcMain.handle('engagement:get-logs', async (_event, { accessToken, limit, offset, target_username, searchQuery }) => {
+        return await engagementService.getEngagementLogs(accessToken, { limit, offset, target_username, searchQuery });
     });
 
     ipcMain.handle('engagement:get-stats', async (_event, { accessToken }) => {

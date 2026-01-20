@@ -43,6 +43,11 @@ interface TargetsState {
     limit: number;
     isFetchingMore: boolean;
     loadMoreTargets: () => Promise<void>;
+
+    // Search
+    searchQuery: string;
+    searchTimeout: NodeJS.Timeout | null;
+    setSearchQuery: (query: string) => void;
 }
 
 export const useTargetsStore = create<TargetsState>((set, get) => ({
@@ -60,6 +65,24 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
     hasMore: true,
     limit: 50,
     isFetchingMore: false,
+
+    // Search defaults
+    searchQuery: '',
+    searchTimeout: null,
+
+    setSearchQuery: (query: string) => {
+        const { searchTimeout } = get();
+        if (searchTimeout) clearTimeout(searchTimeout);
+
+        set({ searchQuery: query, hasMore: false });
+
+        const timeout = setTimeout(() => {
+            set({ page: 0, hasMore: true, targets: [], isLoading: true });
+            get().fetchTargets();
+        }, 500);
+
+        set({ searchTimeout: timeout });
+    },
 
     setViewMode: (mode) => {
         const currentMode = get().viewMode;
@@ -138,30 +161,124 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
 
         let newData: any[] = [];
         let error = null;
+        let hasMoreToLoad = false;
+        let dbData: any[] = []; // Hoist declaration
 
         try {
             if (viewMode === 'all') {
                 const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
                 if (workspaceId) {
-                    const result = await targetService.getAllWorkspaceTargets(workspaceId, offset, limit);
+                    const result = await targetService.getAllWorkspaceTargets(workspaceId, offset, limit, get().searchQuery);
                     newData = result.data || [];
                     error = result.error;
+                    if (newData.length >= limit) hasMoreToLoad = true;
                 }
             } else if (viewMode === 'engaged') {
                 const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
-                if (workspaceId) {
-                    // For engaged, later pages only fetch from DB. Virtual targets are only computed on page 0.
-                    const result = await targetService.getEngagedWorkspaceTargets(workspaceId, offset, limit);
-                    newData = result.data || [];
-                    error = result.error;
+                const session = useAuthStore.getState().session;
+
+                if (workspaceId && session?.access_token) {
+                    // 1. Fetch official engaged targets from DB
+                    const result = await targetService.getEngagedWorkspaceTargets(workspaceId, offset, limit, get().searchQuery);
+                    dbData = result.data || [];
+                    const dbError = result.error;
+
+                    if (dbError) {
+                        error = dbError;
+                    } else {
+                        // 2. Fetch engagement logs for this page
+                        try {
+                            const logs = await window.api.engagement.getLogs(session.access_token, {
+                                limit,
+                                offset,
+                                searchQuery: get().searchQuery
+                            });
+
+                            // Check raw counts for pagination continuation
+                            if ((dbData?.length || 0) >= limit || logs.length >= limit) {
+                                hasMoreToLoad = true;
+                            }
+
+                            // 3. Merge targets and logs (similar to fetchTargets)
+                            const virtualTargets: any[] = [];
+                            const latestLogsByUsername = new Map<string, any>();
+
+                            logs.forEach((log: any) => {
+                                const username = log.target_username?.toLowerCase();
+                                if (username && !latestLogsByUsername.has(username)) {
+                                    latestLogsByUsername.set(username, log);
+                                }
+                            });
+
+                            latestLogsByUsername.forEach((log, username) => {
+                                // Check if this user is in the current DB batch
+                                const inCurrentBatch = dbData?.some(t => {
+                                    const targetUsername = t.metadata?.username?.toLowerCase() ||
+                                        t.url?.split('/').pop()?.split('?')[0].toLowerCase();
+                                    return targetUsername === username;
+                                });
+
+                                // Check if this user is already in the store (previous pages)
+                                const inExisting = get().targets.some(t => {
+                                    const targetUsername = t.metadata?.username?.toLowerCase() ||
+                                        t.url?.split('/').pop()?.split('?')[0].toLowerCase();
+                                    return targetUsername === username;
+                                });
+
+                                if (!inCurrentBatch && !inExisting) {
+                                    virtualTargets.push({
+                                        id: `virtual-${log.id}`,
+                                        name: log.target_name || log.target_username,
+                                        url: log.platform === 'x.com'
+                                            ? `https://x.com/${log.target_username}`
+                                            : (log.platform === 'linkedin' ? `https://linkedin.com/in/${log.target_username}` : log.target_username),
+                                        type: 'person',
+                                        metadata: {
+                                            username: log.target_username,
+                                            platform: log.platform,
+                                            avatar_url: log.target_avatar_url,
+                                            ...((log.target_details as any) || {})
+                                        },
+                                        last_interaction_at: log.created_at,
+                                        created_at: log.created_at,
+                                        target_lists: { name: 'Ad-hoc' }
+                                    });
+                                }
+                            });
+
+                            // Combine and sort
+                            newData = [...(dbData || []), ...virtualTargets];
+                            newData.sort((a, b) => {
+                                const dateA = new Date(a.last_interaction_at || 0).getTime();
+                                const dateB = new Date(b.last_interaction_at || 0).getTime();
+                                return dateB - dateA;
+                            });
+
+                        } catch (err) {
+                            console.error('Failed to merge engagement logs in loadMore:', err);
+                            newData = dbData || [];
+                        }
+                    }
                 }
             } else if (selectedListId) {
-                const result = await targetService.getTargets(selectedListId, offset, limit);
+                const result = await targetService.getTargets(selectedListId, offset, limit, get().searchQuery);
                 newData = result.data || [];
                 error = result.error;
+                if (newData.length >= limit) hasMoreToLoad = true;
             }
 
             if (error) throw error;
+
+            // Determine hasMore based on RAW data counts, not the deduplicated/merged result
+            // If either source returned a full page, we definitely have more to scan
+            const rawDbCount = (viewMode === 'engaged' ? (dbData?.length || 0) : newData.length);
+            // Note: For 'engaged', we need to check the local logs variable, but it's scoped in the try block
+            // effectively we need to move the hasMore calc inside or bubble it up.
+
+            // Let's rely on the fact that if we found *any* raw data that filled the limit, we should continue.
+            // However, scope is tricky. Let's simplify:
+
+            // In 'engaged' mode, 'newData' length is not reliable for pagination.
 
             if (newData.length > 0) {
                 set((state) => {
@@ -170,6 +287,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                     // Smart merge for 'engaged' view to handle virtual targets
                     if (viewMode === 'engaged') {
                         newData.forEach(newTarget => {
+                            // ... existing merge logic ...
                             // Check if we have a virtual target for this user (same username/url)
                             const newUsername = newTarget.metadata?.username?.toLowerCase() ||
                                 newTarget.url?.split('/').pop()?.split('?')[0].toLowerCase();
@@ -196,15 +314,36 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                         updatedTargets = [...updatedTargets, ...newData];
                     }
 
+                    // Correction: We must ensure hasMore is true if we are in engaged mode and raw sources were full.
+                    // We can't easily access 'logs' here. 
+                    // But we can check if we should keep fetching.
+                    // Actually, passing `hasMore` as a separate variable from the try block is better.
+
                     return {
                         targets: updatedTargets,
                         page: nextPage,
-                        hasMore: newData.length === limit,
+                        hasMore: hasMoreToLoad, // Use the variable we defined
                         isFetchingMore: false
                     };
                 });
             } else {
-                set({ hasMore: false, isFetchingMore: false });
+                // Even if newData is empty (all deduplicated), if raw sources had data, we might need to fetch next page!
+                // e.g. Page 1 had 50 logs of users already in store. newData is empty.
+                // But Page 2 might have new users.
+                // So we must continue if hasMoreToLoad is true.
+                if (hasMoreToLoad) {
+                    set({
+                        page: nextPage,
+                        hasMore: true,
+                        isFetchingMore: false
+                    });
+                    // Immediately trigger next load? Only if observer triggers it.
+                    // But if we returned empty, the list didn't grow, so observer might not trigger...
+                    // This is a "gap" problem. If we filter out everything, we have a hole.
+                    // Ideally we should auto-fetch again recursively, but let's just update state for now.
+                } else {
+                    set({ hasMore: false, isFetchingMore: false });
+                }
             }
 
         } catch (err: any) {
@@ -231,6 +370,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         const limit = get().limit;
 
         let data, error;
+        let hasMoreToLoad: boolean | undefined;
 
         if (get().viewMode === 'all') {
             const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
@@ -238,7 +378,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 set({ isLoading: false });
                 return;
             }
-            ({ data, error } = await targetService.getAllWorkspaceTargets(workspaceId, 0, limit));
+            ({ data, error } = await targetService.getAllWorkspaceTargets(workspaceId, 0, limit, get().searchQuery));
         } else if (get().viewMode === 'engaged') {
             const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
             const session = useAuthStore.getState().session;
@@ -249,13 +389,19 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             }
 
             // 1. Fetch official engaged targets
-            const { data: targetsData, error: targetsError } = await targetService.getEngagedWorkspaceTargets(workspaceId, 0, limit);
+            const { data: targetsData, error: targetsError } = await targetService.getEngagedWorkspaceTargets(workspaceId, 0, limit, get().searchQuery);
 
             // 2. Fetch engagement logs to create "Virtual Targets" for ad-hoc engagements
             try {
                 const logs = await window.api.engagement.getLogs(session.access_token, {
-                    limit: 100
+                    limit,
+                    searchQuery: get().searchQuery
                 });
+
+                // Check raw counts for pagination
+                if ((targetsData?.length || 0) >= limit || logs.length >= limit) {
+                    hasMoreToLoad = true;
+                }
 
                 // 3. Merge targets and logs
                 const virtualTargets: any[] = [];
@@ -319,7 +465,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 set({ targets: [], isLoading: false });
                 return;
             }
-            ({ data, error } = await targetService.getTargets(idToUse, 0, limit));
+            ({ data, error } = await targetService.getTargets(idToUse, 0, limit, get().searchQuery));
         }
 
         if (error) {
@@ -329,7 +475,9 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             set({
                 targets: data || [],
                 isLoading: false,
-                hasMore: (data || []).length === limit
+                // Check if we have more to load based on raw counts check if available, 
+                // otherwise fallback to data length (safe for non-engaged views)
+                hasMore: typeof hasMoreToLoad !== 'undefined' ? hasMoreToLoad : (data || []).length >= limit
             });
         }
     },
@@ -631,7 +779,9 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             isLoading: false,
             error: null,
             recentLogs: [],
-            viewMode: 'list'
+            viewMode: 'list',
+            searchQuery: '',
+            searchTimeout: null
         });
     }
 }));

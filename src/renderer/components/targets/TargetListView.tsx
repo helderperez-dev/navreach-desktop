@@ -32,14 +32,14 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 
 export function TargetListView() {
-    const { targets, fetchLists, selectedListId, fetchTargets, isLoading, viewMode, lists, subscribeToChanges, unsubscribe, recentLogs, fetchRecentLogs } = useTargetsStore();
+    const { targets, fetchLists, selectedListId, fetchTargets, isLoading, viewMode, lists, subscribeToChanges, unsubscribe, recentLogs, fetchRecentLogs, searchQuery, setSearchQuery } = useTargetsStore();
     const { currentWorkspace } = useWorkspaceStore();
     const { session } = useAuthStore();
     const { toggleTargetSidebar } = useAppStore();
     const [isTargetFormOpen, setIsTargetFormOpen] = useState(false);
     const prevSidebarState = useRef({ form: false, history: false });
 
-    const [searchQuery, setSearchQuery] = useState('');
+    // const [searchQuery, setSearchQuery] = useState(''); // Removed local state
     const [isSearchExpanded, setIsSearchExpanded] = useState(false);
     const [editingTarget, setEditingTarget] = useState<Target | null>(null);
     const [isImportOpen, setIsImportOpen] = useState(false);

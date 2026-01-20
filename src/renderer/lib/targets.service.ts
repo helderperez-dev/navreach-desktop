@@ -58,10 +58,13 @@ export const targetService = {
     },
 
     // Targets
-    async getTargets(listId?: string, offset: number = 0, limit: number = 50) {
+    async getTargets(listId?: string, offset: number = 0, limit: number = 50, searchQuery?: string) {
         let query = supabase.from('targets').select('*');
         if (listId) {
             query = query.eq('list_id', listId);
+        }
+        if (searchQuery) {
+            query = query.or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`);
         }
         const { data, error } = await query
             .order('created_at', { ascending: false })
@@ -69,25 +72,35 @@ export const targetService = {
         return { data: data as Target[], error };
     },
 
-    async getAllWorkspaceTargets(workspaceId: string, offset: number = 0, limit: number = 50) {
-        const { data, error } = await supabase
+    async getAllWorkspaceTargets(workspaceId: string, offset: number = 0, limit: number = 50, searchQuery?: string) {
+        let query = supabase
             .from('targets')
             .select('*, target_lists!inner(name, workspace_id)')
             .eq('target_lists.workspace_id', workspaceId)
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1);
+            .order('created_at', { ascending: false });
+
+        if (searchQuery) {
+            query = query.or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error } = await query.range(offset, offset + limit - 1);
 
         return { data: data as (Target & { target_lists: { name: string } })[], error };
     },
 
-    async getEngagedWorkspaceTargets(workspaceId: string, offset: number = 0, limit: number = 50) {
-        const { data, error } = await supabase
+    async getEngagedWorkspaceTargets(workspaceId: string, offset: number = 0, limit: number = 50, searchQuery?: string) {
+        let query = supabase
             .from('targets')
             .select('*, target_lists!inner(name, workspace_id)')
             .eq('target_lists.workspace_id', workspaceId)
             .not('last_interaction_at', 'is', null)
-            .order('last_interaction_at', { ascending: false })
-            .range(offset, offset + limit - 1);
+            .order('last_interaction_at', { ascending: false });
+
+        if (searchQuery) {
+            query = query.or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`);
+        }
+
+        const { data, error } = await query.range(offset, offset + limit - 1);
 
         return { data: data as (Target & { target_lists: { name: string } })[], error };
     },

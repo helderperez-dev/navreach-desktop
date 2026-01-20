@@ -47,7 +47,7 @@ export class EngagementService {
         return data;
     }
 
-    async getEngagementLogs(accessToken: string, options: { limit?: number; target_username?: string } = {}) {
+    async getEngagementLogs(accessToken: string, options: { limit?: number; offset?: number; target_username?: string; searchQuery?: string } = {}) {
         const supabase = await getScopedSupabase(accessToken);
         const userId = this.getUserIdFromToken(accessToken);
 
@@ -58,8 +58,16 @@ export class EngagementService {
             .order('created_at', { ascending: false })
             .limit(options.limit || 100);
 
+        if (options.offset) {
+            query = query.range(options.offset, options.offset + (options.limit || 100) - 1);
+        }
+
         if (options.target_username) {
             query = query.eq('target_username', options.target_username);
+        }
+
+        if (options.searchQuery) {
+            query = query.or(`target_username.ilike.%${options.searchQuery}%,target_name.ilike.%${options.searchQuery}%`);
         }
 
         const { data, error } = await query;
