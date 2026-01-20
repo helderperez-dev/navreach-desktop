@@ -1009,11 +1009,15 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
             case 'x_post':
                 return (
                     <div className="space-y-4">
-                        <Field label="Post Content">
+                        <Field label="Post Instruction">
                             <MentionInput
-                                value={config.text || ''}
-                                onChange={(e) => handleConfigChange('text', e.target.value)}
-                                placeholder="What is happening?!"
+                                value={config.instruction || config.text || ''}
+                                onChange={(e) => {
+                                    handleConfigChange('instruction', e.target.value);
+                                    // Clear legacy text to avoid confusion
+                                    if (config.text) handleConfigChange('text', undefined);
+                                }}
+                                placeholder="Describe what to post (e.g. 'Write a tweet about AI')..."
                                 variableGroups={variableGroups}
                             />
                         </Field>
@@ -1063,18 +1067,22 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
 
                         {currentActions.includes('reply') && (
                             <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
-                                <Field label="Prompt / Content">
-                                    <Textarea
-                                        value={config.replyText || config.text || config.value || ''}
-                                        onChange={(e) => {
-                                            handleConfigChange('replyText', e.target.value);
-                                            handleConfigChange('text', e.target.value);
-                                            handleConfigChange('value', e.target.value);
-                                        }}
-                                        placeholder="Enter the exact text OR instructions for the agent (e.g. 'Write a friendly reply about...')..."
-                                        className="min-h-[100px] text-xs resize-none"
-                                    />
-                                </Field>
+                                <div className="space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    <Field label="Reply Instruction">
+                                        <Textarea
+                                            value={config.instruction || config.replyText || config.text || config.value || ''}
+                                            onChange={(e) => {
+                                                handleConfigChange('instruction', e.target.value);
+                                                // Clear legacy fields
+                                                if (config.replyText) handleConfigChange('replyText', undefined);
+                                                if (config.text) handleConfigChange('text', undefined);
+                                                if (config.value) handleConfigChange('value', undefined);
+                                            }}
+                                            placeholder="Instructions for the reply (e.g. 'Write a friendly comment about {{item.text}}')..."
+                                            className="min-h-[100px] text-xs resize-none"
+                                        />
+                                    </Field>
+                                </div>
                             </div>
                         )}
 

@@ -1169,7 +1169,8 @@ You are currently executing a Playbook graph ({{playbooks.ID}}).
 - **STAY IN THE FLOW**: Your ONLY objective is to reach a terminal node (e.g., 'Finished', 'End') by following the edges.
 - **NO CHAT**: Do NOT stop to chat with the user. Do NOT summarize and wait for instructions. 
 - **AUTONOMOUS LOOPS**: If you are in a loop (e.g., 'Engage Loop'), you must execute EVERY item in the loop autonomously. Do NOT stop after one item.
-- **FORCE PROGRESS**: Every response you provide SHOULD include tool calls (e.g., \`report_playbook_node_status\` or a browser action) until you reach the 'Finished' node. Outputting only text will terminate the automation.`
+- **FORCE PROGRESS**: Every response you provide SHOULD include tool calls (e.g., \`report_playbook_node_status\` or a browser action) until you reach the 'Finished' node. Outputting only text will terminate the automation.
+- **GENERATE CONTENT**: When a node configuration contains a 'prompt', 'instruction', 'text', or 'replyText' (e.g. for a reply or post), you MUST use that value to GENERATE the actual content using your creative capabilities. NEVER use the instruction string itself as the final output. For example, if the instruction is "Say hello", you should generate "Hello there!", NOT "Say hello".`
                 : '';
 
             const speedDirective = currentSessionSpeed === 'fast'
