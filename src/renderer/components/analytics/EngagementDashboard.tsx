@@ -883,7 +883,7 @@ export function EngagementDashboard() {
 
                         {/* Distribution Section */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <Card className="border-border/10 bg-muted/5 rounded-[2.5rem] p-8 lg:col-span-1">
+                            <Card className="h-[500px] flex flex-col border-border/10 bg-muted/5 rounded-[2.5rem] p-8">
                                 <CardHeader className="p-0 mb-8 text-center">
                                     <CardTitle className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Platform Mix</CardTitle>
                                 </CardHeader>
@@ -909,7 +909,7 @@ export function EngagementDashboard() {
                                 </div>
                             </Card>
 
-                            <Card className="border-border/10 bg-muted/5 rounded-[2.5rem] p-8 lg:col-span-2">
+                            <Card className="h-[500px] flex flex-col border-border/10 bg-muted/5 rounded-[2.5rem] p-8">
                                 <CardHeader className="p-0 mb-6">
                                     <CardTitle className="text-sm font-bold text-muted-foreground uppercase tracking-wider">Action Breakdown</CardTitle>
                                     <CardDescription className="text-xs">Comparative volume of interaction types</CardDescription>
@@ -931,137 +931,84 @@ export function EngagementDashboard() {
                                     ))}
                                 </div>
                             </Card>
-                        </div>
 
-                        {/* Main Content Area */}
-                        <Card className="flex-1 min-h-0 border-border/10 bg-card/20 shadow-2xl rounded-[2.5rem] overflow-hidden flex flex-col transition-all">
-                            <CardHeader className="flex flex-row items-center justify-between space-y-0 px-8 py-6">
-                                <div>
-                                    <CardTitle className="text-xl font-bold">Activity Feed</CardTitle>
-                                    <CardDescription>
-                                        {filteredLogs.length === logs.length
-                                            ? "Displaying latest interactions across all platforms"
-                                            : `Showing ${filteredLogs.length} matching interactions`}
-                                    </CardDescription>
-                                </div>
-                                {isLoading && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
-                            </CardHeader>
 
-                            <CardContent className="flex-1 p-0">
-                                <div className="px-8 pb-8">
-                                    <AnimatePresence mode="popLayout">
-                                        {viewMode === 'table' ? (
-                                            <table className="w-full text-sm">
-                                                <thead>
-                                                    <tr className="text-muted-foreground border-b border-border/20">
-                                                        <th className="font-semibold text-left py-4 px-2 uppercase tracking-wider text-[10px]">Action</th>
-                                                        <th className="font-semibold text-left py-4 px-2 uppercase tracking-wider text-[10px]">Target</th>
-                                                        <th className="font-semibold text-left py-4 px-2 uppercase tracking-wider text-[10px]">Source</th>
-                                                        <th className="font-semibold text-left py-4 px-2 uppercase tracking-wider text-[10px]">Timestamp</th>
-                                                        <th className="font-semibold text-right py-4 px-2 uppercase tracking-wider text-[10px]">Actions</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-border/10">
-                                                    {filteredLogs.length === 0 ? (
-                                                        <tr>
-                                                            <td colSpan={5} className="py-24 text-center">
-                                                                <div className="flex flex-col items-center gap-3 text-muted-foreground">
-                                                                    <div className="p-4 rounded-full bg-muted/50">
-                                                                        <Search className="h-8 w-8 opacity-20" />
-                                                                    </div>
-                                                                    <p className="italic text-base">No matching interactions found.</p>
-                                                                    <Button
-                                                                        variant="link"
-                                                                        className="text-primary hover:no-underline"
-                                                                        onClick={() => {
-                                                                            setDateFilter('all');
-                                                                            setPlatformFilter('all');
-                                                                            setActionFilter('all');
-                                                                            setSearchQuery('');
-                                                                        }}
-                                                                    >
-                                                                        Reset all filters
-                                                                    </Button>
-                                                                </div>
-                                                            </td>
+                            {/* Main Content Area */}
+                            <Card className="h-[500px] border-border/10 bg-card/20 shadow-2xl rounded-[2.5rem] overflow-hidden flex flex-col transition-all">
+                                <CardHeader className="flex flex-row items-center justify-between space-y-0 px-8 py-6">
+                                    <div>
+                                        <CardTitle className="text-xl font-bold">Activity Feed</CardTitle>
+                                        <CardDescription>
+                                            {filteredLogs.length === logs.length
+                                                ? "Displaying latest interactions across all platforms"
+                                                : `Showing ${filteredLogs.length} matching interactions`}
+                                        </CardDescription>
+                                    </div>
+                                    {isLoading && <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />}
+                                </CardHeader>
+
+                                <CardContent className="flex-1 p-0 overflow-y-auto">
+                                    <div className="px-8 pb-8">
+                                        <AnimatePresence mode="popLayout">
+                                            {viewMode === 'table' ? (
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="text-muted-foreground border-b border-border/20">
+                                                            <th className="font-semibold text-left py-4 px-2 uppercase tracking-wider text-[10px]">Action</th>
+                                                            <th className="font-semibold text-left py-4 px-2 uppercase tracking-wider text-[10px]">Target</th>
+                                                            <th className="font-semibold text-left py-4 px-2 uppercase tracking-wider text-[10px]">Source</th>
+                                                            <th className="font-semibold text-left py-4 px-2 uppercase tracking-wider text-[10px]">Timestamp</th>
+                                                            <th className="font-semibold text-right py-4 px-2 uppercase tracking-wider text-[10px]">Actions</th>
                                                         </tr>
-                                                    ) : (
-                                                        filteredLogs.map((log) => (
-                                                            <motion.tr
-                                                                layout
-                                                                key={log.id}
-                                                                initial={{ opacity: 0 }}
-                                                                animate={{ opacity: 1 }}
-                                                                exit={{ opacity: 0 }}
-                                                                className="group hover:bg-primary/[0.03] transition-colors border-border/5"
-                                                            >
-                                                                <td className="py-4 px-2">
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className="h-10 w-10 rounded-xl bg-muted/20 border border-border/10 flex items-center justify-center group-hover:bg-background transition-colors shadow-sm">
-                                                                            {getActionIcon(log.action_type)}
+                                                    </thead>
+                                                    <tbody className="divide-y divide-border/10">
+                                                        {filteredLogs.length === 0 ? (
+                                                            <tr>
+                                                                <td colSpan={5} className="py-24 text-center">
+                                                                    <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                                                                        <div className="p-4 rounded-full bg-muted/50">
+                                                                            <Search className="h-8 w-8 opacity-20" />
                                                                         </div>
-                                                                        <div className="flex flex-col">
-                                                                            <span className="capitalize font-bold text-white/90">{log.action_type}</span>
-                                                                            <span className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider">Outreach</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="py-4 px-2">
-                                                                    <div
-                                                                        className="flex items-center gap-3 cursor-pointer group/target w-fit"
-                                                                        onClick={() => setSelectedTarget({
-                                                                            username: log.target_username,
-                                                                            name: log.target_name,
-                                                                            avatar_url: log.target_avatar_url,
-                                                                            platform: log.platform
-                                                                        })}
-                                                                    >
-                                                                        <div className="relative">
-                                                                            {log.target_avatar_url ? (
-                                                                                <img src={log.target_avatar_url} className="h-9 w-9 rounded-full border border-border/40 group-hover/target:border-primary/50 transition-all group-hover/target:scale-105" alt="" />
-                                                                            ) : (
-                                                                                <div className="h-9 w-9 rounded-full bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center border border-border/40 font-bold text-[10px] text-muted-foreground group-hover/target:border-primary/50 transition-all group-hover/target:scale-105">
-                                                                                    {log.target_username?.[0]?.toUpperCase() || 'U'}
-                                                                                </div>
-                                                                            )}
-                                                                            <div className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-background bg-blue-500/40" />
-                                                                        </div>
-                                                                        <div className="flex flex-col">
-                                                                            <span className="font-bold text-white group-hover/target:text-primary transition-colors">{log.target_name || log.target_username}</span>
-                                                                            <span className="text-xs text-muted-foreground/60 font-mono">@{log.target_username}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="py-4 px-2">
-                                                                    <div className="flex items-center gap-2">
-                                                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-muted border border-border/10 text-muted-foreground/60 uppercase tracking-widest">
-                                                                            {log.platform.replace('.com', '')}
-                                                                        </span>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="py-4 px-2 text-muted-foreground font-medium">
-                                                                    <div className="flex items-center gap-1.5 whitespace-nowrap text-xs">
-                                                                        <Clock className="h-3 w-3 opacity-50" />
-                                                                        {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
-                                                                    </div>
-                                                                </td>
-                                                                <td className="py-4 px-2 text-right">
-                                                                    <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                        <p className="italic text-base">No matching interactions found.</p>
                                                                         <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            className="h-8 w-8 p-0 rounded-lg hover:bg-primary/10 hover:text-primary transition-all"
+                                                                            variant="link"
+                                                                            className="text-primary hover:no-underline"
                                                                             onClick={() => {
-                                                                                const url = (log.metadata as any)?.url || (log.target_username ? `https://${log.platform.replace('.com', '')}.com/${log.target_username}` : '#');
-                                                                                if (url !== '#') window.open(url, '_blank');
+                                                                                setDateFilter('all');
+                                                                                setPlatformFilter('all');
+                                                                                setActionFilter('all');
+                                                                                setSearchQuery('');
                                                                             }}
                                                                         >
-                                                                            <ExternalLink className="h-4 w-4" />
+                                                                            Reset all filters
                                                                         </Button>
-                                                                        <Button
-                                                                            variant="ghost"
-                                                                            size="sm"
-                                                                            className="h-8 w-8 p-0 rounded-lg hover:bg-muted transition-all"
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ) : (
+                                                            filteredLogs.map((log) => (
+                                                                <motion.tr
+                                                                    layout
+                                                                    key={log.id}
+                                                                    initial={{ opacity: 0 }}
+                                                                    animate={{ opacity: 1 }}
+                                                                    exit={{ opacity: 0 }}
+                                                                    className="group hover:bg-primary/[0.03] transition-colors border-border/5"
+                                                                >
+                                                                    <td className="py-4 px-2">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div className="h-10 w-10 rounded-xl bg-muted/20 border border-border/10 flex items-center justify-center group-hover:bg-background transition-colors shadow-sm">
+                                                                                {getActionIcon(log.action_type)}
+                                                                            </div>
+                                                                            <div className="flex flex-col">
+                                                                                <span className="capitalize font-bold text-white/90">{log.action_type}</span>
+                                                                                <span className="text-[10px] text-muted-foreground/60 font-bold uppercase tracking-wider">Outreach</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="py-4 px-2">
+                                                                        <div
+                                                                            className="flex items-center gap-3 cursor-pointer group/target w-fit"
                                                                             onClick={() => setSelectedTarget({
                                                                                 username: log.target_username,
                                                                                 name: log.target_name,
@@ -1069,65 +1016,119 @@ export function EngagementDashboard() {
                                                                                 platform: log.platform
                                                                             })}
                                                                         >
-                                                                            <MoreHorizontal className="h-4 w-4" />
-                                                                        </Button>
-                                                                    </div>
-                                                                </td>
-                                                            </motion.tr>
-                                                        ))
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        ) : (
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
-                                                {filteredLogs.map((log) => (
-                                                    <motion.div
-                                                        layout
-                                                        key={log.id}
-                                                        initial={{ opacity: 0, scale: 0.95 }}
-                                                        animate={{ opacity: 1, scale: 1 }}
-                                                        exit={{ opacity: 0, scale: 0.95 }}
-                                                        className="group p-4 rounded-2xl bg-muted/20 border border-border/20 hover:border-primary/30 transition-all hover:bg-muted/30 cursor-pointer"
-                                                        onClick={() => setSelectedTarget({
-                                                            username: log.target_username,
-                                                            name: log.target_name,
-                                                            avatar_url: log.target_avatar_url,
-                                                            platform: log.platform
-                                                        })}
-                                                    >
-                                                        <div className="flex items-start justify-between mb-3">
-                                                            <div className="h-10 w-10 rounded-xl bg-card border border-border/20 flex items-center justify-center shadow-sm">
-                                                                {getActionIcon(log.action_type)}
-                                                            </div>
-                                                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-background border border-border/30 text-muted-foreground uppercase">
-                                                                {log.platform.replace('.com', '')}
-                                                            </span>
-                                                        </div>
-                                                        <div className="flex items-center gap-3 mb-4">
-                                                            {log.target_avatar_url ? (
-                                                                <img src={log.target_avatar_url} className="h-10 w-10 rounded-lg border border-border/20" alt="" />
-                                                            ) : (
-                                                                <div className="h-10 w-10 rounded-lg bg-card border border-border/20 flex items-center justify-center font-bold text-xs text-muted-foreground">
-                                                                    {log.target_username?.[0]?.toUpperCase()}
+                                                                            <div className="relative">
+                                                                                {log.target_avatar_url ? (
+                                                                                    <img src={log.target_avatar_url} className="h-9 w-9 rounded-full border border-border/40 group-hover/target:border-primary/50 transition-all group-hover/target:scale-105" alt="" />
+                                                                                ) : (
+                                                                                    <div className="h-9 w-9 rounded-full bg-gradient-to-br from-muted to-muted/50 flex items-center justify-center border border-border/40 font-bold text-[10px] text-muted-foreground group-hover/target:border-primary/50 transition-all group-hover/target:scale-105">
+                                                                                        {log.target_username?.[0]?.toUpperCase() || 'U'}
+                                                                                    </div>
+                                                                                )}
+                                                                                <div className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full border-2 border-background bg-blue-500/40" />
+                                                                            </div>
+                                                                            <div className="flex flex-col">
+                                                                                <span className="font-bold text-white group-hover/target:text-primary transition-colors">{log.target_name || log.target_username}</span>
+                                                                                <span className="text-xs text-muted-foreground/60 font-mono">@{log.target_username}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="py-4 px-2">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-lg bg-muted border border-border/10 text-muted-foreground/60 uppercase tracking-widest">
+                                                                                {log.platform.replace('.com', '')}
+                                                                            </span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="py-4 px-2 text-muted-foreground font-medium">
+                                                                        <div className="flex items-center gap-1.5 whitespace-nowrap text-xs">
+                                                                            <Clock className="h-3 w-3 opacity-50" />
+                                                                            {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="py-4 px-2 text-right">
+                                                                        <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-8 w-8 p-0 rounded-lg hover:bg-primary/10 hover:text-primary transition-all"
+                                                                                onClick={() => {
+                                                                                    const url = (log.metadata as any)?.url || (log.target_username ? `https://${log.platform.replace('.com', '')}.com/${log.target_username}` : '#');
+                                                                                    if (url !== '#') window.open(url, '_blank');
+                                                                                }}
+                                                                            >
+                                                                                <ExternalLink className="h-4 w-4" />
+                                                                            </Button>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-8 w-8 p-0 rounded-lg hover:bg-muted transition-all"
+                                                                                onClick={() => setSelectedTarget({
+                                                                                    username: log.target_username,
+                                                                                    name: log.target_name,
+                                                                                    avatar_url: log.target_avatar_url,
+                                                                                    platform: log.platform
+                                                                                })}
+                                                                            >
+                                                                                <MoreHorizontal className="h-4 w-4" />
+                                                                            </Button>
+                                                                        </div>
+                                                                    </td>
+                                                                </motion.tr>
+                                                            ))
+                                                        )}
+                                                    </tbody>
+                                                </table>
+                                            ) : (
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
+                                                    {filteredLogs.map((log) => (
+                                                        <motion.div
+                                                            layout
+                                                            key={log.id}
+                                                            initial={{ opacity: 0, scale: 0.95 }}
+                                                            animate={{ opacity: 1, scale: 1 }}
+                                                            exit={{ opacity: 0, scale: 0.95 }}
+                                                            className="group p-4 rounded-2xl bg-muted/20 border border-border/20 hover:border-primary/30 transition-all hover:bg-muted/30 cursor-pointer"
+                                                            onClick={() => setSelectedTarget({
+                                                                username: log.target_username,
+                                                                name: log.target_name,
+                                                                avatar_url: log.target_avatar_url,
+                                                                platform: log.platform
+                                                            })}
+                                                        >
+                                                            <div className="flex items-start justify-between mb-3">
+                                                                <div className="h-10 w-10 rounded-xl bg-card border border-border/20 flex items-center justify-center shadow-sm">
+                                                                    {getActionIcon(log.action_type)}
                                                                 </div>
-                                                            )}
-                                                            <div className="flex flex-col min-w-0">
-                                                                <span className="font-bold text-foreground truncate">{log.target_name || log.target_username}</span>
-                                                                <span className="text-xs text-muted-foreground truncate font-mono">@{log.target_username}</span>
+                                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-background border border-border/30 text-muted-foreground uppercase">
+                                                                    {log.platform.replace('.com', '')}
+                                                                </span>
                                                             </div>
-                                                        </div>
-                                                        <div className="flex items-center justify-between text-[10px] text-muted-foreground font-medium border-t border-border/10 pt-3 mt-auto">
-                                                            <span className="capitalize">{log.action_type}</span>
-                                                            <span>{formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}</span>
-                                                        </div>
-                                                    </motion.div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-                            </CardContent>
-                        </Card>
+                                                            <div className="flex items-center gap-3 mb-4">
+                                                                {log.target_avatar_url ? (
+                                                                    <img src={log.target_avatar_url} className="h-10 w-10 rounded-lg border border-border/20" alt="" />
+                                                                ) : (
+                                                                    <div className="h-10 w-10 rounded-lg bg-card border border-border/20 flex items-center justify-center font-bold text-xs text-muted-foreground">
+                                                                        {log.target_username?.[0]?.toUpperCase()}
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className="font-bold text-foreground truncate">{log.target_name || log.target_username}</span>
+                                                                    <span className="text-xs text-muted-foreground truncate font-mono">@{log.target_username}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center justify-between text-[10px] text-muted-foreground font-medium border-t border-border/10 pt-3 mt-auto">
+                                                                <span className="capitalize">{log.action_type}</span>
+                                                                <span>{formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}</span>
+                                                            </div>
+                                                        </motion.div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
                     </div>
                 </ScrollArea>
                 <TargetHistorySheet

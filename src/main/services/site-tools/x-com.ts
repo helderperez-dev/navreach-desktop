@@ -196,6 +196,38 @@ function getTweetAuthorAvatar(tweetNode) {
   return avatarImg ? avatarImg.src : null;
 }
 
+function getTweetAuthor(tweet) {
+  if (!tweet) return null;
+  const userNameNode = tweet.querySelector('[data-testid="User-Name"]');
+  if (userNameNode) {
+    const handleEl = userNameNode.querySelector('div[dir="ltr"] span');
+    if (handleEl && handleEl.innerText.startsWith("@")) {
+      return handleEl.innerText.toLowerCase().replace("@", "");
+    }
+  }
+  const links = Array.from(tweet.querySelectorAll('a'));
+  const handleLink = links.find(a => a.getAttribute("href")?.startsWith("/") && !a.getAttribute("href")?.includes("/status/"));
+  return handleLink ? handleLink.getAttribute("href").replace("/", "").toLowerCase() : null;
+}
+
+function getTweetFullMetadata(t) {
+  if (!t) return {};
+  const author = getTweetAuthor(t);
+  const authorName = getTweetAuthorName(t);
+  const avatarUrl = getTweetAuthorAvatar(t);
+  const timeLink = t.querySelector("time")?.parentElement;
+  const tweetId = timeLink && timeLink.href ? timeLink.href.split("/").pop() : "unknown";
+  const textEl = t.querySelector('[data-testid="tweetText"]');
+  const text = textEl ? textEl.innerText.replace(/\\n/g, " ").slice(0, 5000) : "";
+  return {
+    target_username: author,
+    target_name: authorName,
+    target_avatar_url: avatarUrl,
+    tweet_id: tweetId,
+    target_tweet_text: text
+  };
+}
+
 function wait(ms) {
   const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
   const isFast = multiplier < 1.0;
@@ -281,33 +313,7 @@ async function safeClick(el, label, options = {}) {
     throw e;
   }
 
-  await wait(options.afterWait || 800); // Increased default wait
-}
-
-function getTweetAuthor(tweet) {
-  if (!tweet) return null;
-  // The author's handle is consistently found in the first link that doesn't contain /status/
-  // or specifically within the User-Name testid.
-  const userNameNode = tweet.querySelector('[data-testid="User-Name"]');
-  if (userNameNode) {
-    const handleEl = userNameNode.querySelector('div[dir="ltr"] span');
-    if (handleEl && handleEl.innerText.startsWith('@')) {
-      return handleEl.innerText.toLowerCase().replace('@', '');
-    }
-    // Fallback for User-Name
-    const links = Array.from(userNameNode.querySelectorAll('a'));
-    const handleLink = links.find(a => a.getAttribute('href')?.startsWith('/'));
-    if (handleLink) return handleLink.getAttribute('href').replace('/', '').toLowerCase();
-  }
-
-  // Fallback: search for any link that looks like a username
-  const allLinks = Array.from(tweet.querySelectorAll('a'));
-  const authorLink = allLinks.find(a => {
-    const href = a.getAttribute('href') || '';
-    return href.startsWith('/') && !href.includes('/status/') && !href.includes('/home') && !['/explore', '/notifications', '/messages', '/search'].includes(href);
-  });
-
-  return authorLink ? authorLink.getAttribute('href').replace('/', '').toLowerCase() : null;
+  await wait(options.afterWait || 800); 
 }
 
 function getVerificationStatus(tweetNode) {
@@ -922,11 +928,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             if (!findResult.tweet) return { success: false, error: findResult.error || 'Tweet not found' };
             const target = findResult.tweet;
 
-            // Extract metadata for logging
-            const target_username = getTweetAuthor(target);
-            const target_name = getTweetAuthorName(target);
-            const target_avatar_url = getTweetAuthorAvatar(target);
-            const tweet_id = window.location.pathname.split('/').pop() || ''; // Only accurate if on status page
+            // Extract metadata for logging using unified helper
+            const metadata = getTweetFullMetadata(target);
 
             const likeBtns = Array.from(target.querySelectorAll('button[data-testid="like"], [data-testid="like"]')).filter(isVisible);
             const unlikeBtns = Array.from(target.querySelectorAll('button[data-testid="unlike"], [data-testid="unlike"]')).filter(isVisible);
@@ -938,10 +941,10 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
             if (desired === 'like') {
               el = likeBtns[0];
-              if (!el && unlikeBtns.length > 0) return { success: true, already: true, message: 'Already liked', metadata: { target_username, target_name, target_avatar_url, tweet_id } };
+              if (!el && unlikeBtns.length > 0) return { success: true, already: true, message: 'Already liked', metadata };
             } else if (desired === 'unlike') {
               el = unlikeBtns[0];
-              if (!el && likeBtns.length > 0) return { success: true, already: true, message: 'Already unliked', metadata: { target_username, target_name, target_avatar_url, tweet_id } };
+              if (!el && likeBtns.length > 0) return { success: true, already: true, message: 'Already unliked', metadata };
             } else {
               el = likeBtns[0] || unlikeBtns[0];
               act = likeBtns[0] ? 'like' : 'unlike';
@@ -953,7 +956,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 success: true, 
                 message: act + ' done',
                 action: act,
-                metadata: { target_username, target_name, target_avatar_url, tweet_id }
+                metadata
             };
           })()
         `);
@@ -967,7 +970,10 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             target_username: parsedResult.metadata.target_username || 'unknown',
             target_name: parsedResult.metadata.target_name,
             target_avatar_url: parsedResult.metadata.target_avatar_url,
-            metadata: { tweet_id: parsedResult.metadata.tweet_id }
+            metadata: {
+              tweet_id: parsedResult.metadata.tweet_id,
+              target_tweet_text: parsedResult.metadata.target_tweet_text
+            }
           });
         }
 
@@ -1040,11 +1046,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             const tweetNode = findResult.tweet;
             const finalIndex = findResult.index;
             
-            // Extract metadata for logging
-            const target_username = getTweetAuthor(tweetNode);
-            const target_name = getTweetAuthorName(tweetNode);
-            const target_avatar_url = getTweetAuthorAvatar(tweetNode);
-            const tweet_id = window.location.pathname.split('/').pop() || '';
+            // Extract metadata for logging using unified helper
+            const metadata = getTweetFullMetadata(tweetNode);
+            const target_username = metadata.target_username;
 
             // 2. SKIP FILTERS
             const myHandle = getMyHandle();
@@ -1126,6 +1130,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             await safeClick(send, 'Send Reply');
             await wait(1500);
 
+
             // Post-action: Like
             const likeBtn = tweetNode.querySelector('[data-testid="like"]');
             if (likeBtn && isVisible(likeBtn)) {
@@ -1137,7 +1142,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                   message: 'Replied successfully', 
                   recovered: !!findResult.recovered,
                   finalIndex,
-                  metadata: { target_username, target_name, target_avatar_url, tweet_id }
+                  metadata
                 };
               } catch (e) {
                 const err = (e && e.message) || JSON.stringify(e) || String(e);
@@ -1156,6 +1161,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             target_avatar_url: parsedResult.metadata.target_avatar_url,
             metadata: {
               tweet_id: parsedResult.metadata.tweet_id,
+              target_tweet_text: parsedResult.metadata.target_tweet_text,
               reply_text: text
             }
           });
@@ -1687,11 +1693,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 const tweet = findResult.tweet;
                 
                 // Extract metadata for logging
-                const target_username = getTweetAuthor(tweet);
-                const target_name = getTweetAuthorName(tweet);
-                const target_avatar_url = getTweetAuthorAvatar(tweet);
-                const tweet_id = window.location.pathname.split('/').pop() || '';
-                const target_tweet_text = tweet.querySelector('[data-testid="tweetText"]')?.innerText || '';
+                const metadata = getTweetFullMetadata(tweet);
+                const target_username = metadata.target_username;
                 
                 // --- CHECKS ---
                 const myHandle = getMyHandle();
@@ -1785,7 +1788,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                     message: results.join(', '),
                     recovered: findResult.recovered,
                     finalIndex: findResult.index,
-                    metadata: { target_username, target_name, target_avatar_url, tweet_id, target_tweet_text },
+                    metadata,
                     actions: actionList.map((a, i) => ({ type: a, result: results[i] }))
                 };
             } catch (e) {
@@ -1809,8 +1812,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 metadata: {
                   tweet_id: parsedResult.metadata.tweet_id,
                   target_tweet_text: parsedResult.metadata.target_tweet_text,
-                  action_status: action.result,
-                  reply_text: action.type === 'reply' ? replyText : undefined
+                  actions: parsedResult.actions.map((a: any) => a.type),
+                  reply_text: action.type === 'reply' ? replyText : undefined,
+                  action_status: action.result
                 }
               });
             }
@@ -2176,6 +2180,9 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               
               const data = tweets.map((t, i) => {
                  const author = getTweetAuthor(t);
+                 const authorName = getTweetAuthorName(t);
+                 const timeLink = t.querySelector('time')?.parentElement;
+                 const tweetId = timeLink && timeLink.href ? timeLink.href.split('/').pop() : 'unknown';
                  const textEl = t.querySelector('[data-testid="tweetText"]');
                  const text = textEl ? textEl.innerText.replace(/\\n/g, ' ').slice(0, 5000) : ''; 
                  
@@ -2191,6 +2198,8 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                  return { 
                    index: i, 
                    author, 
+                   authorName,
+                   tweetId,
                    text, 
                    isLiked, 
                    isRetweeted, 
