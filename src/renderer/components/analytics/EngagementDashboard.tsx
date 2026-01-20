@@ -131,7 +131,7 @@ const ActivityLineChart = ({ data, color = "#3b82f6" }: { data: { name: string; 
     );
 };
 
-const Heatmap = ({ data, logs }: { data: number[]; logs: EngagementLog[] }) => {
+const Heatmap = ({ data, logs, color = "#3b82f6" }: { data: number[]; logs: EngagementLog[]; color?: string }) => {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
     // Calculate raw counts for tooltip
@@ -167,8 +167,9 @@ const Heatmap = ({ data, logs }: { data: number[]; logs: EngagementLog[] }) => {
                                 <div
                                     className="rounded-[3px] aspect-square transition-all hover:scale-125 hover:z-20 cursor-crosshair border border-white/0 hover:border-primary/50"
                                     style={{
-                                        backgroundColor: `rgba(59, 130, 246, ${opacity})`,
-                                        boxShadow: opacity > 0.6 ? '0 0 12px rgba(59, 130, 246, 0.4)' : 'none'
+                                        backgroundColor: color,
+                                        opacity: opacity,
+                                        boxShadow: opacity > 0.6 ? `0 0 12px ${color}` : 'none'
                                     }}
                                 />
                                 {/* Custom Tooltip for each cell */}
@@ -348,7 +349,7 @@ const InsightCard = ({ title, value, subtitle, icon, trend, trendUp, chartData, 
                 <div className="mt-4 flex items-end">
                     {chartData ? (
                         <div className="h-10 w-full">
-                            <Sparkline data={chartData} color={chartColor || "#ffffff33"} />
+                            <Sparkline data={chartData} color={chartColor || "#3b82f6"} />
                         </div>
                     ) : footer ? (
                         <div className="w-full">{footer}</div>
@@ -380,7 +381,6 @@ export function EngagementDashboard() {
     const [stats, setStats] = useState<EngagementStats | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
-    const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
 
     // Filters
     const [dateFilter, setDateFilter] = useState<DateFilter>('all');
@@ -395,36 +395,9 @@ export function EngagementDashboard() {
         platform: string;
     } | null>(null);
 
-    const [isSearchExpanded, setIsSearchExpanded] = useState(false);
     const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState(false);
-    const searchContainerRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
 
-    // Focus input when expanded
-    useEffect(() => {
-        if (isSearchExpanded && inputRef.current) {
-            inputRef.current.focus();
-        }
-    }, [isSearchExpanded]);
 
-    // Handle click outside to collapse
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
-                if (!searchQuery) {
-                    setIsSearchExpanded(false);
-                }
-            }
-        };
-
-        if (isSearchExpanded) {
-            document.addEventListener('mousedown', handleClickOutside);
-        }
-
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
-    }, [isSearchExpanded, searchQuery]);
 
     const fetchData = async () => {
         if (!accessToken) return;
@@ -663,230 +636,151 @@ export function EngagementDashboard() {
     return (
         <div className="h-full flex overflow-hidden bg-background">
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                <div className="p-6 pb-0 flex items-center justify-between gap-4 min-h-[44px]">
-                    <div className="flex items-center gap-4 shrink-0">
-                        <h2 className="text-lg font-bold tracking-tight text-foreground">Analytics</h2>
-                    </div>
-
-                    <div className="flex items-center gap-3 flex-1 justify-end">
-                        {/* Expanding Search Component */}
-                        <div
-                            ref={searchContainerRef}
-                            className={cn(
-                                "relative flex items-center transition-all duration-300 ease-in-out overflow-hidden h-9",
-                                isSearchExpanded || searchQuery ? "w-64 bg-muted/40 rounded-xl" : "w-10"
-                            )}
-                        >
+                <ScrollArea className="flex-1">
+                    <div className="p-6 pt-6 pb-12 space-y-8">
+                        <div className="flex items-center justify-end gap-3 mb-2">
                             <Button
                                 variant="ghost"
-                                size="sm"
+                                size="icon"
                                 className={cn(
-                                    "h-9 w-10 p-0 shrink-0 transition-colors rounded-xl focus-visible:ring-0 focus-visible:outline-none",
-                                    (isSearchExpanded || searchQuery) ? "text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                                    "h-9 w-9 rounded-xl transition-all",
+                                    activeFiltersCount > 0 ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
                                 )}
-                                onClick={() => {
-                                    setIsSearchExpanded(!isSearchExpanded);
-                                }}
+                                onClick={() => setIsFilterDrawerOpen(true)}
+                                title="Filter Analytics"
                             >
-                                <Search className="h-4 w-4" />
+                                <SlidersHorizontal className="h-4 w-4" />
                             </Button>
-                            <div className="relative flex-1 flex items-center min-w-0 pr-2">
-                                <input
-                                    ref={inputRef}
-                                    placeholder="Search interactions..."
-                                    className={cn(
-                                        "bg-transparent border-none text-xs outline-none text-foreground/80 placeholder:text-muted-foreground/50 transition-all duration-300 w-full focus:outline-none",
-                                        isSearchExpanded || searchQuery ? "opacity-100 pl-1 pr-8" : "opacity-0 w-0 pointer-events-none"
-                                    )}
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                />
-                                {searchQuery && (isSearchExpanded || searchQuery) && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setSearchQuery('');
-                                            inputRef.current?.focus();
-                                        }}
-                                        className="absolute right-2 p-1 text-muted-foreground/40 hover:text-foreground/60 transition-colors rounded-md focus:outline-none focus:text-foreground"
-                                    >
-                                        <X className="h-3.5 w-3.5" />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="h-4 w-[1px] bg-border/20 mx-1" />
-
-
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className={cn(
-                                "h-9 w-9 rounded-xl transition-all",
-                                activeFiltersCount > 0 ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
-                            )}
-                            onClick={() => setIsFilterDrawerOpen(true)}
-                            title="Filter Analytics"
-                        >
-                            <SlidersHorizontal className="h-4 w-4" />
-                        </Button>
-
-                        {/* Filter Sidebar Drawer */}
-                        <Dialog.Root open={isFilterDrawerOpen} onOpenChange={setIsFilterDrawerOpen}>
-                            <Dialog.Portal>
-                                <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 transition-opacity" />
-                                <Dialog.Content className="fixed right-0 top-0 h-full w-[320px] bg-background border-l border-border shadow-2xl z-50 flex flex-col focus:outline-none">
-                                    <div className="p-6 border-b border-border/50 flex items-center justify-between">
-                                        <h2 className="text-sm font-semibold text-foreground/80 uppercase tracking-wider">Filters</h2>
-                                        <Dialog.Close asChild>
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full">
-                                                <X className="h-4 w-4 text-muted-foreground" />
-                                            </Button>
-                                        </Dialog.Close>
-                                    </div>
-
-                                    <ScrollArea className="flex-1 p-6">
-                                        <div className="space-y-8">
-                                            <div className="space-y-4">
-                                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Time Period</label>
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    {[
-                                                        { id: 'all', label: 'All Time' },
-                                                        { id: 'today', label: 'Today' },
-                                                        { id: '7d', label: '7 Days' },
-                                                        { id: '30d', label: '30 Days' }
-                                                    ].map((filter) => (
-                                                        <button
-                                                            key={filter.id}
-                                                            onClick={() => setDateFilter(filter.id as DateFilter)}
-                                                            className={cn(
-                                                                "px-3 py-2 rounded-xl text-xs font-medium border transition-all text-center",
-                                                                dateFilter === filter.id
-                                                                    ? "bg-primary/10 border-primary text-primary"
-                                                                    : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
-                                                            )}
-                                                        >
-                                                            {filter.label}
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Platform</label>
-                                                <div className="space-y-2">
-                                                    <button
-                                                        onClick={() => setPlatformFilter('all')}
-                                                        className={cn(
-                                                            "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all truncate",
-                                                            platformFilter === 'all'
-                                                                ? "bg-primary/10 border-primary text-primary"
-                                                                : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
-                                                        )}
-                                                    >
-                                                        <span className="text-xs font-medium">All Platforms</span>
-                                                    </button>
-                                                    {platforms.map((p) => (
-                                                        <button
-                                                            key={p}
-                                                            onClick={() => setPlatformFilter(p)}
-                                                            className={cn(
-                                                                "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all truncate",
-                                                                platformFilter === p
-                                                                    ? "bg-primary/10 border-primary text-primary"
-                                                                    : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
-                                                            )}
-                                                        >
-                                                            <span className="text-xs font-medium capitalize">{p.replace('.com', '')}</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-
-                                            <div className="space-y-4">
-                                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Action Type</label>
-                                                <div className="space-y-2">
-                                                    {[
-                                                        { id: 'all', label: 'All Actions' },
-                                                        { id: 'like', label: 'Likes' },
-                                                        { id: 'reply', label: 'Replies' },
-                                                        { id: 'follow', label: 'Follows' },
-                                                        { id: 'dm', label: 'DMs' }
-                                                    ].map((action) => (
-                                                        <button
-                                                            key={action.id}
-                                                            onClick={() => setActionFilter(action.id)}
-                                                            className={cn(
-                                                                "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all",
-                                                                actionFilter === action.id
-                                                                    ? "bg-primary/10 border-primary text-primary"
-                                                                    : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
-                                                            )}
-                                                        >
-                                                            <span className="text-xs font-medium">{action.label}</span>
-                                                        </button>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </ScrollArea>
-
-                                    <div className="p-6 border-t border-border/50 bg-muted/10">
-                                        <Button
-                                            variant="outline"
-                                            className="w-full rounded-xl"
-                                            onClick={() => {
-                                                setDateFilter('all');
-                                                setPlatformFilter('all');
-                                                setActionFilter('all');
-                                                setSearchQuery('');
-                                            }}
-                                        >
-                                            Reset Filters
-                                        </Button>
-                                    </div>
-                                </Dialog.Content>
-                            </Dialog.Portal>
-                        </Dialog.Root>
-
-                        <div className="h-4 w-[1px] bg-border/20 mx-1" />
-
-                        {/* View & Export */}
-                        <div className="flex items-center gap-2">
-                            <div className="flex p-0.5 bg-muted/20 border border-border/20 rounded-xl h-9 items-center">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className={cn("h-7 w-7 p-0 rounded-lg hover:bg-muted/50", viewMode === 'table' && "bg-background shadow-sm text-primary hover:bg-background")}
-                                    onClick={() => setViewMode('table')}
-                                >
-                                    <LayoutList className="h-3.5 w-3.5" />
-                                </Button>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className={cn("h-7 w-7 p-0 rounded-lg hover:bg-muted/50", viewMode === 'grid' && "bg-background shadow-sm text-primary hover:bg-background")}
-                                    onClick={() => setViewMode('grid')}
-                                >
-                                    <LayoutGrid className="h-3.5 w-3.5" />
-                                </Button>
-                            </div>
 
                             <Button
                                 variant="outline"
                                 size="sm"
+                                className="h-9 px-4 rounded-xl border-white/5 bg-card/50 hover:bg-white/5 flex items-center gap-2"
                                 onClick={handleExport}
                                 disabled={isExporting}
                             >
                                 <Download className="h-3.5 w-3.5" />
+                                <span className="text-xs font-semibold">Export CSV</span>
                             </Button>
-                        </div>
-                    </div>
-                </div>
 
-                <ScrollArea className="flex-1">
-                    <div className="p-6 pt-2 pb-12 space-y-8">
+                            {/* Filter Sidebar Drawer */}
+                            <Dialog.Root open={isFilterDrawerOpen} onOpenChange={setIsFilterDrawerOpen}>
+                                <Dialog.Portal>
+                                    <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 transition-opacity" />
+                                    <Dialog.Content className="fixed right-0 top-0 h-full w-[320px] bg-background border-l border-border shadow-2xl z-50 flex flex-col focus:outline-none">
+                                        <div className="p-6 border-b border-border/50 flex items-center justify-between">
+                                            <h2 className="text-sm font-semibold text-foreground/80 uppercase tracking-wider">Filters</h2>
+                                            <Dialog.Close asChild>
+                                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full">
+                                                    <X className="h-4 w-4 text-muted-foreground" />
+                                                </Button>
+                                            </Dialog.Close>
+                                        </div>
+
+                                        <ScrollArea className="flex-1 p-6">
+                                            <div className="space-y-8">
+                                                <div className="space-y-4">
+                                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Time Period</label>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        {[
+                                                            { id: 'all', label: 'All Time' },
+                                                            { id: 'today', label: 'Today' },
+                                                            { id: '7d', label: '7 Days' },
+                                                            { id: '30d', label: '30 Days' }
+                                                        ].map((filter) => (
+                                                            <button
+                                                                key={filter.id}
+                                                                onClick={() => setDateFilter(filter.id as DateFilter)}
+                                                                className={cn(
+                                                                    "px-3 py-2 rounded-xl text-xs font-medium border transition-all text-center",
+                                                                    dateFilter === filter.id
+                                                                        ? "bg-primary/10 border-primary text-primary"
+                                                                        : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                                                                )}
+                                                            >
+                                                                {filter.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-4">
+                                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Platform</label>
+                                                    <div className="space-y-2">
+                                                        <button
+                                                            onClick={() => setPlatformFilter('all')}
+                                                            className={cn(
+                                                                "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all truncate",
+                                                                platformFilter === 'all'
+                                                                    ? "bg-primary/10 border-primary text-primary"
+                                                                    : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                                                            )}
+                                                        >
+                                                            <span className="text-xs font-medium">All Platforms</span>
+                                                        </button>
+                                                        {platforms.map((p) => (
+                                                            <button
+                                                                key={p}
+                                                                onClick={() => setPlatformFilter(p)}
+                                                                className={cn(
+                                                                    "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all truncate",
+                                                                    platformFilter === p
+                                                                        ? "bg-primary/10 border-primary text-primary"
+                                                                        : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                                                                )}
+                                                            >
+                                                                <span className="text-xs font-medium capitalize">{p.replace('.com', '')}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-4">
+                                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Action Type</label>
+                                                    <div className="space-y-2">
+                                                        {[
+                                                            { id: 'all', label: 'All Actions' },
+                                                            { id: 'like', label: 'Likes' },
+                                                            { id: 'reply', label: 'Replies' },
+                                                            { id: 'follow', label: 'Follows' },
+                                                            { id: 'dm', label: 'DMs' }
+                                                        ].map((action) => (
+                                                            <button
+                                                                key={action.id}
+                                                                onClick={() => setActionFilter(action.id)}
+                                                                className={cn(
+                                                                    "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all",
+                                                                    actionFilter === action.id
+                                                                        ? "bg-primary/10 border-primary text-primary"
+                                                                        : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                                                                )}
+                                                            >
+                                                                <span className="text-xs font-medium">{action.label}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </ScrollArea>
+
+                                        <div className="p-6 border-t border-border/50 bg-muted/10">
+                                            <Button
+                                                variant="outline"
+                                                className="w-full rounded-xl"
+                                                onClick={() => {
+                                                    setDateFilter('all');
+                                                    setPlatformFilter('all');
+                                                    setActionFilter('all');
+                                                    setSearchQuery('');
+                                                }}
+                                            >
+                                                Reset Filters
+                                            </Button>
+                                        </div>
+                                    </Dialog.Content>
+                                </Dialog.Portal>
+                            </Dialog.Root>
+                        </div>
                         {/* Summary Stats Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                             <InsightCard
@@ -933,7 +827,7 @@ export function EngagementDashboard() {
                                         <div className="text-xl font-bold">{advancedStats.dailyActivity[advancedStats.dailyActivity.length - 1]?.value || 0}</div>
                                         <div className="text-[9px] text-muted-foreground/60 uppercase font-bold">Today</div>
                                     </div>
-                                    <ActivityLineChart data={advancedStats.dailyActivity} color="#ffffff66" />
+                                    <ActivityLineChart data={advancedStats.dailyActivity} color="#3b82f6" />
                                 </div>
                             </Card>
 
@@ -953,7 +847,7 @@ export function EngagementDashboard() {
                                     </div>
                                 </CardHeader>
                                 <div className="h-48 w-full">
-                                    <Heatmap data={advancedStats.heatmapData} logs={filteredLogs} color="#ffffff99" />
+                                    <Heatmap data={advancedStats.heatmapData as number[]} logs={filteredLogs} color="#3b82f6" />
                                 </div>
                             </Card>
                         </div>
