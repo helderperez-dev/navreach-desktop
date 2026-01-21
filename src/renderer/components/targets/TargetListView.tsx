@@ -30,6 +30,9 @@ import { EngagementLog } from '@shared/types/engagement.types';
 import { TargetHistorySheet } from '../analytics/TargetHistorySheet';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { CircularLoader } from '@/components/ui/CircularLoader';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { formatDistanceToNow } from 'date-fns';
+import { Heart, MessageSquare, UserPlus, Send, BarChart2, RefreshCw, Terminal, Clock } from 'lucide-react';
 
 export function TargetListView() {
     const { targets, fetchLists, selectedListId, fetchTargets, isLoading, viewMode, lists, subscribeToChanges, unsubscribe, recentLogs, fetchRecentLogs, searchQuery, setSearchQuery } = useTargetsStore();
@@ -114,7 +117,7 @@ export function TargetListView() {
 
             seen.add(log.target_username);
             return true;
-        }).slice(0, 16);
+        }).slice(0, 22);
     }, [recentLogs, viewMode, targets]);
 
     // Discover all unique metadata keys from targets
@@ -393,35 +396,70 @@ export function TargetListView() {
 
                                 </div>
 
-                                <div className="grid grid-cols-10 sm:grid-cols-12 md:grid-cols-14 lg:grid-cols-16 gap-1.5">
-                                    {recentEngagedUsers.map((log) => (
-                                        <button
-                                            key={log.id}
-                                            onClick={() => setSelectedTargetForHistory({
-                                                username: log.target_username,
-                                                name: log.target_name,
-                                                avatar_url: log.target_avatar_url,
-                                                platform: log.platform
-                                            })}
-                                            className="group relative overflow-hidden rounded-md aspect-square bg-muted/10 border border-border/20 transition-all hover:shadow-md hover:scale-105 hover:z-10 duration-300 ease-out"
-                                        >
-                                            <Avatar className="h-full w-full rounded-none">
-                                                <AvatarImage
-                                                    src={log.target_avatar_url || undefined}
-                                                    className="object-cover transition-transform duration-500 opacity-90 group-hover:opacity-100"
-                                                />
-                                                <AvatarFallback className="rounded-none bg-muted flex flex-col items-center justify-center text-muted-foreground/50 text-[8px]">
-                                                    {(log.target_name || log.target_username || 'U').substring(0, 1).toUpperCase()}
-                                                </AvatarFallback>
-                                            </Avatar>
+                                <div className="grid grid-cols-12 sm:grid-cols-14 md:grid-cols-18 lg:grid-cols-22 gap-1">
+                                    <TooltipProvider delayDuration={0}>
+                                        {recentEngagedUsers.map((log) => (
+                                            <Tooltip key={log.id}>
+                                                <TooltipTrigger asChild>
+                                                    <button
+                                                        onClick={() => setSelectedTargetForHistory({
+                                                            username: log.target_username,
+                                                            name: log.target_name,
+                                                            avatar_url: log.target_avatar_url,
+                                                            platform: log.platform
+                                                        })}
+                                                        className="group relative overflow-hidden rounded-full aspect-square bg-muted/10 border border-border/20 transition-all hover:shadow-md hover:scale-105 hover:z-10 duration-300 ease-out"
+                                                    >
+                                                        <Avatar className="h-full w-full rounded-full">
+                                                            <AvatarImage
+                                                                src={log.target_avatar_url || undefined}
+                                                                className="object-cover transition-transform duration-500 opacity-90 group-hover:opacity-100"
+                                                            />
+                                                            <AvatarFallback className="rounded-full bg-muted flex flex-col items-center justify-center text-muted-foreground/50 text-[8px]">
+                                                                {(log.target_name || log.target_username || 'U').substring(0, 1).toUpperCase()}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                    </button>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top" className="w-52 p-3 bg-card/90 border-white/10 backdrop-blur-xl">
+                                                    <div className="space-y-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="h-8 w-8 rounded-full border border-white/5 overflow-hidden shrink-0">
+                                                                {log.target_avatar_url ? (
+                                                                    <img src={log.target_avatar_url} className="h-full w-full object-cover" />
+                                                                ) : (
+                                                                    <div className="h-full w-full bg-muted flex items-center justify-center text-[10px] font-bold">
+                                                                        {(log.target_name || log.target_username || 'U')[0].toUpperCase()}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <h4 className="text-[11px] font-bold text-foreground truncate">{log.target_name || log.target_username}</h4>
+                                                                <p className="text-[9px] text-muted-foreground truncate leading-none mt-0.5">@{log.target_username}</p>
+                                                            </div>
+                                                        </div>
 
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-1">
-                                                <span className="text-[7px] font-bold text-white/90 leading-none truncate pl-0.5 pb-0.5">
-                                                    {log.target_name || log.target_username}
-                                                </span>
-                                            </div>
-                                        </button>
-                                    ))}
+                                                        <div className="space-y-1.5 pt-1 border-t border-white/5">
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    {log.action_type === 'like' && <Heart className="h-3 w-3 text-muted-foreground/60" />}
+                                                                    {log.action_type === 'reply' && <MessageSquare className="h-3 w-3 text-muted-foreground/60" />}
+                                                                    {log.action_type === 'follow' && <UserPlus className="h-3 w-3 text-muted-foreground/60" />}
+                                                                    {log.action_type === 'dm' && <Send className="h-3 w-3 text-muted-foreground/60" />}
+                                                                    <span className="text-[10px] font-semibold text-foreground/80 capitalize">{log.action_type}</span>
+                                                                </div>
+                                                                <span className="text-[9px] font-medium text-muted-foreground capitalize">{log.platform.replace('.com', '')}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1 text-[9px] text-muted-foreground/60">
+                                                                <Clock className="h-2.5 w-2.5" />
+                                                                <span>{formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        ))}
+                                    </TooltipProvider>
                                 </div>
                             </div>
                         )}

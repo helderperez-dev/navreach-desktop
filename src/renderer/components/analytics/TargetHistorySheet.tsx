@@ -104,9 +104,9 @@ export function TargetHistorySheet({ isOpen, onClose, target, noAnimation = fals
                 >
                     <div className="relative">
                         {stableTarget.avatar_url ? (
-                            <img src={stableTarget.avatar_url} className="h-16 w-16 rounded-2xl border border-border/20 shadow-xl object-cover transition-transform group-hover/header:scale-105" alt="" />
+                            <img src={stableTarget.avatar_url} className="h-16 w-16 rounded-full border border-border/20 shadow-xl object-cover transition-transform group-hover/header:scale-105" alt="" />
                         ) : (
-                            <div className="h-16 w-16 rounded-2xl bg-muted/20 flex items-center justify-center border border-border/20 shadow-xl font-bold text-2xl text-muted-foreground transition-transform group-hover/header:scale-105">
+                            <div className="h-16 w-16 rounded-full bg-muted/20 flex items-center justify-center border border-border/20 shadow-xl font-bold text-2xl text-muted-foreground transition-transform group-hover/header:scale-105">
                                 {(stableTarget.username && stableTarget.username[0]?.toUpperCase()) || 'U'}
                             </div>
                         )}

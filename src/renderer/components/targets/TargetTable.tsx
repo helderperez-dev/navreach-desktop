@@ -319,9 +319,9 @@ export function TargetTable({
                                 {visibleColumns.name && (
                                     <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
                                         <div className="flex items-center gap-3">
-                                            <Avatar className="h-8 w-8 rounded-lg border border-border/50 shrink-0">
+                                            <Avatar className="h-8 w-8 rounded-full border border-border/50 shrink-0">
                                                 <AvatarImage src={target.metadata?.avatar_url || target.metadata?.profile_image} className="object-cover" />
-                                                <AvatarFallback className="rounded-lg bg-muted text-[10px] font-bold text-muted-foreground">
+                                                <AvatarFallback className="rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
                                                     {(target.name || 'U').substring(0, 2).toUpperCase()}
                                                 </AvatarFallback>
                                             </Avatar>
