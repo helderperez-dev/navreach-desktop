@@ -138,7 +138,6 @@ export function TargetHistorySheet({ isOpen, onClose, target, noAnimation = fals
                     <div className="px-5 py-5 rounded-2xl bg-secondary/20 border border-border/10">
                         <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">Impact Score</p>
                         <div className="flex items-center gap-2 mt-1">
-                            <Zap className="h-5 w-5 text-amber-500/70" />
                             <p className="text-3xl font-bold text-foreground leading-none">{logs.length * 5}</p>
                         </div>
                     </div>

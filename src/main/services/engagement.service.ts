@@ -50,62 +50,86 @@ export class EngagementService {
     async getEngagementLogs(accessToken: string, options: { limit?: number; offset?: number; target_username?: string; searchQuery?: string } = {}) {
         const supabase = await getScopedSupabase(accessToken);
         const userId = this.getUserIdFromToken(accessToken);
+        const maxLimit = options.limit || 10000;
+        let cumulativeData: any[] = [];
+        let rangeStart = options.offset || 0;
 
-        let query = supabase
-            .from('engagement_logs')
-            .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: false })
-            .limit(options.limit || 100);
+        while (cumulativeData.length < maxLimit) {
+            const rangeEnd = rangeStart + Math.min(1000, maxLimit - cumulativeData.length) - 1;
 
-        if (options.offset) {
-            query = query.range(options.offset, options.offset + (options.limit || 100) - 1);
+            let query = supabase
+                .from('engagement_logs')
+                .select('*')
+                .eq('user_id', userId)
+                .order('created_at', { ascending: false })
+                .range(rangeStart, rangeEnd);
+
+            if (options.target_username) {
+                query = query.eq('target_username', options.target_username);
+            }
+
+            if (options.searchQuery) {
+                query = query.or(`target_username.ilike.%${options.searchQuery}%,target_name.ilike.%${options.searchQuery}%`);
+            }
+
+            const { data, error } = await query;
+
+            if (error) {
+                console.error('[EngagementService] Fetch phase failed:', error);
+                throw error;
+            }
+
+            if (!data || data.length === 0) break;
+
+            cumulativeData = [...cumulativeData, ...data];
+            rangeStart += data.length;
+
+            if (data.length < 1000) break;
         }
 
-        if (options.target_username) {
-            query = query.eq('target_username', options.target_username);
-        }
-
-        if (options.searchQuery) {
-            query = query.or(`target_username.ilike.%${options.searchQuery}%,target_name.ilike.%${options.searchQuery}%`);
-        }
-
-        const { data, error } = await query;
-
-        if (error) {
-            console.error('[EngagementService] Error fetching engagement logs:', error);
-            throw error;
-        }
-
-        return data;
+        console.log(`[EngagementService] Retrieved ${cumulativeData.length} logs for user ${userId}`);
+        return cumulativeData;
     }
 
     async getEngagementStats(accessToken: string) {
         const supabase = await getScopedSupabase(accessToken);
         const userId = this.getUserIdFromToken(accessToken);
 
-        const { data, error } = await supabase
-            .from('engagement_logs')
-            .select('platform, action_type')
-            .eq('user_id', userId);
+        let aggregateData: { platform: string; action_type: string }[] = [];
+        let currentPointer = 0;
 
-        if (error) {
-            console.error('[EngagementService] Error fetching engagement stats:', error);
-            throw error;
+        while (true) {
+            const { data, error } = await supabase
+                .from('engagement_logs')
+                .select('platform, action_type')
+                .eq('user_id', userId)
+                .range(currentPointer, currentPointer + 999);
+
+            if (error) {
+                console.error('[EngagementService] Stats aggregation failed:', error);
+                throw error;
+            }
+
+            if (!data || data.length === 0) break;
+
+            aggregateData = [...aggregateData, ...data];
+            currentPointer += data.length;
+
+            if (data.length < 1000) break;
         }
 
-        const stats = {
-            total: data.length,
+        const statistics = {
+            total: aggregateData.length,
             byType: {} as Record<string, number>,
             byPlatform: {} as Record<string, number>
         };
 
-        data.forEach(log => {
-            stats.byType[log.action_type] = (stats.byType[log.action_type] || 0) + 1;
-            stats.byPlatform[log.platform] = (stats.byPlatform[log.platform] || 0) + 1;
+        aggregateData.forEach(log => {
+            statistics.byType[log.action_type] = (statistics.byType[log.action_type] || 0) + 1;
+            statistics.byPlatform[log.platform] = (statistics.byPlatform[log.platform] || 0) + 1;
         });
 
-        return stats;
+        return statistics;
     }
 
     async exportToCSV(accessToken: string): Promise<string> {
