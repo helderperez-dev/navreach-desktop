@@ -14,13 +14,17 @@ interface AppState {
   playbookBrowserMaximized: boolean;
   showOnboarding: boolean;
   targetSidebarCollapsed: boolean;
+  queueSidebarCollapsed: boolean;
+  queueSidebarWidth: number;
   toggleSidebar: () => void;
   toggleTargetSidebar: () => void;
   toggleChatPanel: () => void;
   togglePlaybookBrowser: () => void;
   togglePlaybookBrowserMaximized: () => void;
+  toggleQueueSidebar: () => void;
   setShowPlaybookBrowser: (show: boolean) => void;
   setChatPanelWidth: (width: number) => void;
+  setQueueSidebarWidth: (width: number) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
   setActiveView: (view: 'browser' | 'settings' | 'targets' | 'playbooks' | 'analytics') => void | Promise<void>;
   setHasStarted: (started: boolean) => void;
@@ -41,6 +45,8 @@ export const useAppStore = create<AppState>()(
       playbookBrowserMaximized: false,
       showOnboarding: false,
       targetSidebarCollapsed: false,
+      queueSidebarCollapsed: true,
+      queueSidebarWidth: 350,
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       toggleTargetSidebar: () => set((state) => ({ targetSidebarCollapsed: !state.targetSidebarCollapsed })),
       toggleChatPanel: () => set((state) => ({ chatPanelCollapsed: !state.chatPanelCollapsed })),
@@ -48,6 +54,8 @@ export const useAppStore = create<AppState>()(
       togglePlaybookBrowserMaximized: () => set((state) => ({ playbookBrowserMaximized: !state.playbookBrowserMaximized })),
       setShowPlaybookBrowser: (show) => set({ showPlaybookBrowser: show, playbookBrowserMaximized: false }),
       setChatPanelWidth: (width) => set({ chatPanelWidth: width }),
+      setQueueSidebarWidth: (width) => set({ queueSidebarWidth: width }),
+      toggleQueueSidebar: () => set((state) => ({ queueSidebarCollapsed: !state.queueSidebarCollapsed })),
       setTheme: (theme) => {
         const root = document.documentElement;
         if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -87,6 +95,8 @@ export const useAppStore = create<AppState>()(
         chatPanelWidth: state.chatPanelWidth,
         theme: state.theme,
         targetSidebarCollapsed: state.targetSidebarCollapsed,
+        queueSidebarCollapsed: state.queueSidebarCollapsed,
+        queueSidebarWidth: state.queueSidebarWidth,
       }),
     }
   )

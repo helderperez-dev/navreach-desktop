@@ -189,6 +189,25 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                     .single();
 
                 if (error) throw error;
+
+                // Auto-queue for profile analysis if enabled for workspace
+                try {
+                    const { data: list } = await supabaseClient.from('target_lists').select('workspace_id').eq('id', data.list_id).single();
+                    if (list?.workspace_id) {
+                        const { data: ws } = await supabaseClient.from('workspaces').select('auto_profile_analysis').eq('id', list.workspace_id).single();
+                        if (ws?.auto_profile_analysis && data.type === 'person') {
+                            const { taskQueueService } = require('./task-queue.service');
+                            await taskQueueService.addTask(list.workspace_id, user.id, 'profile_analysis', {
+                                url: data.url,
+                                target_id: data.id,
+                                username: data.name
+                            });
+                        }
+                    }
+                } catch (autoErr) {
+                    console.error('Auto-queue failed:', autoErr);
+                }
+
                 return JSON.stringify({ success: true, target: data });
             } catch (error) {
                 return JSON.stringify({ success: false, error: String(error) });
@@ -273,6 +292,29 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                     .select();
 
                 if (error) throw error;
+
+                // Auto-queue for profile analysis if enabled for workspace
+                try {
+                    const { data: list } = await supabaseClient.from('target_lists').select('workspace_id').eq('id', targetListId).single();
+                    if (list?.workspace_id) {
+                        const { data: ws } = await supabaseClient.from('workspaces').select('auto_profile_analysis').eq('id', list.workspace_id).single();
+                        if (ws?.auto_profile_analysis) {
+                            const { taskQueueService } = require('./task-queue.service');
+                            for (const target of data || []) {
+                                if (target.type === 'person') {
+                                    await taskQueueService.addTask(list.workspace_id, user.id, 'profile_analysis', {
+                                        url: target.url,
+                                        target_id: target.id,
+                                        username: target.name
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } catch (autoErr) {
+                    console.error('Auto-queue bulk failed:', autoErr);
+                }
+
                 return JSON.stringify({ success: true, count: data?.length || 0, message: `Successfully captured ${data?.length} leads.` });
             } catch (error: any) {
                 return JSON.stringify({ success: false, error: error.message || String(error) });

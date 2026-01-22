@@ -188,7 +188,18 @@ const engagementAPI = {
   exportCsv: (accessToken: string) => ipcRenderer.invoke('engagement:export-csv', { accessToken }),
 };
 
+const tasksAPI = {
+  list: (params: { workspaceId: string; limit?: number }) => ipcRenderer.invoke('tasks:list', params),
+  add: (params: { workspaceId: string; userId: string; type: string; payload: any; priority?: number }) => ipcRenderer.invoke('tasks:add', params),
+  addBulk: (data: { workspaceId: string; userId: string; tasks: any[] }) => ipcRenderer.invoke('tasks:add-bulk', data),
+  delete: (taskId: string) => ipcRenderer.invoke('tasks:delete', taskId),
+  retry: (taskId: string) => ipcRenderer.invoke('tasks:retry', taskId),
+  clearCompleted: (workspaceId: string) => ipcRenderer.invoke('tasks:clear-completed', workspaceId),
+  process: () => ipcRenderer.invoke('tasks:process'),
+};
+
 console.log('Stripe API initialized with methods:', Object.keys(stripeAPI));
+console.log('Tasks API initialized with methods:', Object.keys(tasksAPI));
 
 export type BrowserAPI = typeof browserAPI;
 export type SettingsAPI = typeof settingsAPI;
@@ -206,6 +217,7 @@ contextBridge.exposeInMainWorld('api', {
   analytics: analyticsAPI,
   stripe: stripeAPI,
   engagement: engagementAPI,
+  tasks: tasksAPI,
 });
 
 export type DebugAPI = typeof debugAPI;
@@ -223,6 +235,7 @@ declare global {
       analytics: typeof analyticsAPI;
       stripe: typeof stripeAPI;
       engagement: typeof engagementAPI;
+      tasks: typeof tasksAPI;
     };
   }
 }

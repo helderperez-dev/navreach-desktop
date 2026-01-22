@@ -154,6 +154,15 @@ declare global {
         getStats: (accessToken: string) => Promise<import('@shared/types/engagement.types').EngagementStats>;
         exportCsv: (accessToken: string) => Promise<{ success: boolean; filePath?: string; error?: string }>;
       };
+      tasks: {
+        list: (params: { workspaceId: string; limit?: number }) => Promise<any[]>;
+        add: (params: { workspaceId: string; userId: string; type: string; payload: any; priority?: number }) => Promise<any>;
+        addBulk: (data: { workspaceId: string; userId: string; tasks: any[] }) => Promise<any>;
+        delete: (taskId: string) => Promise<{ success: boolean }>;
+        retry: (taskId: string) => Promise<{ success: boolean }>;
+        clearCompleted: (workspaceId: string) => Promise<{ success: boolean }>;
+        process: () => Promise<{ success: boolean }>;
+      };
     };
   }
 }

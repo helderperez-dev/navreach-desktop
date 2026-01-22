@@ -13,7 +13,7 @@ import { createSiteTools } from './site-tools';
 import { createIntegrationTools } from './integration-tools';
 import { createUtilityTools } from './utility-tools';
 import { DynamicStructuredTool } from '@langchain/core/tools';
-import { supabase, getScopedSupabase, getUserIdFromToken } from '../lib/supabase';
+import { supabase, getScopedSupabase, getUserIdFromToken, mainTokenStore } from '../lib/supabase';
 import Store from 'electron-store';
 import type { AppSettings } from '../../shared/types';
 import { systemSettingsService } from './settings.service';
@@ -651,6 +651,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
             // the next chat or the currently running loop will pick up the fresh token via getAccessToken()
             console.log(`[AI Service] Updating session tokens for window ${window.id}`);
             activeTokens.set(window.id, { accessToken, refreshToken });
+            mainTokenStore.setTokens(accessToken, refreshToken);
 
             const client = activeSupabaseClients.get(window.id);
             if (client) {

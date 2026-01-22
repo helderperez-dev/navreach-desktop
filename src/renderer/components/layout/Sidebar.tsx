@@ -1,12 +1,14 @@
 import { motion } from 'framer-motion';
-import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard, Zap, BarChart2 } from 'lucide-react';
+import { Compass, Settings, PanelLeft, MessageSquare, Users, Workflow, CreditCard, Zap, BarChart2, Layers } from 'lucide-react';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app.store';
 import { useSubscriptionStore } from '@/stores/subscription.store';
 import { useBillingStore } from '@/stores/billing.store';
+import { useTasksStore } from '@/stores/tasks.store';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import { useEffect } from 'react';
 
 interface NavItem {
   id: string;
@@ -23,11 +25,28 @@ const navItems: NavItem[] = [
 ];
 
 export function Sidebar() {
-  const { sidebarCollapsed, toggleSidebar, activeView, setActiveView, chatPanelCollapsed, toggleChatPanel } = useAppStore();
+  const {
+    sidebarCollapsed,
+    toggleSidebar,
+    activeView,
+    setActiveView,
+    chatPanelCollapsed,
+    toggleChatPanel,
+    queueSidebarCollapsed,
+    toggleQueueSidebar
+  } = useAppStore();
   const { dailyUsage, openUpgradeModal, limits } = useSubscriptionStore();
   const subscription = useBillingStore(state => state.subscription);
   const isLoading = useBillingStore(state => state.isLoading);
   const isPro = subscription?.status === 'active' || subscription?.status === 'trialing';
+  const { pendingCount, fetchTasks, subscribeToChanges, unsubscribe } = useTasksStore();
+
+  // Subscribe to realtime task updates
+  useEffect(() => {
+    fetchTasks();
+    subscribeToChanges();
+    return () => unsubscribe();
+  }, [fetchTasks, subscribeToChanges, unsubscribe]);
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -104,6 +123,56 @@ export function Sidebar() {
               )}
             </Tooltip>
           )}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={!queueSidebarCollapsed ? 'secondary' : 'ghost'}
+                size={sidebarCollapsed ? "icon" : "default"}
+                className={cn(
+                  'w-full justify-start gap-3 transition-all duration-200',
+                  sidebarCollapsed && 'justify-center h-10 w-full',
+                  !queueSidebarCollapsed
+                    ? 'bg-muted text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                )}
+                onClick={toggleQueueSidebar}
+              >
+                <span className="relative flex-shrink-0">
+                  <Layers className="h-5 w-5" />
+                  {/* Badge over icon only when collapsed */}
+                  {sidebarCollapsed && pendingCount > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 flex items-center justify-center min-w-[16px] h-4 px-1 text-[9px] font-bold bg-primary text-primary-foreground rounded-full shadow-sm animate-in zoom-in-50 duration-200">
+                      {pendingCount > 99 ? '99+' : pendingCount}
+                    </span>
+                  )}
+                </span>
+                {!sidebarCollapsed && (
+                  <>
+                    <motion.span
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      className="text-sm font-medium"
+                    >
+                      Queue
+                    </motion.span>
+                    {/* Badge to the right when expanded */}
+                    {pendingCount > 0 && (
+                      <span className="ml-auto flex items-center justify-center min-w-[20px] h-5 px-1.5 text-[10px] font-bold bg-primary text-primary-foreground rounded-full shadow-sm animate-in zoom-in-50 duration-200">
+                        {pendingCount > 99 ? '99+' : pendingCount}
+                      </span>
+                    )}
+                  </>
+                )}
+              </Button>
+            </TooltipTrigger>
+            {sidebarCollapsed && (
+              <TooltipContent side="right" sideOffset={8}>
+                Queue {pendingCount > 0 && `(${pendingCount} pending)`}
+              </TooltipContent>
+            )}
+          </Tooltip>
         </nav>
 
         {isLoading && !sidebarCollapsed && (

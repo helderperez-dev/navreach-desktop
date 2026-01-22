@@ -10,6 +10,7 @@ export interface Workspace {
         disabledMCPServers?: string[];
         customModelProviders?: any[]; // For future workspace-specific keys
     };
+    auto_profile_analysis?: boolean;
 }
 
 export interface WorkspaceMember {

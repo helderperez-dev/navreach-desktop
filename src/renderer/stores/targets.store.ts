@@ -18,6 +18,7 @@ interface TargetsState {
 
     viewMode: 'list' | 'all' | 'engaged';
     setViewMode: (mode: 'list' | 'all' | 'engaged') => void;
+    lastSelectedListId: string | null;
 
     fetchLists: (silent?: boolean) => Promise<void>;
     setSelectedListId: (id: string | null) => void;
@@ -48,6 +49,13 @@ interface TargetsState {
     searchQuery: string;
     searchTimeout: NodeJS.Timeout | null;
     setSearchQuery: (query: string) => void;
+
+    // Duplicates
+    checkDuplicate: (url: string) => Promise<Target[]>;
+
+    // Many-to-Many assignments
+    saveTargetAssignments: (targetData: any, listIds: string[]) => Promise<Target | null>;
+    bulkSaveTargetAssignments: (targetsData: any[], listIds: string[]) => Promise<Target[]>;
 }
 
 export const useTargetsStore = create<TargetsState>((set, get) => ({
@@ -99,6 +107,8 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
+    lastSelectedListId: null as string | null,
+
     fetchLists: async (silent = false) => {
         if (!silent) set({ isLoading: true });
         const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
@@ -123,6 +133,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 set({
                     lists: fetchedLists,
                     selectedListId: nextSelectedId,
+                    lastSelectedListId: nextSelectedId || get().lastSelectedListId,
                     targets: [], // Clear targets from previous workspace
                     isLoading: false
                 });
@@ -144,6 +155,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
     setSelectedListId: (id) => {
         set({ selectedListId: id });
         if (id) {
+            set({ lastSelectedListId: id });
             get().fetchTargets(id);
             get().fetchLists(true); // Refresh counts when switching lists
         } else {
@@ -204,6 +216,9 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                             const latestLogsByUsername = new Map<string, any>();
 
                             logs.forEach((log: any) => {
+                                // Filter out passive actions
+                                if (['scan', 'view', 'visit', 'search', 'analyze'].includes(log.action_type)) return;
+
                                 const username = log.target_username?.toLowerCase();
                                 if (username && !latestLogsByUsername.has(username)) {
                                     latestLogsByUsername.set(username, log);
@@ -241,7 +256,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                                         },
                                         last_interaction_at: log.created_at,
                                         created_at: log.created_at,
-                                        target_lists: { name: 'Ad-hoc' }
+                                        target_lists: { name: 'Unsaved Discovery' }
                                     });
                                 }
                             });
@@ -409,22 +424,45 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
 
                 // Group logs by username to get the latest interaction for each
                 logs.forEach((log: any) => {
+                    // Filter out passive actions
+                    if (['scan', 'view', 'visit', 'search', 'analyze'].includes(log.action_type)) return;
+
                     const username = log.target_username?.toLowerCase();
                     if (username && !latestLogsByUsername.has(username)) {
                         latestLogsByUsername.set(username, log);
                     }
                 });
 
+                // Group existing targets by username/url too to avoid duplicates in the engaged view
+                const groupedExistingTargets = new Map<string, any>();
+                (targetsData || []).forEach(t => {
+                    const username = t.metadata?.username?.toLowerCase() ||
+                        t.url?.split('/').pop()?.split('?')[0].toLowerCase();
+                    if (!username) return;
+
+                    if (groupedExistingTargets.has(username)) {
+                        const existing = groupedExistingTargets.get(username);
+                        // Add this list name to the aggregated list names
+                        if (t.target_lists?.name) {
+                            existing.all_list_names = [...(existing.all_list_names || []), t.target_lists.name];
+                            existing.all_list_ids = [...(existing.all_list_ids || []), t.list_id];
+                            existing.list_to_target_map = { ...(existing.list_to_target_map || {}), [t.list_id]: t.id };
+                        }
+                    } else {
+                        groupedExistingTargets.set(username, {
+                            ...t,
+                            all_list_names: t.target_lists?.name ? [t.target_lists.name] : [],
+                            all_list_ids: [t.list_id],
+                            list_to_target_map: { [t.list_id]: t.id }
+                        });
+                    }
+                });
+
                 latestLogsByUsername.forEach((log, username) => {
                     // Check if this user is already in our official targets list
-                    // We check by username or by matching the username at the end of the URL
-                    const isExisting = targetsData?.some(t => {
-                        const targetUsername = t.metadata?.username?.toLowerCase() ||
-                            t.url?.split('/').pop()?.split('?')[0].toLowerCase();
-                        return targetUsername === username;
-                    });
+                    const existing = groupedExistingTargets.get(username);
 
-                    if (!isExisting) {
+                    if (!existing) {
                         virtualTargets.push({
                             id: `virtual-${log.id}`,
                             name: log.target_name || log.target_username,
@@ -440,12 +478,13 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                             },
                             last_interaction_at: log.created_at,
                             created_at: log.created_at,
-                            target_lists: { name: 'Ad-hoc' }
+                            target_lists: { name: 'Unsaved Discovery' },
+                            all_list_names: ['Unsaved Discovery']
                         });
                     }
                 });
 
-                data = [...(targetsData || []), ...virtualTargets];
+                data = [...Array.from(groupedExistingTargets.values()), ...virtualTargets];
 
                 // Sort combined list by last interaction
                 data.sort((a, b) => {
@@ -558,91 +597,175 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
-    addTarget: async (targetInput: any) => {
+    checkDuplicate: async (url: string) => {
+        if (!url) return [];
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        if (!workspaceId) return [];
+
+        // Clean URL for better matching (strip query params, trailing slashes)
+        const cleanUrl = url.split('?')[0].replace(/\/$/, '').toLowerCase();
+
+        // 1. Check current store first (quick)
+        const inStore = get().targets.filter(t => {
+            const tUrl = t.url?.split('?')[0].replace(/\/$/, '').toLowerCase();
+            return tUrl === cleanUrl && !t.id.startsWith('virtual-');
+        });
+        if (inStore.length > 0) return inStore;
+
+        // 2. Query DB for a global workspace check
+        const { data, error } = await supabase
+            .from('targets')
+            .select('*')
+            .eq('workspace_id', workspaceId)
+            .ilike('url', `%${cleanUrl}%`);
+
+        if (error) {
+            console.error('Error checking duplicate:', error);
+            return [];
+        }
+
+        // Exact match check on results
+        return (data || []).filter(match => {
+            const mUrl = match.url?.split('?')[0].replace(/\/$/, '').toLowerCase();
+            return mUrl === cleanUrl;
+        }) as Target[];
+    },
+
+    saveTargetAssignments: async (targetData: any, listIds: string[]) => {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
             toast.error('User not authenticated');
-            return;
+            return null;
         }
 
-        const subStore = useSubscriptionStore.getState();
-        const limits = subStore.limits;
-        const isPro = subStore.isPro();
-        const list = get().lists.find(l => l.id === targetInput.list_id);
-
-        if (!isPro && (list?.target_count || 0) >= limits.target_limit) {
-            subStore.openUpgradeModal(
-                "Target Limit Reached",
-                `Free accounts are limited to ${limits.target_limit} targets per list. Upgrade to Pro to add unlimited targets and scale your growth.`
-            );
-            return;
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        if (!workspaceId) {
+            toast.error('No active workspace');
+            return null;
         }
 
-        const { data, error } = await targetService.createTarget({
-            ...targetInput,
-            user_id: user.id
-        });
-
-        if (error) {
-            toast.error(`Failed to add target: ${error.message}`);
-        } else if (data) {
-            set({
-                targets: [data, ...get().targets],
-                lists: get().lists.map(l => l.id === data.list_id ? { ...l, target_count: (l.target_count || 0) + 1 } : l)
+        set({ isLoading: true });
+        try {
+            // 1. Upsert target
+            const { data: target, error } = await targetService.createTarget({
+                ...targetData,
+                workspace_id: workspaceId,
+                user_id: user.id
             });
-            get().fetchLists(true); // Sync counts with DB
-            toast.success('Target added successfully');
+
+            if (error) throw error;
+            if (!target) throw new Error('Failed to create target');
+
+            // 2. Sync Assignments
+            await targetService.syncTargetAssignments(target.id, listIds);
+
+            // 3. Refresh lists counts and current view
+            await get().fetchLists(true);
+            await get().fetchTargets(get().selectedListId || undefined, true);
+
+            toast.success('Assignments updated successfully');
+            return target;
+        } catch (err: any) {
+            toast.error(`Failed to save: ${err.message}`);
+            return null;
+        } finally {
+            set({ isLoading: false });
         }
     },
 
+    bulkSaveTargetAssignments: async (targetsData: any[], listIds: string[]) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+            toast.error('User not authenticated');
+            return [];
+        }
+
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        if (!workspaceId) {
+            toast.error('No active workspace');
+            return [];
+        }
+
+        set({ isLoading: true });
+        const savedTargets: Target[] = [];
+        const errors: string[] = [];
+
+        try {
+            // Process all targets
+            for (const targetData of targetsData) {
+                try {
+                    // 1. Upsert target
+                    const { data: target, error } = await targetService.createTarget({
+                        ...targetData,
+                        workspace_id: workspaceId,
+                        user_id: user.id
+                    });
+
+                    if (error) throw error;
+                    if (!target) throw new Error('Failed to create target');
+
+                    // 2. Sync Assignments
+                    if (listIds.length > 0) {
+                        await targetService.syncTargetAssignments(target.id, listIds);
+                    }
+
+                    savedTargets.push(target);
+                } catch (err: any) {
+                    errors.push(targetData.name || 'Unknown');
+                }
+            }
+
+            // 3. Refresh lists counts and current view ONCE at the end
+            await get().fetchLists(true);
+            await get().fetchTargets(get().selectedListId || undefined, true);
+
+            // 4. Show single toast
+            if (errors.length > 0) {
+                toast.warning(`Saved ${savedTargets.length} of ${targetsData.length} targets. ${errors.length} failed.`);
+            } else if (listIds.length > 0) {
+                toast.success(`Successfully saved ${savedTargets.length} targets to list`);
+            }
+
+            return savedTargets;
+        } catch (err: any) {
+            toast.error(`Bulk save failed: ${err.message}`);
+            return savedTargets;
+        } finally {
+            set({ isLoading: false });
+        }
+    },
+
+    addTarget: async (targetInput: any) => {
+        const { list_id, ...data } = targetInput;
+        await get().saveTargetAssignments(data, [list_id]);
+    },
+
     updateTarget: async (id: string, updates: Partial<Target>) => {
+        const listIds = (updates as any).list_ids;
+
         if (id.startsWith('virtual-')) {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                toast.error('User not authenticated');
+            if (!listIds || listIds.length === 0) {
+                toast.error('Please select at least one list');
                 return;
             }
-
-            // If we're updating a virtual target, it means we're converting it to a real one
-            // We need a list_id. Use the selected one or the first one available
-            const listId = get().selectedListId || (get().lists.length > 0 ? get().lists[0].id : null);
-
-            if (!listId) {
-                toast.error('Please select or create a target list first');
-                return;
-            }
-
-            const { data, error } = await targetService.createTarget({
-                ...updates,
-                list_id: listId,
-                user_id: user.id,
-                name: updates.name || '',
-                url: updates.url || '',
-                type: updates.type || 'profile'
-            } as any);
-
-            if (error) {
-                toast.error(`Failed to save interaction contact: ${error.message}`);
-            } else if (data) {
-                const listId = data.list_id;
-                set({
-                    targets: get().targets.map(t => t.id === id ? data : t),
-                    lists: get().lists.map(l => l.id === listId ? { ...l, target_count: (l.target_count || 0) + 1 } : l)
-                });
-                get().fetchLists(true);
-                toast.success('Contact saved to list');
-            }
+            const { list_id, ...data } = updates as any;
+            await get().saveTargetAssignments(data, listIds);
             return;
         }
 
-        const { data, error } = await targetService.updateTarget(id, updates);
-        if (error) {
-            toast.error(`Failed to update target: ${error.message}`);
-        } else if (data) {
-            set({
-                targets: get().targets.map(t => t.id === id ? data : t)
-            });
-            toast.success('Target updated successfully');
+        if (listIds) {
+            const { list_id, ...data } = updates as any;
+            await get().saveTargetAssignments({ ...data, id }, listIds);
+        } else {
+            const { data, error } = await targetService.updateTarget(id, updates);
+            if (error) {
+                toast.error(`Failed to update target: ${error.message}`);
+            } else if (data) {
+                set({
+                    targets: get().targets.map(t => t.id === id ? data : t)
+                });
+                toast.success('Target updated successfully');
+            }
         }
     },
 
@@ -655,17 +778,18 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             return;
         }
 
-        const targetToDelete = get().targets.find(t => t.id === id);
-        const { error } = await targetService.deleteTarget(id);
-        if (error) {
-            toast.error(`Failed to delete target: ${error.message}`);
-        } else {
-            set({
-                targets: get().targets.filter(t => t.id !== id),
-                lists: targetToDelete ? get().lists.map(l => l.id === targetToDelete.list_id ? { ...l, target_count: Math.max(0, (l.target_count || 0) - 1) } : l) : get().lists
-            });
-            get().fetchLists(true); // Sync counts with DB
-            toast.success('Target deleted successfully');
+        const listId = get().selectedListId;
+        if (listId) {
+            const { error } = await targetService.deleteTargetAssignment(id, listId);
+            if (error) {
+                toast.error(`Failed to remove assignment: ${error.message}`);
+            } else {
+                set({
+                    targets: get().targets.filter(t => t.id !== id)
+                });
+                await get().fetchLists(true);
+                toast.success('Target removed from list');
+            }
         }
     },
 

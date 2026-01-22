@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { CircularLoader } from '@/components/ui/CircularLoader';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as Dialog from '@radix-ui/react-dialog';
@@ -869,375 +870,407 @@ export function EngagementDashboard() {
         <div className="h-full flex overflow-hidden bg-background">
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <ScrollArea className="flex-1">
-                    <div className="p-6 pt-6 pb-12 space-y-8">
-                        <div className="flex items-center justify-end gap-3 mb-2">
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className={cn(
-                                    "h-9 w-9 rounded-xl transition-all",
-                                    activeFiltersCount > 0 ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
-                                )}
-                                onClick={() => setIsFilterDrawerOpen(true)}
-                                title="Filter Analytics"
-                            >
-                                <SlidersHorizontal className="h-4 w-4" />
-                            </Button>
+                    {isLoading ? (
+                        <div className="flex h-full items-center justify-center min-h-[600px]">
+                            <CircularLoader className="w-8 h-8 text-primary/50" />
+                        </div>
+                    ) : (
+                        <div className="p-6 pt-6 pb-12 space-y-8">
+                            <div className="flex items-center justify-end gap-3 mb-2">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn(
+                                        "h-9 w-9 rounded-xl transition-all",
+                                        activeFiltersCount > 0 ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                                    )}
+                                    onClick={() => setIsFilterDrawerOpen(true)}
+                                    title="Filter Analytics"
+                                >
+                                    <SlidersHorizontal className="h-4 w-4" />
+                                </Button>
 
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-9 px-4 rounded-xl border-white/5 bg-card/50 hover:bg-white/5 flex items-center gap-2"
-                                onClick={handleExport}
-                                disabled={isExporting}
-                            >
-                                <Download className="h-3.5 w-3.5" />
-                                <span className="text-xs font-semibold">Export CSV</span>
-                            </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-9 px-4 rounded-xl border-white/5 bg-card/50 hover:bg-white/5 flex items-center gap-2"
+                                    onClick={handleExport}
+                                    disabled={isExporting}
+                                >
+                                    <Download className="h-3.5 w-3.5" />
+                                    <span className="text-xs font-semibold">Export CSV</span>
+                                </Button>
 
-                            {/* Filter Sidebar Drawer */}
-                            <Dialog.Root open={isFilterDrawerOpen} onOpenChange={setIsFilterDrawerOpen}>
-                                <Dialog.Portal>
-                                    <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 transition-opacity" />
-                                    <Dialog.Content className="fixed right-0 top-0 h-full w-[320px] bg-background border-l border-border shadow-2xl z-50 flex flex-col focus:outline-none">
-                                        <div className="p-6 border-b border-border/50 flex items-center justify-between">
-                                            <h2 className="text-sm font-semibold text-foreground/80 uppercase tracking-wider">Filters</h2>
-                                            <Dialog.Close asChild>
-                                                <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full">
-                                                    <X className="h-4 w-4 text-muted-foreground" />
-                                                </Button>
-                                            </Dialog.Close>
-                                        </div>
+                                {/* Filter Sidebar Drawer */}
+                                <Dialog.Root open={isFilterDrawerOpen} onOpenChange={setIsFilterDrawerOpen}>
+                                    <Dialog.Portal>
+                                        <Dialog.Overlay className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50 transition-opacity" />
+                                        <Dialog.Content className="fixed right-0 top-0 h-full w-[320px] bg-background border-l border-border shadow-2xl z-50 flex flex-col focus:outline-none">
+                                            <div className="p-6 border-b border-border/50 flex items-center justify-between">
+                                                <h2 className="text-sm font-semibold text-foreground/80 uppercase tracking-wider">Filters</h2>
+                                                <Dialog.Close asChild>
+                                                    <Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-muted rounded-full">
+                                                        <X className="h-4 w-4 text-muted-foreground" />
+                                                    </Button>
+                                                </Dialog.Close>
+                                            </div>
 
-                                        <ScrollArea className="flex-1 p-6">
-                                            <div className="space-y-8">
-                                                <div className="space-y-4">
-                                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Time Period</label>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {[
-                                                            { id: 'all', label: 'All Time' },
-                                                            { id: 'today', label: 'Today' },
-                                                            { id: '7d', label: '7 Days' },
-                                                            { id: '30d', label: '30 Days' }
-                                                        ].map((filter) => (
-                                                            <button
-                                                                key={filter.id}
-                                                                onClick={() => setDateFilter(filter.id as DateFilter)}
-                                                                className={cn(
-                                                                    "px-3 py-2 rounded-xl text-xs font-medium border transition-all text-center",
-                                                                    dateFilter === filter.id
-                                                                        ? "bg-primary/10 border-primary text-primary"
-                                                                        : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
-                                                                )}
-                                                            >
-                                                                {filter.label}
-                                                            </button>
-                                                        ))}
+                                            <ScrollArea className="flex-1 p-6">
+                                                <div className="space-y-8">
+                                                    <div className="space-y-4">
+                                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Time Period</label>
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {[
+                                                                { id: 'all', label: 'All Time' },
+                                                                { id: 'today', label: 'Today' },
+                                                                { id: '7d', label: '7 Days' },
+                                                                { id: '30d', label: '30 Days' }
+                                                            ].map((filter) => (
+                                                                <button
+                                                                    key={filter.id}
+                                                                    onClick={() => setDateFilter(filter.id as DateFilter)}
+                                                                    className={cn(
+                                                                        "px-3 py-2 rounded-xl text-xs font-medium border transition-all text-center",
+                                                                        dateFilter === filter.id
+                                                                            ? "bg-primary/10 border-primary text-primary"
+                                                                            : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                                                                    )}
+                                                                >
+                                                                    {filter.label}
+                                                                </button>
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                </div>
 
-                                                <div className="space-y-4">
-                                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Platform</label>
-                                                    <div className="space-y-2">
-                                                        <button
-                                                            onClick={() => setPlatformFilter('all')}
-                                                            className={cn(
-                                                                "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all truncate",
-                                                                platformFilter === 'all'
-                                                                    ? "bg-primary/10 border-primary text-primary"
-                                                                    : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
-                                                            )}
-                                                        >
-                                                            <span className="text-xs font-medium">All Platforms</span>
-                                                        </button>
-                                                        {platforms.map((p) => (
+                                                    <div className="space-y-4">
+                                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Platform</label>
+                                                        <div className="space-y-2">
                                                             <button
-                                                                key={p}
-                                                                onClick={() => setPlatformFilter(p)}
+                                                                onClick={() => setPlatformFilter('all')}
                                                                 className={cn(
                                                                     "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all truncate",
-                                                                    platformFilter === p
+                                                                    platformFilter === 'all'
                                                                         ? "bg-primary/10 border-primary text-primary"
                                                                         : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
                                                                 )}
                                                             >
-                                                                <span className="text-xs font-medium capitalize">{p.replace('.com', '')}</span>
+                                                                <span className="text-xs font-medium">All Platforms</span>
                                                             </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-
-                                                <div className="space-y-4">
-                                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Action Type</label>
-                                                    <div className="space-y-2">
-                                                        {[
-                                                            { id: 'all', label: 'All Actions' },
-                                                            { id: 'like', label: 'Likes' },
-                                                            { id: 'reply', label: 'Replies' },
-                                                            { id: 'follow', label: 'Follows' },
-                                                            { id: 'dm', label: 'DMs' }
-                                                        ].map((action) => (
-                                                            <button
-                                                                key={action.id}
-                                                                onClick={() => setActionFilter(action.id)}
-                                                                className={cn(
-                                                                    "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all",
-                                                                    actionFilter === action.id
-                                                                        ? "bg-primary/10 border-primary text-primary"
-                                                                        : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
-                                                                )}
-                                                            >
-                                                                <span className="text-xs font-medium">{action.label}</span>
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </ScrollArea>
-
-                                        <div className="p-6 border-t border-border/50 bg-muted/10">
-                                            <Button
-                                                variant="outline"
-                                                className="w-full rounded-xl"
-                                                onClick={() => {
-                                                    setPlatformFilter('all');
-                                                    setActionFilter('all');
-                                                }}
-                                            >
-                                                Reset Filters
-                                            </Button>
-                                        </div>
-                                    </Dialog.Content>
-                                </Dialog.Portal>
-                            </Dialog.Root>
-                        </div>
-                        {/* Summary Stats Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                            <InsightCard
-                                title="Engagement Score"
-                                value={advancedStats.engagementScore}
-                                icon={<Zap className="h-4 w-4" />}
-                                trend={`${advancedStats.scoreTrend > 0 ? '+' : ''}${advancedStats.scoreTrend}%`}
-                                trendUp={advancedStats.scoreTrend >= 0}
-                                trendLabel={dateFilter === 'today' ? 'vs yesterday' : dateFilter === '7d' ? 'vs last week' : dateFilter === '30d' ? 'vs last month' : 'prev. period'}
-                                breakdown={advancedStats.breakdowns.score}
-                            />
-                            <InsightCard
-                                title="Unique Outreach"
-                                value={advancedStats.uniqueTargets}
-                                icon={<Users className="h-4 w-4" />}
-                                trend={`${advancedStats.growthTrend > 0 ? '+' : ''}${advancedStats.growthTrend}%`}
-                                trendUp={advancedStats.growthTrend >= 0}
-                                trendLabel={dateFilter === 'today' ? 'vs yesterday' : dateFilter === '7d' ? 'vs last week' : dateFilter === '30d' ? 'vs last month' : 'prev. period'}
-                                breakdown={advancedStats.breakdowns.unique}
-                            />
-                            <InsightCard
-                                title="Active Response"
-                                value={advancedStats.activeResponses}
-                                icon={<MessageSquare className="h-4 w-4" />}
-                                trend={`${advancedStats.replyTrend > 0 ? '+' : ''}${advancedStats.replyTrend}%`}
-                                trendUp={advancedStats.replyTrend >= 0}
-                                trendLabel={dateFilter === 'today' ? 'vs yesterday' : dateFilter === '7d' ? 'vs last week' : dateFilter === '30d' ? 'vs last month' : 'prev. period'}
-                                breakdown={advancedStats.breakdowns.replies}
-                            />
-                            <InsightCard
-                                title="Total Actions"
-                                value={advancedStats.totalActions}
-                                icon={<Activity className="h-4 w-4" />}
-                                trend={`${advancedStats.growthTrend > 0 ? '+' : ''}${advancedStats.growthTrend}% ${dateFilter === 'today' ? 'today' : 'growth'}`}
-                                trendUp={advancedStats.growthTrend >= 0}
-                                trendLabel={dateFilter === 'today' ? 'vs yesterday' : dateFilter === '7d' ? 'vs last week' : dateFilter === '30d' ? 'vs last month' : 'prev. period'}
-                                breakdown={advancedStats.breakdowns.total}
-                            />
-                        </div>
-
-                        {/* Detailed Trends Section */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <Card className="border-white/5 bg-card/50 rounded-[2rem] p-8 relative overflow-hidden shadow-xl">
-                                <CardHeader className="p-0 mb-8 flex flex-row items-center justify-between">
-                                    <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight flex items-center gap-2">
-                                        Activity Volume
-                                    </CardTitle>
-                                    <span className="text-[10px] text-muted-foreground/40 font-bold uppercase tracking-widest">
-                                        {dateFilter === 'today' ? 'Today' : dateFilter === '7d' ? 'Last 7 Days' : dateFilter === '30d' ? 'Last 30 Days' : 'All Activity'}
-                                    </span>
-                                </CardHeader>
-                                <div className="h-48 w-full relative">
-                                    <ActivityLineChart data={advancedStats.dailyActivity} color="#3b82f6" />
-                                </div>
-                            </Card>
-
-                            <Card className="border-white/5 bg-card/50 rounded-[2rem] p-8 shadow-xl">
-                                <CardHeader className="p-0 mb-8 flex flex-row items-center justify-between">
-                                    <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight">
-                                        Hourly Intensity
-                                    </CardTitle>
-                                    <div className="flex items-center gap-4 text-[10px] text-muted-foreground/60 font-medium">
-                                        <div className="flex items-center gap-1.5">
-                                            <span>Low Intensity</span>
-                                            <div className="flex gap-1">
-                                                {[0.2, 0.4, 0.6, 0.8, 1].map((v) => (
-                                                    <div
-                                                        key={v}
-                                                        className="w-2.5 h-2.5 rounded-sm"
-                                                        style={{ backgroundColor: "#3b82f6", opacity: v }}
-                                                    />
-                                                ))}
-                                            </div>
-                                            <span>High Intensity</span>
-                                        </div>
-                                    </div>
-                                </CardHeader>
-                                <div className="h-48 w-full">
-                                    <Heatmap data={advancedStats.heatmapData as number[]} logs={filteredLogs} dateFilter={dateFilter} color="#3b82f6" />
-                                </div>
-                            </Card>
-                        </div>
-
-                        {/* Distribution Section */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <Card className="flex flex-col border-white/5 bg-card/50 rounded-[2rem] p-6 shadow-xl">
-                                <CardHeader className="p-0 mb-4">
-                                    <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight">Platform Mix</CardTitle>
-                                </CardHeader>
-                                <div className="flex-1 flex flex-col items-center justify-center">
-                                    <div className="h-36 w-full relative">
-                                        <DonutChart
-                                            data={advancedStats.platformDist.length > 0 ? advancedStats.platformDist : [{ label: 'No Data', value: 1 }]}
-                                            colors={advancedStats.platformDist.length > 0 ? ["#3b82f6", "#2dd4bf", "#6366f1", "#f43f5e"] : ["#1e293b"]}
-                                        />
-                                    </div>
-                                    <div className="w-full mt-6 space-y-2">
-                                        {advancedStats.platformDist.length > 0 ? advancedStats.platformDist.slice(0, 3).map((p, i) => {
-                                            const total = advancedStats.platformDist.reduce((acc, d) => acc + d.value, 0);
-                                            const percent = Math.round((p.value / total) * 100);
-                                            return (
-                                                <div key={p.label} className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors group/item">
-                                                    <div className="flex items-center gap-3">
-                                                        <div
-                                                            className="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]"
-                                                            style={{ color: ["#3b82f6", "#2dd4bf", "#6366f1", "#f43f5e"][i % 4] }}
-                                                        />
-                                                        <span className="text-[11px] font-bold text-foreground/70 uppercase tracking-tight group-hover/item:text-foreground transition-colors">
-                                                            {p.label.replace('.com', '')}
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex flex-col items-end leading-none">
-                                                        <span className="text-xs font-bold text-foreground">{percent}%</span>
-                                                        <span className="text-[9px] text-muted-foreground/40 font-medium">{p.value} events</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        }) : (
-                                            <div className="text-[10px] text-muted-foreground/30 italic text-center py-4">
-                                                Awaiting multi-platform activity
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </Card>
-
-                            <Card className="flex flex-col border-white/5 bg-card/50 rounded-[2rem] p-6 shadow-xl">
-                                <CardHeader className="p-0 mb-6">
-                                    <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight">Action Breakdown</CardTitle>
-                                </CardHeader>
-                                <div className="flex-1 flex flex-col justify-center space-y-4">
-                                    {advancedStats.actionDist.length > 0 ? advancedStats.actionDist.map((a) => (
-                                        <div key={a.type} className="space-y-2.5 group/action">
-                                            <div className="flex justify-between items-end px-0.5">
-                                                <div className="flex items-center gap-2.5">
-                                                    <div className="p-1.5 rounded-lg bg-white/5 text-foreground/40 group-hover/action:text-foreground/70 transition-colors">
-                                                        {getActionIcon(a.type)}
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className="text-[11px] font-bold text-foreground/70 tracking-tight uppercase group-hover/action:text-foreground transition-colors">{a.label}</span>
-                                                        <span className="text-[9px] text-muted-foreground/40 font-medium leading-none">{a.count.toLocaleString()} actions</span>
-                                                    </div>
-                                                </div>
-                                                <span className="text-xs font-bold text-foreground tracking-tight">{a.percentage}%</span>
-                                            </div>
-                                            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[1px]">
-                                                <motion.div
-                                                    initial={{ width: 0 }}
-                                                    animate={{ width: `${a.percentage}%` }}
-                                                    transition={{ duration: 1, ease: [0.34, 1.56, 0.64, 1] }}
-                                                    className={cn("h-full rounded-full transition-all duration-500", a.bgClass)}
-                                                />
-                                            </div>
-                                        </div>
-                                    )) : (
-                                        <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground/30 italic py-10">
-                                            No actions recorded for this period
-                                        </div>
-                                    )}
-                                </div>
-                            </Card>
-
-                            <Card className="flex flex-col border-white/5 bg-card/50 rounded-[2rem] overflow-hidden shadow-xl">
-                                <CardHeader className="px-6 pt-6 pb-2">
-                                    <div className="flex items-center justify-between">
-                                        <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight">Activity Feed</CardTitle>
-                                        <LayoutList className="h-4 w-4 text-muted-foreground/40" />
-                                    </div>
-                                </CardHeader>
-
-                                <CardContent className="flex-1 p-0 overflow-y-auto">
-                                    <div className="px-5 py-1">
-                                        <div className="space-y-1">
-                                            {filteredLogs.length > 0 ? filteredLogs.slice(0, 5).map((log, i) => (
-                                                <motion.div
-                                                    initial={{ opacity: 0, x: 20 }}
-                                                    animate={{ opacity: 1, x: 0 }}
-                                                    transition={{ delay: i * 0.1 }}
-                                                    key={i}
-                                                    className="flex items-center gap-4 p-2.5 rounded-2xl transition-all cursor-pointer hover:bg-white/5"
-                                                    onClick={() => log.target_username && setSelectedTarget({
-                                                        username: log.target_username,
-                                                        name: log.target_name,
-                                                        avatar_url: log.target_avatar_url,
-                                                        platform: 'x.com'
-                                                    })}
-                                                >
-                                                    <div className="relative">
-                                                        <div className="h-10 w-10 rounded-full bg-gradient-to-br from-muted-foreground/20 to-muted/20 border border-border/10 flex items-center justify-center overflow-hidden">
-                                                            {log.target_avatar_url ? (
-                                                                <img src={log.target_avatar_url} className="h-full w-full object-cover" />
-                                                            ) : (
-                                                                <Users className="h-5 w-5 text-muted-foreground/40" />
-                                                            )}
+                                                            {platforms.map((p) => (
+                                                                <button
+                                                                    key={p}
+                                                                    onClick={() => setPlatformFilter(p)}
+                                                                    className={cn(
+                                                                        "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all truncate",
+                                                                        platformFilter === p
+                                                                            ? "bg-primary/10 border-primary text-primary"
+                                                                            : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                                                                    )}
+                                                                >
+                                                                    <span className="text-xs font-medium capitalize">{p.replace('.com', '')}</span>
+                                                                </button>
+                                                            ))}
                                                         </div>
-                                                        <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-emerald-400" />
                                                     </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center justify-between mb-0.5">
-                                                            <span className="text-[13px] font-bold text-foreground/90 truncate">{log.target_name || log.target_username}</span>
-                                                            <span className="text-[10px] text-muted-foreground/40 font-medium whitespace-nowrap ml-2">
-                                                                {formatDistanceToNow(new Date(log.created_at), { addSuffix: false }).replace('about ', '')} ago
+
+                                                    <div className="space-y-4">
+                                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Action Type</label>
+                                                        <div className="space-y-2">
+                                                            {[
+                                                                { id: 'all', label: 'All Actions' },
+                                                                { id: 'like', label: 'Likes' },
+                                                                { id: 'reply', label: 'Replies' },
+                                                                { id: 'follow', label: 'Follows' },
+                                                                { id: 'dm', label: 'DMs' }
+                                                            ].map((action) => (
+                                                                <button
+                                                                    key={action.id}
+                                                                    onClick={() => setActionFilter(action.id)}
+                                                                    className={cn(
+                                                                        "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all",
+                                                                        actionFilter === action.id
+                                                                            ? "bg-primary/10 border-primary text-primary"
+                                                                            : "bg-muted/30 border-border/50 text-muted-foreground hover:border-border"
+                                                                    )}
+                                                                >
+                                                                    <span className="text-xs font-medium">{action.label}</span>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </ScrollArea>
+
+                                            <div className="p-6 border-t border-border/50 bg-muted/10">
+                                                <Button
+                                                    variant="outline"
+                                                    className="w-full rounded-xl"
+                                                    onClick={() => {
+                                                        setPlatformFilter('all');
+                                                        setActionFilter('all');
+                                                    }}
+                                                >
+                                                    Reset Filters
+                                                </Button>
+                                            </div>
+                                        </Dialog.Content>
+                                    </Dialog.Portal>
+                                </Dialog.Root>
+                            </div>
+                            {/* Summary Stats Grid */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                <InsightCard
+                                    title="Engagement Score"
+                                    value={advancedStats.engagementScore}
+                                    icon={<Zap className="h-4 w-4" />}
+                                    trend={`${advancedStats.scoreTrend > 0 ? '+' : ''}${advancedStats.scoreTrend}%`}
+                                    trendUp={advancedStats.scoreTrend >= 0}
+                                    trendLabel={dateFilter === 'today' ? 'vs yesterday' : dateFilter === '7d' ? 'vs last week' : dateFilter === '30d' ? 'vs last month' : 'prev. period'}
+                                    breakdown={advancedStats.breakdowns.score}
+                                />
+                                <InsightCard
+                                    title="Unique Outreach"
+                                    value={advancedStats.uniqueTargets}
+                                    icon={<Users className="h-4 w-4" />}
+                                    trend={`${advancedStats.growthTrend > 0 ? '+' : ''}${advancedStats.growthTrend}%`}
+                                    trendUp={advancedStats.growthTrend >= 0}
+                                    trendLabel={dateFilter === 'today' ? 'vs yesterday' : dateFilter === '7d' ? 'vs last week' : dateFilter === '30d' ? 'vs last month' : 'prev. period'}
+                                    breakdown={advancedStats.breakdowns.unique}
+                                />
+                                <InsightCard
+                                    title="Active Response"
+                                    value={advancedStats.activeResponses}
+                                    icon={<MessageSquare className="h-4 w-4" />}
+                                    trend={`${advancedStats.replyTrend > 0 ? '+' : ''}${advancedStats.replyTrend}%`}
+                                    trendUp={advancedStats.replyTrend >= 0}
+                                    trendLabel={dateFilter === 'today' ? 'vs yesterday' : dateFilter === '7d' ? 'vs last week' : dateFilter === '30d' ? 'vs last month' : 'prev. period'}
+                                    breakdown={advancedStats.breakdowns.replies}
+                                />
+                                <InsightCard
+                                    title="Total Actions"
+                                    value={advancedStats.totalActions}
+                                    icon={<Activity className="h-4 w-4" />}
+                                    trend={`${advancedStats.growthTrend > 0 ? '+' : ''}${advancedStats.growthTrend}% ${dateFilter === 'today' ? 'today' : 'growth'}`}
+                                    trendUp={advancedStats.growthTrend >= 0}
+                                    trendLabel={dateFilter === 'today' ? 'vs yesterday' : dateFilter === '7d' ? 'vs last week' : dateFilter === '30d' ? 'vs last month' : 'prev. period'}
+                                    breakdown={advancedStats.breakdowns.total}
+                                />
+                            </div>
+
+                            {/* Detailed Trends Section */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <Card className="border-white/5 bg-card/50 rounded-[2rem] p-8 relative overflow-hidden shadow-xl">
+                                    <CardHeader className="p-0 mb-8 flex flex-row items-center justify-between">
+                                        <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight flex items-center gap-2">
+                                            Activity Volume
+                                        </CardTitle>
+                                        <span className="text-[10px] text-muted-foreground/40 font-bold uppercase tracking-widest">
+                                            {dateFilter === 'today' ? 'Today' : dateFilter === '7d' ? 'Last 7 Days' : dateFilter === '30d' ? 'Last 30 Days' : 'All Activity'}
+                                        </span>
+                                    </CardHeader>
+                                    <div className="h-48 w-full relative">
+                                        <ActivityLineChart data={advancedStats.dailyActivity} color="#3b82f6" />
+                                    </div>
+                                </Card>
+
+                                <Card className="border-white/5 bg-card/50 rounded-[2rem] p-8 shadow-xl">
+                                    <CardHeader className="p-0 mb-8 flex flex-row items-center justify-between">
+                                        <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight">
+                                            Hourly Intensity
+                                        </CardTitle>
+                                        <div className="flex items-center gap-4 text-[10px] text-muted-foreground/60 font-medium">
+                                            <div className="flex items-center gap-1.5">
+                                                <span>Low Intensity</span>
+                                                <div className="flex gap-1">
+                                                    {[0.2, 0.4, 0.6, 0.8, 1].map((v) => (
+                                                        <div
+                                                            key={v}
+                                                            className="w-2.5 h-2.5 rounded-sm"
+                                                            style={{ backgroundColor: "#3b82f6", opacity: v }}
+                                                        />
+                                                    ))}
+                                                </div>
+                                                <span>High Intensity</span>
+                                            </div>
+                                        </div>
+                                    </CardHeader>
+                                    <div className="h-48 w-full">
+                                        <Heatmap data={advancedStats.heatmapData as number[]} logs={filteredLogs} dateFilter={dateFilter} color="#3b82f6" />
+                                    </div>
+                                </Card>
+                            </div>
+
+                            {/* Distribution Section */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                <Card className="flex flex-col border-white/5 bg-card/50 rounded-[2rem] p-6 shadow-xl">
+                                    <CardHeader className="p-0 mb-4">
+                                        <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight">Platform Mix</CardTitle>
+                                    </CardHeader>
+                                    <div className="flex-1 flex flex-col items-center justify-center">
+                                        <div className="h-36 w-full relative">
+                                            <DonutChart
+                                                data={advancedStats.platformDist.length > 0 ? advancedStats.platformDist : [{ label: 'No Data', value: 1 }]}
+                                                colors={advancedStats.platformDist.length > 0 ? ["#3b82f6", "#2dd4bf", "#6366f1", "#f43f5e"] : ["#1e293b"]}
+                                            />
+                                        </div>
+                                        <div className="w-full mt-6 space-y-2">
+                                            {advancedStats.platformDist.length > 0 ? advancedStats.platformDist.slice(0, 3).map((p, i) => {
+                                                const total = advancedStats.platformDist.reduce((acc, d) => acc + d.value, 0);
+                                                const percent = Math.round((p.value / total) * 100);
+                                                return (
+                                                    <div key={p.label} className="flex items-center justify-between p-2 rounded-xl hover:bg-white/5 transition-colors group/item">
+                                                        <div className="flex items-center gap-3">
+                                                            <div
+                                                                className="w-2 h-2 rounded-full shadow-[0_0_8px_currentColor]"
+                                                                style={{ color: ["#3b82f6", "#2dd4bf", "#6366f1", "#f43f5e"][i % 4] }}
+                                                            />
+                                                            <span className="text-[11px] font-bold text-foreground/70 uppercase tracking-tight group-hover/item:text-foreground transition-colors">
+                                                                {p.label.replace('.com', '')}
                                                             </span>
                                                         </div>
-                                                        <p className="text-[11px] text-muted-foreground/60 font-medium truncate capitalize">
-                                                            {typeof log.action_type === 'string' ? log.action_type : 'Interaction'}
-                                                        </p>
+                                                        <div className="flex flex-col items-end leading-none">
+                                                            <span className="text-xs font-bold text-foreground">{percent}%</span>
+                                                            <span className="text-[9px] text-muted-foreground/40 font-medium">{p.value} events</span>
+                                                        </div>
                                                     </div>
-                                                </motion.div>
-                                            )) : (
-                                                <div className="h-32 flex flex-col items-center justify-center text-center p-4">
-                                                    <Activity className="h-8 w-8 text-muted-foreground/10 mb-2" />
-                                                    <p className="text-xs text-muted-foreground/40 font-medium">No recent activity detected</p>
+                                                );
+                                            }) : (
+                                                <div className="text-[10px] text-muted-foreground/30 italic text-center py-4">
+                                                    Awaiting multi-platform activity
                                                 </div>
                                             )}
                                         </div>
                                     </div>
-                                </CardContent>
-                            </Card>
+                                </Card>
+
+                                <Card className="flex flex-col border-white/5 bg-card/50 rounded-[2rem] p-6 shadow-xl">
+                                    <CardHeader className="p-0 mb-6">
+                                        <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight">Action Breakdown</CardTitle>
+                                    </CardHeader>
+                                    <div className="flex-1 flex flex-col justify-center space-y-4">
+                                        {advancedStats.actionDist.length > 0 ? advancedStats.actionDist.map((a) => (
+                                            <div key={a.type} className="space-y-2.5 group/action">
+                                                <div className="flex justify-between items-end px-0.5">
+                                                    <div className="flex items-center gap-2.5">
+                                                        <div className="p-1.5 rounded-lg bg-white/5 text-foreground/40 group-hover/action:text-foreground/70 transition-colors">
+                                                            {getActionIcon(a.type)}
+                                                        </div>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[11px] font-bold text-foreground/70 tracking-tight uppercase group-hover/action:text-foreground transition-colors">{a.label}</span>
+                                                            <span className="text-[9px] text-muted-foreground/40 font-medium leading-none">{a.count.toLocaleString()} actions</span>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-xs font-bold text-foreground tracking-tight">{a.percentage}%</span>
+                                                </div>
+                                                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-[1px]">
+                                                    <motion.div
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: `${a.percentage}%` }}
+                                                        transition={{ duration: 1, ease: [0.34, 1.56, 0.64, 1] }}
+                                                        className={cn("h-full rounded-full transition-all duration-500", a.bgClass)}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )) : (
+                                            <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground/30 italic py-10">
+                                                No actions recorded for this period
+                                            </div>
+                                        )}
+                                    </div>
+                                </Card>
+
+                                <Card className="flex flex-col border-white/5 bg-card/50 rounded-[2rem] overflow-hidden shadow-xl">
+                                    <CardHeader className="px-6 pt-6 pb-2">
+                                        <div className="flex items-center justify-between">
+                                            <CardTitle className="text-[13px] font-semibold text-foreground/70 tracking-tight">Activity Feed</CardTitle>
+                                            <LayoutList className="h-4 w-4 text-muted-foreground/40" />
+                                        </div>
+                                    </CardHeader>
+
+                                    <CardContent className="flex-1 p-0 overflow-y-auto">
+                                        <div className="px-5 py-1">
+                                            <div className="space-y-1">
+                                                {filteredLogs.length > 0 ? filteredLogs.slice(0, 5).map((log, i) => (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, x: 20 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        transition={{ delay: i * 0.1 }}
+                                                        key={i}
+                                                        className="flex items-center gap-4 p-2.5 rounded-2xl transition-all cursor-pointer hover:bg-white/5"
+                                                        onClick={() => log.target_username && setSelectedTarget({
+                                                            username: log.target_username,
+                                                            name: log.target_name,
+                                                            avatar_url: log.target_avatar_url,
+                                                            platform: 'x.com'
+                                                        })}
+                                                    >
+                                                        <div className="relative">
+                                                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-muted-foreground/20 to-muted/20 border border-border/10 flex items-center justify-center overflow-hidden">
+                                                                {log.target_avatar_url ? (
+                                                                    <img src={log.target_avatar_url} className="h-full w-full object-cover" />
+                                                                ) : (
+                                                                    <Users className="h-5 w-5 text-muted-foreground/40" />
+                                                                )}
+                                                            </div>
+                                                            <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-emerald-400" />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between mb-0.5">
+                                                                <span className="text-[13px] font-bold text-foreground/90 truncate">{log.target_name || log.target_username}</span>
+                                                                <span className="text-[10px] text-muted-foreground/40 font-medium whitespace-nowrap ml-2">
+                                                                    {formatDistanceToNow(new Date(log.created_at), { addSuffix: false }).replace('about ', '')} ago
+                                                                </span>
+                                                            </div>
+                                                            <p className="text-[11px] text-muted-foreground/60 font-medium truncate capitalize">
+                                                                {typeof log.action_type === 'string' ? log.action_type : 'Interaction'}
+                                                            </p>
+                                                        </div>
+                                                    </motion.div>
+                                                )) : (
+                                                    <div className="h-32 flex flex-col items-center justify-center text-center p-4">
+                                                        <Activity className="h-8 w-8 text-muted-foreground/10 mb-2" />
+                                                        <p className="text-xs text-muted-foreground/40 font-medium">No recent activity detected</p>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </ScrollArea>
-                <TargetHistorySheet
-                    isOpen={!!selectedTarget}
-                    onClose={() => setSelectedTarget(null)}
-                    target={selectedTarget}
-                />
+                {/* Overlay Sidebar for History */}
+                <AnimatePresence>
+                    {selectedTarget && (
+                        <>
+                            <motion.div
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-50"
+                                onClick={() => setSelectedTarget(null)}
+                            />
+                            <motion.div
+                                initial={{ x: '100%' }}
+                                animate={{ x: 0 }}
+                                exit={{ x: '100%' }}
+                                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                                className="fixed top-0 right-0 bottom-0 border-l border-border/20 bg-background shadow-2xl z-[60] flex flex-col overflow-hidden"
+                                style={{ width: 480 }}
+                            >
+                                <TargetHistorySheet
+                                    isOpen={!!selectedTarget}
+                                    onClose={() => setSelectedTarget(null)}
+                                    target={selectedTarget}
+                                    noAnimation={true}
+                                />
+                            </motion.div>
+                        </>
+                    )}
+                </AnimatePresence>
+
             </div>
         </div>
     );

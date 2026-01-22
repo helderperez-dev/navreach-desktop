@@ -28,11 +28,11 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/auth.store';
 import { EngagementLog } from '@shared/types/engagement.types';
 import { TargetHistorySheet } from '../analytics/TargetHistorySheet';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
+
 import { CircularLoader } from '@/components/ui/CircularLoader';
-import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
-import { formatDistanceToNow } from 'date-fns';
-import { Heart, MessageSquare, UserPlus, Send, BarChart2, RefreshCw, Terminal, Clock } from 'lucide-react';
+
+
+
 
 export function TargetListView() {
     const { targets, fetchLists, selectedListId, fetchTargets, isLoading, viewMode, lists, subscribeToChanges, unsubscribe, recentLogs, fetchRecentLogs, searchQuery, setSearchQuery } = useTargetsStore();
@@ -103,6 +103,12 @@ export function TargetListView() {
             fetchRecentLogs();
         }
     }, [session?.access_token, fetchRecentLogs]);
+
+    // Construct realtime subscription
+    useEffect(() => {
+        subscribeToChanges();
+        return () => unsubscribe();
+    }, [subscribeToChanges, unsubscribe]);
 
     const recentEngagedUsers = useMemo(() => {
         const seen = new Set();
@@ -316,159 +322,85 @@ export function TargetListView() {
                                 </Dialog.Close>
                             </div>
 
-                            <div className="p-6 space-y-8">
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Visible Columns</label>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-4">Standard Columns</label>
-                                        {Object.entries({
-                                            name: 'Name',
-                                            email: 'Email',
-                                            type: 'Type',
-                                            url: 'URL',
-                                            tags: 'Tags',
-                                            created: 'Created'
-                                        }).map(([key, label]) => (
-                                            <button
-                                                key={key}
-                                                onClick={() => toggleColumn(key)}
-                                                className="w-full flex items-center justify-between p-3 rounded-xl bg-muted/20 border border-border/50 hover:border-border transition-all group"
-                                            >
-                                                <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">{label}</span>
-                                                <div className={cn(
-                                                    "w-8 h-4 rounded-full transition-all relative flex items-center px-1",
-                                                    visibleColumns[key] ? "bg-muted-foreground/40" : "bg-muted"
-                                                )}>
+                            <ScrollArea className="flex-1">
+                                <div className="p-6 space-y-8">
+                                    <div className="space-y-4">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Visible Columns</label>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-4">Standard Columns</label>
+                                            {Object.entries({
+                                                name: 'Name',
+                                                email: 'Email',
+                                                type: 'Type',
+                                                url: 'URL',
+                                                tags: 'Tags',
+                                                created: 'Created'
+                                            }).map(([key, label]) => (
+                                                <button
+                                                    key={key}
+                                                    onClick={() => toggleColumn(key)}
+                                                    className="w-full flex items-center justify-between p-3 rounded-xl bg-muted/20 border border-border/50 hover:border-border transition-all group"
+                                                >
+                                                    <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors">{label}</span>
                                                     <div className={cn(
-                                                        "w-2.5 h-2.5 bg-white rounded-full transition-all",
-                                                        visibleColumns[key] ? "translate-x-3.5" : "translate-x-0"
-                                                    )} />
-                                                </div>
-                                            </button>
-                                        ))}
-
-                                        {metadataKeys.length > 0 && (
-                                            <div className="pt-4 space-y-4">
-                                                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-4 border-t border-border/50 pt-6">Custom Attributes</label>
-                                                {metadataKeys.map((key) => (
-                                                    <button
-                                                        key={key}
-                                                        onClick={() => toggleColumn(key)}
-                                                        className="w-full flex items-center justify-between p-3 rounded-xl bg-muted/20 border border-border/50 hover:border-border transition-all group"
-                                                    >
-                                                        <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors capitalize">{key.replace(/_/g, ' ')}</span>
+                                                        "w-8 h-4 rounded-full transition-all relative flex items-center px-1",
+                                                        visibleColumns[key] ? "bg-muted-foreground/40" : "bg-muted"
+                                                    )}>
                                                         <div className={cn(
-                                                            "w-8 h-4 rounded-full transition-all relative flex items-center px-1",
-                                                            visibleColumns[key] ? "bg-muted-foreground/40" : "bg-muted"
-                                                        )}>
-                                                            <div className={cn(
-                                                                "w-2.5 h-2.5 bg-white rounded-full transition-all",
-                                                                visibleColumns[key] ? "translate-x-3.5" : "translate-x-0"
-                                                            )} />
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+                                                            "w-2.5 h-2.5 bg-white rounded-full transition-all",
+                                                            visibleColumns[key] ? "translate-x-3.5" : "translate-x-0"
+                                                        )} />
+                                                    </div>
+                                                </button>
+                                            ))}
 
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Display Density</label>
-                                    <div className="p-4 rounded-xl bg-muted/40 border border-border/50 text-xs text-muted-foreground leading-relaxed italic">
-                                        Note: These options only affect your current view session. Global table settings can be adjusted in the application settings.
+                                            {metadataKeys.length > 0 && (
+                                                <div className="pt-4 space-y-4">
+                                                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest block mb-4 border-t border-border/50 pt-6">Custom Attributes</label>
+                                                    {metadataKeys.map((key) => (
+                                                        <button
+                                                            key={key}
+                                                            onClick={() => toggleColumn(key)}
+                                                            className="w-full flex items-center justify-between p-3 rounded-xl bg-muted/20 border border-border/50 hover:border-border transition-all group"
+                                                        >
+                                                            <span className="text-xs text-muted-foreground group-hover:text-foreground transition-colors capitalize">{key.replace(/_/g, ' ')}</span>
+                                                            <div className={cn(
+                                                                "w-8 h-4 rounded-full transition-all relative flex items-center px-1",
+                                                                visibleColumns[key] ? "bg-muted-foreground/40" : "bg-muted"
+                                                            )}>
+                                                                <div className={cn(
+                                                                    "w-2.5 h-2.5 bg-white rounded-full transition-all",
+                                                                    visibleColumns[key] ? "translate-x-3.5" : "translate-x-0"
+                                                                )} />
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Display Density</label>
+                                        <div className="p-4 rounded-xl bg-muted/40 border border-border/50 text-xs text-muted-foreground leading-relaxed italic">
+                                            Note: These options only affect your current view session. Global table settings can be adjusted in the application settings.
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            </ScrollArea>
                         </Dialog.Content>
                     </Dialog.Portal>
                 </Dialog.Root>
 
                 <ScrollArea className="flex-1">
                     <div className="p-6 pt-2 min-w-0 overflow-hidden space-y-8">
-                        {/* Recent Activity Section */}
-                        {recentEngagedUsers.length > 0 && (
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <h3 className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Recent Activity</h3>
-                                    </div>
 
-                                </div>
-
-                                <div className="grid grid-cols-12 sm:grid-cols-14 md:grid-cols-18 lg:grid-cols-22 gap-1">
-                                    <TooltipProvider delayDuration={0}>
-                                        {recentEngagedUsers.map((log) => (
-                                            <Tooltip key={log.id}>
-                                                <TooltipTrigger asChild>
-                                                    <button
-                                                        onClick={() => setSelectedTargetForHistory({
-                                                            username: log.target_username,
-                                                            name: log.target_name,
-                                                            avatar_url: log.target_avatar_url,
-                                                            platform: log.platform
-                                                        })}
-                                                        className="group relative overflow-hidden rounded-full aspect-square bg-muted/10 border border-border/20 transition-all hover:shadow-md hover:scale-105 hover:z-10 duration-300 ease-out"
-                                                    >
-                                                        <Avatar className="h-full w-full rounded-full">
-                                                            <AvatarImage
-                                                                src={log.target_avatar_url || undefined}
-                                                                className="object-cover transition-transform duration-500 opacity-90 group-hover:opacity-100"
-                                                            />
-                                                            <AvatarFallback className="rounded-full bg-muted flex flex-col items-center justify-center text-muted-foreground/50 text-[8px]">
-                                                                {(log.target_name || log.target_username || 'U').substring(0, 1).toUpperCase()}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                    </button>
-                                                </TooltipTrigger>
-                                                <TooltipContent side="top" className="w-52 p-3 bg-card/90 border-white/10 backdrop-blur-xl">
-                                                    <div className="space-y-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <div className="h-8 w-8 rounded-full border border-white/5 overflow-hidden shrink-0">
-                                                                {log.target_avatar_url ? (
-                                                                    <img src={log.target_avatar_url} className="h-full w-full object-cover" />
-                                                                ) : (
-                                                                    <div className="h-full w-full bg-muted flex items-center justify-center text-[10px] font-bold">
-                                                                        {(log.target_name || log.target_username || 'U')[0].toUpperCase()}
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <div className="min-w-0">
-                                                                <h4 className="text-[11px] font-bold text-foreground truncate">{log.target_name || log.target_username}</h4>
-                                                                <p className="text-[9px] text-muted-foreground truncate leading-none mt-0.5">@{log.target_username}</p>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="space-y-1.5 pt-1 border-t border-white/5">
-                                                            <div className="flex items-center justify-between">
-                                                                <div className="flex items-center gap-1.5">
-                                                                    {log.action_type === 'like' && <Heart className="h-3 w-3 text-muted-foreground/60" />}
-                                                                    {log.action_type === 'reply' && <MessageSquare className="h-3 w-3 text-muted-foreground/60" />}
-                                                                    {log.action_type === 'follow' && <UserPlus className="h-3 w-3 text-muted-foreground/60" />}
-                                                                    {log.action_type === 'dm' && <Send className="h-3 w-3 text-muted-foreground/60" />}
-                                                                    <span className="text-[10px] font-semibold text-foreground/80 capitalize">{log.action_type}</span>
-                                                                </div>
-                                                                <span className="text-[9px] font-medium text-muted-foreground capitalize">{log.platform.replace('.com', '')}</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1 text-[9px] text-muted-foreground/60">
-                                                                <Clock className="h-2.5 w-2.5" />
-                                                                <span>{formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}</span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        ))}
-                                    </TooltipProvider>
-                                </div>
-                            </div>
-                        )}
 
                         <div className="space-y-4">
                             {!recentEngagedUsers.length && (
                                 <div className="flex items-center gap-2">
                                     <div className="w-1 h-4 bg-muted-foreground/30 rounded-full" />
-                                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                                    <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
                                         {viewMode === 'engaged' ? 'Engaged Contacts' : 'All Contacts'}
                                     </h3>
                                 </div>
@@ -494,7 +426,7 @@ export function TargetListView() {
                                     searchQuery={searchQuery}
                                     visibleColumns={visibleColumns}
                                     metadataKeys={metadataKeys}
-                                    recentEngagedUsers={recentEngagedUsers}
+                                    recentLogs={recentLogs}
                                 />
                             )}
                         </div>
@@ -518,50 +450,66 @@ export function TargetListView() {
             {/* Coordinated Sidebar System */}
             <AnimatePresence>
                 {(isTargetFormOpen || selectedTargetForHistory) && (
-                    <motion.div
-                        initial={{ width: 0, opacity: 0 }}
-                        animate={{ width: 480, opacity: 1 }}
-                        exit={{ width: 0, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: 'easeInOut' }}
-                        className="h-full border-l border-border/20 bg-background shadow-[0_0_50px_-12px_rgba(0,0,0,0.5)] flex flex-col overflow-hidden shrink-0 relative z-40"
-                    >
-                        <AnimatePresence mode="wait">
-                            {isTargetFormOpen ? (
-                                <motion.div
-                                    key="target-form"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    className="h-full w-full"
-                                >
-                                    <TargetForm
-                                        open={isTargetFormOpen}
-                                        onOpenChange={setIsTargetFormOpen}
-                                        target={editingTarget}
-                                        onViewHistory={setSelectedTargetForHistory}
-                                        noAnimation={true}
-                                    />
-                                </motion.div>
-                            ) : selectedTargetForHistory ? (
-                                <motion.div
-                                    key="target-history"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    className="h-full w-full"
-                                >
-                                    <TargetHistorySheet
-                                        isOpen={!!selectedTargetForHistory}
-                                        onClose={() => setSelectedTargetForHistory(null)}
-                                        target={selectedTargetForHistory}
-                                        noAnimation={true}
-                                    />
-                                </motion.div>
-                            ) : null}
-                        </AnimatePresence>
-                    </motion.div>
+                    <>
+                        {/* Backdrop Overlay */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-30"
+                            onClick={() => {
+                                setIsTargetFormOpen(false);
+                                setSelectedTargetForHistory(null);
+                            }}
+                        />
+                        {/* Sidebar Panel */}
+                        <motion.div
+                            initial={{ x: '100%' }}
+                            animate={{ x: 0 }}
+                            exit={{ x: '100%' }}
+                            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                            className="fixed top-0 right-0 bottom-0 border-l border-border/20 bg-background shadow-2xl z-40 flex flex-col overflow-hidden"
+                            style={{ width: 480 }}
+                        >
+                            <AnimatePresence mode="wait">
+                                {isTargetFormOpen ? (
+                                    <motion.div
+                                        key="target-form"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ duration: 0.15 }}
+                                        className="h-full w-full"
+                                    >
+                                        <TargetForm
+                                            open={isTargetFormOpen}
+                                            onOpenChange={setIsTargetFormOpen}
+                                            target={editingTarget}
+                                            onViewHistory={setSelectedTargetForHistory}
+                                            noAnimation={true}
+                                        />
+                                    </motion.div>
+                                ) : selectedTargetForHistory ? (
+                                    <motion.div
+                                        key="target-history"
+                                        initial={{ opacity: 0 }}
+                                        animate={{ opacity: 1 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ duration: 0.15 }}
+                                        className="h-full w-full"
+                                    >
+                                        <TargetHistorySheet
+                                            isOpen={!!selectedTargetForHistory}
+                                            onClose={() => setSelectedTargetForHistory(null)}
+                                            target={selectedTargetForHistory}
+                                            noAnimation={true}
+                                        />
+                                    </motion.div>
+                                ) : null}
+                            </AnimatePresence>
+                        </motion.div>
+                    </>
                 )}
             </AnimatePresence>
         </div>

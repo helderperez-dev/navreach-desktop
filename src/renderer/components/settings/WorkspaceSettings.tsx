@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings.store';
-import { Wrench, Server } from 'lucide-react';
+import { Wrench, Server, ListTodo } from 'lucide-react';
 
 export function WorkspaceSettings() {
     const { currentWorkspace, updateWorkspace, isLoading } = useWorkspaceStore();
@@ -82,6 +82,13 @@ export function WorkspaceSettings() {
         });
     };
 
+    const toggleAutoProfileAnalysis = async (enabled: boolean) => {
+        if (!currentWorkspace) return;
+        await updateWorkspace(currentWorkspace.id, {
+            auto_profile_analysis: enabled
+        });
+    };
+
     return (
         <div className="space-y-6">
             <div>
@@ -115,6 +122,32 @@ export function WorkspaceSettings() {
                         {isSaving ? 'Saving...' : 'Save Changes'}
                     </Button>
                 </CardFooter>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <div className="flex items-center gap-2">
+                        <ListTodo className="h-5 w-5 text-muted-foreground/70" />
+                        <CardTitle>Automatic Profile Analysis</CardTitle>
+                    </div>
+                    <CardDescription>
+                        Automatically enrichment new contacts with detailed profile information using background processing.
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                            <Label>Enable Growth Analysis</Label>
+                            <div className="text-xs text-muted-foreground">
+                                Runs a headless browser in the background to extract bio, followers, and other details.
+                            </div>
+                        </div>
+                        <Switch
+                            checked={currentWorkspace.auto_profile_analysis || false}
+                            onCheckedChange={toggleAutoProfileAnalysis}
+                        />
+                    </div>
+                </CardContent>
             </Card>
 
             <Card>

@@ -34,13 +34,17 @@ export class EngagementService {
 
         // Update last_interaction_at in targets table if exists
         // We match by target_username in metadata or try to match it in the URL
-        try {
-            await supabase
-                .from('targets')
-                .update({ last_interaction_at: new Date().toISOString() } as any)
-                .or(`metadata->>username.eq.${log.target_username},url.ilike.%${log.target_username}%`);
-        } catch (updateError) {
-            console.warn('[EngagementService] Failed to update target interaction timestamp:', updateError);
+        // EXCLUDE passive actions like 'scan' or 'visit' from updating the interaction timestamp
+        const passiveActions = ['scan', 'view', 'visit', 'search', 'analyze'];
+        if (!passiveActions.includes(log.action_type)) {
+            try {
+                await supabase
+                    .from('targets')
+                    .update({ last_interaction_at: new Date().toISOString() } as any)
+                    .or(`metadata->>username.eq.${log.target_username},url.ilike.%${log.target_username}%`);
+            } catch (updateError) {
+                console.warn('[EngagementService] Failed to update target interaction timestamp:', updateError);
+            }
         }
 
         console.log(`[EngagementService] Successfully logged ${log.action_type} for ${log.target_username} on ${log.platform}`);

@@ -8,9 +8,11 @@ import { setupMCPHandlers } from './ipc/mcp';
 import { setupAIHandlers } from './services/ai';
 import { setupStripeHandlers } from './ipc/stripe';
 import { setupEngagementHandlers } from './ipc/engagement';
+import { setupTaskHandlers } from './ipc/tasks';
 import { setupMenu } from './menu';
 import { analytics, setupAnalyticsHandlers } from './services/analytics';
 import { initOTLPLogging, shutdownLogging } from './services/logging';
+import { taskQueueService } from './services/task-queue.service';
 import { config } from 'dotenv';
 
 // Load environment variables for Main process
@@ -146,6 +148,10 @@ if (!gotTheLock) {
     setupStripeHandlers(ipcMain);
     setupAnalyticsHandlers(ipcMain);
     setupEngagementHandlers(ipcMain);
+    setupTaskHandlers(ipcMain);
+
+    // Start background task processing
+    taskQueueService.startPolling();
 
     ipcMain.handle('window:minimize', () => {
       mainWindow?.minimize();

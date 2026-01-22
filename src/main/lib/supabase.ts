@@ -15,6 +15,22 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl || '', supabaseAnonKey || '');
 
 /**
+ * Global store for current session tokens in the main process.
+ * This allows background services to perform scoped operations.
+ */
+export const mainTokenStore = {
+    accessToken: null as string | null,
+    refreshToken: null as string | null,
+    setTokens(accessToken: string, refreshToken: string) {
+        this.accessToken = accessToken;
+        this.refreshToken = refreshToken;
+    },
+    getTokens() {
+        return { accessToken: this.accessToken, refreshToken: this.refreshToken };
+    }
+};
+
+/**
  * Decode the user ID from a JWT access token.
  * This is useful when we need to explicitly pass user_id for RLS policies.
  */

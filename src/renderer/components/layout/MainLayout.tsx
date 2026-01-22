@@ -20,9 +20,21 @@ import { PlaybooksView } from '@/components/playbooks/PlaybooksView';
 import { UpgradeModal } from '@/components/billing/UpgradeModal';
 import { PaymentModal } from '@/components/billing/PaymentModal';
 import { EngagementDashboard } from '@/components/analytics/EngagementDashboard';
+import { TaskQueueSidebar } from '@/components/tasks/TaskQueueSidebar';
 
 export function MainLayout() {
-  const { activeView, chatPanelCollapsed, chatPanelWidth, setChatPanelWidth, hasStarted, showPlaybookBrowser, playbookBrowserMaximized } = useAppStore();
+  const {
+    activeView,
+    chatPanelCollapsed,
+    chatPanelWidth,
+    setChatPanelWidth,
+    queueSidebarCollapsed,
+    queueSidebarWidth,
+    setQueueSidebarWidth,
+    hasStarted,
+    showPlaybookBrowser,
+    playbookBrowserMaximized
+  } = useAppStore();
   const { isUpgradeModalOpen, closeUpgradeModal, modalTitle, modalDescription } = useSubscriptionStore();
   const {
     isPaymentModalOpen,
@@ -39,6 +51,8 @@ export function MainLayout() {
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
   const [isResizing, setIsResizing] = useState(false);
+  const isResizingQueueRef = useRef(false);
+  const [isResizingQueue, setIsResizingQueue] = useState(false);
 
   useEffect(() => {
     // Initialize global billing data
@@ -104,6 +118,41 @@ export function MainLayout() {
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   }, [chatPanelWidth, setChatPanelWidth]);
+
+  const handleQueueResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizingQueueRef.current = true;
+    setIsResizingQueue(true);
+    const startX = e.clientX;
+    const startWidth = queueSidebarWidth;
+
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;cursor:col-resize;';
+    document.body.appendChild(overlay);
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizingQueueRef.current) return;
+      const delta = startX - e.clientX; // Inverted because it's on the right
+      const newWidth = Math.min(Math.max(startWidth + delta, 300), 600);
+      setQueueSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      isResizingQueueRef.current = false;
+      setIsResizingQueue(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      overlay.remove();
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }, [queueSidebarWidth, setQueueSidebarWidth]);
 
 
   return (
@@ -237,6 +286,44 @@ export function MainLayout() {
           <DebugPanel />
         </div>
       </div>
+
+      {/* Task Queue Sidebar Overlay */}
+      <AnimatePresence>
+        {!queueSidebarCollapsed && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="fixed inset-0 bg-black/40 backdrop-blur-[2px] z-[100]"
+              onClick={() => useAppStore.getState().toggleQueueSidebar()}
+            />
+            {/* Panel */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 right-0 bottom-0 border-l border-border/20 bg-background shadow-2xl z-[101] flex flex-col overflow-hidden"
+              style={{ width: queueSidebarWidth }}
+            >
+              <TaskQueueSidebar />
+
+              {/* Resizer for Queue Sidebar */}
+              <div
+                onMouseDown={handleQueueResizeMouseDown}
+                className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize group z-10"
+              >
+                <div className="absolute inset-y-0 -left-1 -right-1 cursor-col-resize" />
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+
       <UpgradeModal
         isOpen={isUpgradeModalOpen}
         onClose={closeUpgradeModal}
