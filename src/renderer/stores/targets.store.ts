@@ -348,7 +348,12 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
 
             // Gap handling: If we found no new items (or all were duplicates) but there's more in the DB, fetch again
             if (hasMoreToLoad && !addedAny) {
-                return get().loadMoreTargets();
+                setTimeout(() => {
+                    const state = get();
+                    if (state.hasMore && !state.isFetchingMore) {
+                        state.loadMoreTargets();
+                    }
+                }, 100);
             }
 
         } catch (err: any) {

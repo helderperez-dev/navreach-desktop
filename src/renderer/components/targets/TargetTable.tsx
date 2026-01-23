@@ -164,7 +164,7 @@ export function TargetTable({
         setIsAllSelectedGlobally(false);
     }, [viewMode]);
 
-    const tableRef = useRef<HTMLTableElement>(null);
+    const tableRef = useRef<HTMLDivElement>(null);
 
     const filteredAndSortedTargets = useMemo(() => {
         let result = [...targets];
@@ -218,19 +218,19 @@ export function TargetTable({
     // Use a callback ref for robust observer handling
     const observer = useRef<IntersectionObserver>();
     const lastTargetRef = useCallback((node: HTMLTableRowElement) => {
-        if (isLoading || isFetchingMore) return;
         if (observer.current) observer.current.disconnect();
+        if (isLoading || isFetchingMore) return;
 
-        if (!node || !tableRef.current) return;
+        if (!node) return;
 
         observer.current = new IntersectionObserver(entries => {
-            if (entries[0].isIntersecting && hasMore) {
+            if (entries[0].isIntersecting && hasMore && !isFetchingMore && !isLoading) {
                 loadMoreTargets();
             }
         }, {
             threshold: 0,
-            rootMargin: '1000px', // Fetch even earlier for smoother feel
-            root: tableRef.current
+            rootMargin: '800px', // Fetch when within 800px of bottom (more aggressive for smoothness)
+            root: null // Use viewport for better reliability in Electron
         });
 
         observer.current.observe(node);
@@ -884,27 +884,35 @@ export function TargetTable({
                                 </td>
                             </tr >
                         ))}
-                        {
-                            hasMore && (
-                                <tr ref={lastTargetRef} className="bg-transparent border-none h-12">
-                                    <td colSpan={10} className="p-4 text-center">
+                        {hasMore && (
+                            <tr ref={lastTargetRef} className="bg-transparent border-none">
+                                <td colSpan={100} className="p-12 text-center bg-transparent border-none">
+                                    <AnimatePresence mode="wait">
                                         {isFetchingMore ? (
-                                            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground/50">
-                                                <CircularLoader className="h-4 w-4 opacity-50" />
-                                                <span>Loading more...</span>
-                                            </div>
-                                        ) : (
-                                            <div
-                                                className="flex items-center justify-center gap-2 text-xs text-muted-foreground/30 hover:text-muted-foreground/60 cursor-pointer py-2 transition-colors"
-                                                onClick={() => loadMoreTargets()}
+                                            <motion.div
+                                                key="loader"
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                exit={{ opacity: 0, y: -10 }}
+                                                className="flex flex-col items-center justify-center gap-3"
                                             >
-                                                <span>Load more</span>
-                                            </div>
+                                                <CircularLoader className="h-6 w-6 text-primary" />
+                                                <span className="text-[10px] font-bold text-muted-foreground tracking-[0.2em] animate-pulse">
+                                                    Loading
+                                                </span>
+                                            </motion.div>
+                                        ) : (
+                                            <motion.div
+                                                key="sentinel"
+                                                initial={{ opacity: 0 }}
+                                                animate={{ opacity: 0.5 }}
+                                                className="h-10 w-full"
+                                            />
                                         )}
-                                    </td>
-                                </tr>
-                            )
-                        }
+                                    </AnimatePresence>
+                                </td>
+                            </tr>
+                        )}
                     </tbody >
                 </table >
             </div >
