@@ -42,8 +42,8 @@ export function BulkListSelectionDialog({ open, onOpenChange, lists, targetCount
                     {/* Header */}
                     <div className="flex items-center justify-between border-b pb-4">
                         <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                                <Hash className="h-5 w-5 text-primary" />
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted border border-border/50">
+                                <Hash className="h-5 w-5 text-muted-foreground" />
                             </div>
                             <div>
                                 <Dialog.Title className="text-lg font-semibold leading-none tracking-tight">
@@ -64,10 +64,10 @@ export function BulkListSelectionDialog({ open, onOpenChange, lists, targetCount
 
                     {/* Search */}
                     <div className="relative">
-                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground/50" />
                         <Input
                             placeholder="Search existing lists..."
-                            className="pl-9 bg-muted/30 border-muted-foreground/20 focus-visible:ring-primary/20"
+                            className="pl-10 h-10 bg-muted/20 border-border/40 focus:bg-muted/30 rounded-xl"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
@@ -87,9 +87,9 @@ export function BulkListSelectionDialog({ open, onOpenChange, lists, targetCount
                                         key={list.id}
                                         onClick={() => setSelectedListId(list.id)}
                                         className={cn(
-                                            "relative flex cursor-pointer select-none items-center rounded-lg border p-3 transition-colors hover:bg-muted/50",
+                                            "relative flex cursor-pointer select-none items-center rounded-xl border p-4 transition-all duration-200 hover:bg-muted/30",
                                             selectedListId === list.id
-                                                ? "border-primary bg-primary/5 hover:bg-primary/5"
+                                                ? "border-white/10 bg-muted/50 shadow-sm"
                                                 : "border-transparent"
                                         )}
                                     >
@@ -103,8 +103,8 @@ export function BulkListSelectionDialog({ open, onOpenChange, lists, targetCount
                                             </div>
                                         </div>
                                         {selectedListId === list.id && (
-                                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                                                <Check className="h-3 w-3" />
+                                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary shadow-lg shadow-primary/20">
+                                                <Check className="h-3.5 w-3.5 text-primary-foreground stroke-[3px]" />
                                             </div>
                                         )}
                                     </div>
@@ -114,14 +114,14 @@ export function BulkListSelectionDialog({ open, onOpenChange, lists, targetCount
                     </ScrollArea>
 
                     {/* Footer */}
-                    <div className="flex items-center justify-end gap-3 pt-2 border-t mt-2">
-                        <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    <div className="flex items-center justify-end gap-3 pt-4 border-t mt-4">
+                        <Button variant="ghost" className="rounded-xl px-6" onClick={() => onOpenChange(false)}>
                             Cancel
                         </Button>
                         <Button
                             onClick={handleConfirm}
                             disabled={!selectedListId}
-                            className="gap-2 px-6"
+                            className="gap-2 px-8 rounded-xl h-11 font-semibold"
                         >
                             <span>Add {targetCount} Targets</span>
                         </Button>
