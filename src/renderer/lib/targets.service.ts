@@ -62,14 +62,14 @@ export const targetService = {
         let query = supabase
             .from('target_assignments')
             .select(`
-                target:targets(*, assignments:target_assignments(list_id, target_lists(name)))
+                target:targets!target_assignments_target_id_fkey(*, assignments:target_assignments!target_assignments_target_id_fkey(list_id, target_lists!target_assignments_list_id_fkey(name)))
             `)
             .eq('list_id', listId);
 
         if (searchQuery) {
             // This is trickier with the junction table. For now, let's filter on the target side.
             // In a real app we'd use a more complex join or full text search.
-            query = query.or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`, { foreignTable: 'targets' });
+            query = query.or(`name.ilike.% ${searchQuery}%, email.ilike.% ${searchQuery}%, url.ilike.% ${searchQuery}% `, { foreignTable: 'targets' });
         }
 
         const { data, error } = await query
@@ -91,7 +91,7 @@ export const targetService = {
         let query = supabase
             .from('target_assignments')
             .select(`
-                target:targets(*, assignments:target_assignments(list_id, target_lists(name)))
+        target: targets!target_assignments_target_id_fkey(*, assignments: target_assignments!target_assignments_target_id_fkey(list_id, target_lists!target_assignments_list_id_fkey(name)))
             `)
             .eq('list_id', listId);
 
@@ -111,12 +111,12 @@ export const targetService = {
     async getAllWorkspaceTargets(workspaceId: string, offset: number = 0, limit: number = 50, searchQuery?: string) {
         let query = supabase
             .from('targets')
-            .select('*, assignments:target_assignments(list_id, target_lists(name))')
+            .select('*, assignments:target_assignments!target_assignments_target_id_fkey(list_id, target_lists!target_assignments_list_id_fkey(name))')
             .eq('workspace_id', workspaceId)
             .order('created_at', { ascending: false });
 
         if (searchQuery) {
-            query = query.or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`);
+            query = query.or(`name.ilike.% ${searchQuery}%, email.ilike.% ${searchQuery}%, url.ilike.% ${searchQuery}% `);
         }
 
         const { data, error } = await query.range(offset, offset + limit - 1);
@@ -138,13 +138,13 @@ export const targetService = {
     async getEngagedWorkspaceTargets(workspaceId: string, offset: number = 0, limit: number = 50, searchQuery?: string) {
         let query = supabase
             .from('targets')
-            .select('*, assignments:target_assignments(list_id, target_lists(name))')
+            .select('*, assignments:target_assignments!target_assignments_target_id_fkey(list_id, target_lists!target_assignments_list_id_fkey(name))')
             .eq('workspace_id', workspaceId)
             .not('last_interaction_at', 'is', null)
             .order('last_interaction_at', { ascending: false });
 
         if (searchQuery) {
-            query = query.or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%,url.ilike.%${searchQuery}%`);
+            query = query.or(`name.ilike.% ${searchQuery}%, email.ilike.% ${searchQuery}%, url.ilike.% ${searchQuery}% `);
         }
 
         const { data, error } = await query.range(offset, offset + limit - 1);

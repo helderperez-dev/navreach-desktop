@@ -221,13 +221,19 @@ export function TargetTable({
         if (isLoading || isFetchingMore) return;
         if (observer.current) observer.current.disconnect();
 
+        if (!node || !tableRef.current) return;
+
         observer.current = new IntersectionObserver(entries => {
             if (entries[0].isIntersecting && hasMore) {
                 loadMoreTargets();
             }
-        }, { threshold: 0.1, rootMargin: '600px' });
+        }, {
+            threshold: 0,
+            rootMargin: '1000px', // Fetch even earlier for smoother feel
+            root: tableRef.current
+        });
 
-        if (node) observer.current.observe(node);
+        observer.current.observe(node);
     }, [isLoading, isFetchingMore, hasMore, loadMoreTargets]);
 
     const [metadataWidths, setMetadataWidths] = useState<Record<string, number>>({});
@@ -628,7 +634,7 @@ export function TargetTable({
                         {filteredAndSortedTargets.map((target) => (
                             <tr
                                 key={target.id}
-                                className="group relative hover:bg-accent/40 active:bg-accent/60 transition-all duration-200 cursor-pointer"
+                                className="group relative hover:bg-accent/40 active:bg-accent/60 transition-all duration-200 cursor-pointer [&>td:first-child]:rounded-l-xl [&>td:last-child]:rounded-r-xl"
                                 onClick={() => {
                                     if (viewMode === 'engaged' && onViewHistory) {
                                         // In engaged view, clicking opens history
@@ -656,101 +662,101 @@ export function TargetTable({
                                     />
                                 </td>
                                 {visibleColumns.name && (
-                                    <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
-                                        <TooltipProvider delayDuration={0}>
-                                            <Tooltip>
-                                                <TooltipTrigger asChild>
-                                                    <div className="flex items-center gap-3 cursor-help">
+                                    <td className="px-6 py-4 overflow-hidden">
+                                        <div className="flex items-center gap-3 cursor-default">
+                                            <TooltipProvider delayDuration={0}>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
                                                         <Avatar className="h-8 w-8 rounded-full border border-border/50 shrink-0">
                                                             <AvatarImage src={target.metadata?.avatar_url || target.metadata?.profile_image} className="object-cover" />
                                                             <AvatarFallback className="rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
                                                                 {(target.name || 'U').substring(0, 2).toUpperCase()}
                                                             </AvatarFallback>
                                                         </Avatar>
-                                                        <div className="flex flex-col min-w-0 gap-0.5">
-                                                            <div className="font-medium text-sm text-foreground group-hover:text-foreground/80 transition-colors truncate">
-                                                                {target.name}
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                {target.last_interaction_at && (
-                                                                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground truncate">
-                                                                        <Clock className="h-2.5 w-2.5" />
-                                                                        <span>{new Date(target.last_interaction_at).toLocaleDateString()}</span>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </TooltipTrigger>
-                                                <TooltipContent side="right" className="w-64 p-3 bg-zinc-900/95 border-white/10 backdrop-blur-xl z-50">
-                                                    {(() => {
-                                                        const latestLog = recentLogs.find(log => {
-                                                            const logUsername = (log.target_username || '').replace('@', '').toLowerCase();
-                                                            const targetUsername = (target.metadata?.username || target.url?.split('/').pop() || '').replace('@', '').toLowerCase();
+                                                    </TooltipTrigger>
+                                                    <TooltipContent side="right" sideOffset={10} className="w-64 p-3 bg-zinc-900/95 border-white/10 backdrop-blur-xl z-50">
+                                                        {(() => {
+                                                            const latestLog = recentLogs.find(log => {
+                                                                const logUsername = (log.target_username || '').replace('@', '').toLowerCase();
+                                                                const targetUsername = (target.metadata?.username || target.url?.split('/').pop() || '').replace('@', '').toLowerCase();
 
-                                                            return logUsername === targetUsername || log.target_name === target.name;
-                                                        });
+                                                                return logUsername === targetUsername || log.target_name === target.name;
+                                                            });
 
-                                                        return (
-                                                            <div className="space-y-3">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="h-10 w-10 rounded-full border border-white/5 overflow-hidden shrink-0">
-                                                                        <Avatar className="h-full w-full">
-                                                                            <AvatarImage src={target.metadata?.avatar_url} className="object-cover" />
-                                                                            <AvatarFallback className="bg-muted text-xs font-bold text-muted-foreground">
-                                                                                {(target.name || 'U').substring(0, 2).toUpperCase()}
-                                                                            </AvatarFallback>
-                                                                        </Avatar>
-                                                                    </div>
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <h4 className="text-xs font-bold text-zinc-100 truncate">{target.name}</h4>
-                                                                        {target.metadata?.username && (
-                                                                            <p className="text-[10px] text-zinc-400 truncate mt-0.5">@{target.metadata.username}</p>
-                                                                        )}
-                                                                        {target.metadata?.bio && (
-                                                                            <p className="text-[10px] text-zinc-500 truncate mt-1 italic">"{target.metadata.bio}"</p>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-
-                                                                {latestLog ? (
-                                                                    <div className="space-y-2 pt-2 border-t border-white/10">
-                                                                        <div className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-300 uppercase tracking-wider">
-                                                                            <span>Recent Interaction</span>
+                                                            return (
+                                                                <div className="space-y-3">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className="h-10 w-10 rounded-full border border-white/5 overflow-hidden shrink-0">
+                                                                            <Avatar className="h-full w-full">
+                                                                                <AvatarImage src={target.metadata?.avatar_url} className="object-cover" />
+                                                                                <AvatarFallback className="bg-muted text-xs font-bold text-muted-foreground">
+                                                                                    {(target.name || 'U').substring(0, 2).toUpperCase()}
+                                                                                </AvatarFallback>
+                                                                            </Avatar>
                                                                         </div>
-                                                                        <div className="flex flex-col gap-1.5 p-2 rounded-lg bg-white/5 border border-white/5">
-                                                                            <div className="flex items-center justify-between">
-                                                                                <div className="flex items-center gap-1.5">
-                                                                                    {latestLog.action_type === 'like' && <Heart className="h-3 w-3 text-pink-400" />}
-                                                                                    {latestLog.action_type === 'reply' && <MessageSquare className="h-3 w-3 text-blue-400" />}
-                                                                                    {latestLog.action_type === 'follow' && <UserPlus className="h-3 w-3 text-purple-400" />}
-                                                                                    {latestLog.action_type === 'dm' && <Send className="h-3 w-3 text-green-400" />}
-                                                                                    <span className="text-[10px] font-medium text-zinc-200 capitalize">{latestLog.action_type}</span>
-                                                                                </div>
-                                                                                <span className="text-[9px] text-zinc-500">
-                                                                                    {formatDistanceToNow(new Date(latestLog.created_at), { addSuffix: true })}
-                                                                                </span>
-                                                                            </div>
-                                                                            {latestLog.metadata?.post_content && (
-                                                                                <p className="text-[10px] text-zinc-400 line-clamp-2 leading-relaxed">
-                                                                                    {latestLog.metadata.post_content}
-                                                                                </p>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <h4 className="text-xs font-bold text-zinc-100 truncate">{target.name}</h4>
+                                                                            {target.metadata?.username && (
+                                                                                <p className="text-[10px] text-zinc-400 truncate mt-0.5">@{target.metadata.username}</p>
+                                                                            )}
+                                                                            {target.metadata?.bio && (
+                                                                                <p className="text-[10px] text-zinc-500 truncate mt-1 italic">"{target.metadata.bio}"</p>
                                                                             )}
                                                                         </div>
                                                                     </div>
-                                                                ) : target.last_interaction_at ? (
-                                                                    <div className="pt-2 border-t border-white/10">
-                                                                        <p className="text-[10px] text-zinc-400">
-                                                                            Last interacted <span className="text-zinc-300 font-medium">{formatDistanceToNow(new Date(target.last_interaction_at), { addSuffix: true })}</span>
-                                                                        </p>
-                                                                    </div>
-                                                                ) : null}
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </TooltipContent>
-                                            </Tooltip>
-                                        </TooltipProvider>
+
+                                                                    {latestLog ? (
+                                                                        <div className="space-y-2 pt-2 border-t border-white/10">
+                                                                            <div className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-300 uppercase tracking-wider">
+                                                                                <span>Recent Interaction</span>
+                                                                            </div>
+                                                                            <div className="flex flex-col gap-1.5 p-2 rounded-lg bg-white/5 border border-white/5">
+                                                                                <div className="flex items-center justify-between">
+                                                                                    <div className="flex items-center gap-1.5">
+                                                                                        {latestLog.action_type === 'like' && <Heart className="h-3 w-3 text-pink-400" />}
+                                                                                        {latestLog.action_type === 'reply' && <MessageSquare className="h-3 w-3 text-blue-400" />}
+                                                                                        {latestLog.action_type === 'follow' && <UserPlus className="h-3 w-3 text-purple-400" />}
+                                                                                        {latestLog.action_type === 'dm' && <Send className="h-3 w-3 text-green-400" />}
+                                                                                        <span className="text-[10px] font-medium text-zinc-200 capitalize">{latestLog.action_type}</span>
+                                                                                    </div>
+                                                                                    <span className="text-[9px] text-zinc-500">
+                                                                                        {formatDistanceToNow(new Date(latestLog.created_at), { addSuffix: true })}
+                                                                                    </span>
+                                                                                </div>
+                                                                                {latestLog.metadata?.post_content && (
+                                                                                    <p className="text-[10px] text-zinc-400 line-clamp-2 leading-relaxed">
+                                                                                        {latestLog.metadata.post_content}
+                                                                                    </p>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    ) : target.last_interaction_at ? (
+                                                                        <div className="pt-2 border-t border-white/10">
+                                                                            <p className="text-[10px] text-zinc-400">
+                                                                                Last interacted <span className="text-zinc-300 font-medium">{formatDistanceToNow(new Date(target.last_interaction_at), { addSuffix: true })}</span>
+                                                                            </p>
+                                                                        </div>
+                                                                    ) : null}
+                                                                </div>
+                                                            );
+                                                        })()}
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            </TooltipProvider>
+                                            <div className="flex flex-col min-w-0 gap-0.5">
+                                                <div className="font-medium text-sm text-foreground group-hover:text-foreground/80 transition-colors truncate">
+                                                    {target.name}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    {target.last_interaction_at && (
+                                                        <div className="flex items-center gap-1 text-[10px] text-muted-foreground truncate">
+                                                            <Clock className="h-2.5 w-2.5" />
+                                                            <span>{new Date(target.last_interaction_at).toLocaleDateString()}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     </td>
                                 )}
                                 {visibleColumns.type && (

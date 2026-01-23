@@ -392,11 +392,9 @@ export function TargetListView() {
                     </Dialog.Portal>
                 </Dialog.Root>
 
-                <ScrollArea className="flex-1">
-                    <div className="p-6 pt-2 min-w-0 overflow-hidden space-y-8">
-
-
-                        <div className="space-y-4">
+                <div className="flex-1 min-h-0">
+                    <div className="p-6 pt-2 h-full flex flex-col min-w-0 space-y-8">
+                        <div className="flex-1 min-h-0 space-y-4">
                             {!recentEngagedUsers.length && (
                                 <div className="flex items-center gap-2">
                                     <div className="w-1 h-4 bg-muted-foreground/30 rounded-full" />
@@ -406,11 +404,11 @@ export function TargetListView() {
                                 </div>
                             )}
                             {isLoading ? (
-                                <div className="flex h-[400px] items-center justify-center">
+                                <div className="flex h-full items-center justify-center">
                                     <CircularLoader className="h-6 w-6" />
                                 </div>
                             ) : (!selectedListId && viewMode !== 'all' && viewMode !== 'engaged') ? (
-                                <div className="h-[400px] flex flex-col items-center justify-center text-center">
+                                <div className="h-full flex flex-col items-center justify-center text-center">
                                     <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
                                         <Plus className="h-8 w-8 text-muted-foreground" />
                                     </div>
@@ -431,7 +429,7 @@ export function TargetListView() {
                             )}
                         </div>
                     </div>
-                </ScrollArea>
+                </div>
 
                 <CSVImportDialog
                     open={isImportOpen}

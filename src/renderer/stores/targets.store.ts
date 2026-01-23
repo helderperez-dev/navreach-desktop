@@ -295,18 +295,23 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
 
             // In 'engaged' mode, 'newData' length is not reliable for pagination.
 
+            let addedAny = false;
+
             if (newData.length > 0) {
                 set((state) => {
-                    let updatedTargets = [...state.targets];
+                    const updatedTargets = [...state.targets];
+                    const existingIds = new Set(updatedTargets.map(t => t.id));
+                    const existingUsernames = new Set(updatedTargets.map(t => {
+                        const u = t.metadata?.username?.toLowerCase() ||
+                            t.url?.split('/').pop()?.split('?')[0].toLowerCase();
+                        return u;
+                    }).filter(Boolean));
 
-                    // Smart merge for 'engaged' view to handle virtual targets
-                    if (viewMode === 'engaged') {
-                        newData.forEach(newTarget => {
-                            // ... existing merge logic ...
-                            // Check if we have a virtual target for this user (same username/url)
-                            const newUsername = newTarget.metadata?.username?.toLowerCase() ||
-                                newTarget.url?.split('/').pop()?.split('?')[0].toLowerCase();
+                    newData.forEach(newTarget => {
+                        const newUsername = newTarget.metadata?.username?.toLowerCase() ||
+                            newTarget.url?.split('/').pop()?.split('?')[0].toLowerCase();
 
+                        if (viewMode === 'engaged') {
                             const virtualIndex = updatedTargets.findIndex(t => {
                                 if (!t.id.startsWith('virtual-')) return false;
                                 const tUsername = t.metadata?.username?.toLowerCase() ||
@@ -315,50 +320,35 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                             });
 
                             if (virtualIndex !== -1) {
-                                // Replace virtual with real
+                                // Replace virtual with real if it's new
                                 updatedTargets[virtualIndex] = newTarget;
-                            } else {
-                                // Only append if not already in list (safe check)
-                                const exists = updatedTargets.some(t => t.id === newTarget.id);
-                                if (!exists) {
-                                    updatedTargets.push(newTarget);
-                                }
+                                addedAny = true;
+                            } else if (!existingIds.has(newTarget.id) && !existingUsernames.has(newUsername)) {
+                                updatedTargets.push(newTarget);
+                                addedAny = true;
                             }
-                        });
-                    } else {
-                        updatedTargets = [...updatedTargets, ...newData];
-                    }
-
-                    // Correction: We must ensure hasMore is true if we are in engaged mode and raw sources were full.
-                    // We can't easily access 'logs' here. 
-                    // But we can check if we should keep fetching.
-                    // Actually, passing `hasMore` as a separate variable from the try block is better.
+                        } else {
+                            if (!existingIds.has(newTarget.id)) {
+                                updatedTargets.push(newTarget);
+                                addedAny = true;
+                            }
+                        }
+                    });
 
                     return {
                         targets: updatedTargets,
                         page: nextPage,
-                        hasMore: hasMoreToLoad, // Use the variable we defined
+                        hasMore: hasMoreToLoad,
                         isFetchingMore: false
                     };
                 });
             } else {
-                // Even if newData is empty (all deduplicated), if raw sources had data, we might need to fetch next page!
-                // e.g. Page 1 had 50 logs of users already in store. newData is empty.
-                // But Page 2 might have new users.
-                // So we must continue if hasMoreToLoad is true.
-                if (hasMoreToLoad) {
-                    set({
-                        page: nextPage,
-                        hasMore: true,
-                        isFetchingMore: false
-                    });
-                    // Immediately trigger next load? Only if observer triggers it.
-                    // But if we returned empty, the list didn't grow, so observer might not trigger...
-                    // This is a "gap" problem. If we filter out everything, we have a hole.
-                    // Ideally we should auto-fetch again recursively, but let's just update state for now.
-                } else {
-                    set({ hasMore: false, isFetchingMore: false });
-                }
+                set({ hasMore: hasMoreToLoad, page: nextPage, isFetchingMore: false });
+            }
+
+            // Gap handling: If we found no new items (or all were duplicates) but there's more in the DB, fetch again
+            if (hasMoreToLoad && !addedAny) {
+                return get().loadMoreTargets();
             }
 
         } catch (err: any) {

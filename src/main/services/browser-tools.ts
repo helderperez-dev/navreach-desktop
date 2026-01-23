@@ -383,15 +383,15 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
       // We set them to undefined rather than deleting to avoid Proxy traps/errors
       try {
         window.process = undefined;
-        (window as any).electron = undefined;
-        (window as any).ipcRenderer = undefined;
+        window.electron = undefined;
+        window.ipcRenderer = undefined;
       } catch(e) {}
       
       // 6. Advanced evasion for Google/ReCAPTCHA/Turnstile
       const removeCDC = () => {
         for (const prop in window) {
           if (prop.match(/^cdc_[a-z0-9]+$/)) {
-            try { (window as any)[prop] = undefined; } catch(e) {}
+            try { window[prop] = undefined; } catch(e) {}
           }
         }
       };
@@ -403,7 +403,7 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
           WebGLRenderingContext.prototype.getParameter = function(parameter) {
             if (parameter === 37445) return 'Intel Inc.';
             if (parameter === 37446) return 'Intel(R) Iris(TM) Plus Graphics';
-            return getParameter.apply(this, arguments as any);
+            return getParameter.apply(this, arguments);
           };
       } catch(e) {}
     })();
@@ -785,8 +785,8 @@ const SCRIPT_HELPERS = `
     
     const rect = clickable.getBoundingClientRect();
     // Offset support for IFrames
-    const ox = (clickable as any).__REAVION_OX__ || 0;
-    const oy = (clickable as any).__REAVION_OY__ || 0;
+    const ox = clickable.__REAVION_OX__ || 0;
+    const oy = clickable.__REAVION_OY__ || 0;
     
     const x = Math.round(ox + rect.left + rect.width / 2);
     const y = Math.round(oy + rect.top + rect.height / 2);
@@ -816,18 +816,18 @@ const SCRIPT_HELPERS = `
           const el = matches[i];
           if (!results.includes(el)) {
             // Attach temporary offsets for coordinate calculation if inside iframe
-            (el as any).__REAVION_OX__ = ox;
-            (el as any).__REAVION_OY__ = oy;
+            el.__REAVION_OX__ = ox;
+            el.__REAVION_OY__ = oy;
             results.push(el);
           }
         }
       } catch (e) {}
       
       // Pierce Shadow DOM and accessible IFrames
-      const walker = document.createTreeWalker(curr, 1, function(n: any) { 
+      const walker = document.createTreeWalker(curr, 1, function(n) { 
         try { return (n.shadowRoot || (n.tagName === 'IFRAME' && n.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
-      } as any);
-      let host: any;
+      });
+      let host;
       while (host = walker.nextNode()) {
         if (host.shadowRoot) queue.push({ root: host.shadowRoot, ox, oy });
         try { 
@@ -849,8 +849,8 @@ const SCRIPT_HELPERS = `
   window.querySelectorAria = (ariaLabel, index = 0) => {
     if (!ariaLabel) return null;
     const clean = ariaLabel.replace(/['"]/g, '').trim().toLowerCase();
-    const results: any[] = [];
-    const queue = [{ root: document as any, ox: 0, oy: 0 }];
+    const results = [];
+    const queue = [{ root: document, ox: 0, oy: 0 }];
     const visited = new Set();
     
     while (queue.length > 0) {
@@ -859,7 +859,7 @@ const SCRIPT_HELPERS = `
       visited.add(curr);
       
       const walker = document.createTreeWalker(curr, 1, null);
-      let el: any;
+      let el;
       while (el = walker.nextNode()) {
         if (results.length > 150) break;
 
@@ -895,10 +895,10 @@ const SCRIPT_HELPERS = `
         }
       }
       
-      const hosts = document.createTreeWalker(curr, 1, function(n: any) { 
+      const hosts = document.createTreeWalker(curr, 1, function(n) { 
         try { return (n.shadowRoot || (n.tagName === 'IFRAME' && n.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
-      } as any);
-      let h: any;
+      });
+      let h;
       while (h = hosts.nextNode()) {
           if (h.shadowRoot) queue.push({ root: h.shadowRoot, ox, oy });
           try {
@@ -918,7 +918,7 @@ const SCRIPT_HELPERS = `
   window.findElementByText = (text, root = document) => {
     const clean = (text || '').toString().replace(/['"]/g, '').trim().toLowerCase();
     if (!clean) return null;
-    const queue = [{ root: root as any, ox: 0, oy: 0 }];
+    const queue = [{ root: root, ox: 0, oy: 0 }];
     const visited = new Set();
     while (queue.length > 0) {
       const { root: curr, ox, oy } = queue.shift();
@@ -926,7 +926,7 @@ const SCRIPT_HELPERS = `
       visited.add(curr);
       
       const walker = document.createTreeWalker(curr, 4, null);
-      let node: any;
+      let node;
       while (node = walker.nextNode()) {
         const txt = node.textContent.toLowerCase();
         if (txt.includes(clean)) {
@@ -941,10 +941,10 @@ const SCRIPT_HELPERS = `
         }
       }
       
-      const hosts = document.createTreeWalker(curr, 1, function(n: any) { 
+      const hosts = document.createTreeWalker(curr, 1, function(n) { 
         try { return (n.shadowRoot || (n.tagName === 'IFRAME' && n.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
-      } as any);
-      let h: any;
+      });
+      let h;
       while (h = hosts.nextNode()) {
           if (h.shadowRoot) queue.push({ root: h.shadowRoot, ox, oy });
           try {
@@ -1482,7 +1482,7 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                             nameAttr: node.getAttribute('name') || undefined,
                             value: (tag === 'input' || tag === 'textarea') ? value : undefined,
                             href: (tag === 'a') ? href : undefined,
-                            pos: (node as any).__REAVION_CUSTOM_POS__ || { 
+                            pos: node.__REAVION_CUSTOM_POS__ || { 
                                 x: Math.round(ox + rect.left + rect.width / 2), 
                                 y: Math.round(oy + rect.top + rect.height / 2) 
                             },
@@ -1492,10 +1492,10 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
                 });
 
                 // Traverse Shadow DOM and IFrames
-                const walker = document.createTreeWalker(root, 1, function(node: any) { 
+                const walker = document.createTreeWalker(root, 1, function(node) { 
                     try { return (node.shadowRoot || (node.tagName === 'IFRAME' && node.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
-                } as any);
-                let host: any;
+                });
+                let host;
                 while (host = walker.nextNode()) {
                     if (host.shadowRoot) collect(host.shadowRoot, ox, oy);
                     try {

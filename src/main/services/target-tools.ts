@@ -22,43 +22,58 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
         }),
         func: async ({ list_id, limit, offset }) => {
             try {
-                // Join with target_lists to filter by workspace since targets doesn't have workspace_id
-                let query = supabaseClient.from('targets').select('*, target_lists!inner(workspace_id)', { count: 'exact' });
-
-                if (currentWorkspaceId) {
-                    query = query.eq('target_lists.workspace_id', currentWorkspaceId);
-                }
-
+                const finalLimit = limit || 20;
+                const finalOffset = offset || 0;
+                let data: any[] = [];
+                let count = 0;
                 let listName = null;
 
                 if (list_id && list_id.trim() !== '') {
-                    query = query.eq('list_id', list_id);
+                    // Strategy 1: Fetch via assignments (Junction Table)
+                    // This is the most reliable way to get targets in a specific list
+                    const { data: assignments, count: total, error } = await supabaseClient
+                        .from('target_assignments')
+                        .select('target:targets!target_assignments_target_id_fkey(*)', { count: 'exact' })
+                        .eq('list_id', list_id)
+                        .order('created_at', { ascending: false })
+                        .range(finalOffset, finalOffset + finalLimit - 1);
+
+                    if (error) throw error;
+
+                    // Unwraps the target object from the assignment
+                    data = (assignments || []).map((a: any) => a.target).filter(Boolean);
+                    count = total || 0;
 
                     // Fetch list name for friendly display
-                    let listQuery = supabaseClient
+                    const { data: listData } = await supabaseClient
                         .from('target_lists')
                         .select('name')
-                        .eq('id', list_id);
-
-                    if (currentWorkspaceId) {
-                        listQuery = listQuery.eq('workspace_id', currentWorkspaceId);
-                    }
-
-                    const { data: listData } = await listQuery.single();
+                        .eq('id', list_id)
+                        .maybeSingle();
 
                     if (listData) {
                         listName = listData.name;
                     }
+
+                } else {
+                    // Strategy 2: Fetch all targets in workspace
+                    // Direct query on targets table is simpler and avoids ambiguous joins
+                    let query = supabaseClient.from('targets').select('*', { count: 'exact' });
+
+                    if (currentWorkspaceId) {
+                        // Targets table has workspace_id, so we can filter directly
+                        query = query.eq('workspace_id', currentWorkspaceId);
+                    }
+
+                    const { data: targets, count: total, error } = await query
+                        .order('created_at', { ascending: false })
+                        .range(finalOffset, finalOffset + finalLimit - 1);
+
+                    if (error) throw error;
+                    data = targets || [];
+                    count = total || 0;
                 }
 
-                const finalLimit = limit || 20;
-                const finalOffset = offset || 0;
-
-                const { data, count, error } = await query
-                    .order('created_at', { ascending: false })
-                    .range(finalOffset, finalOffset + finalLimit - 1);
-
-                if (error) throw error;
                 return JSON.stringify({
                     success: true,
                     targets: data,

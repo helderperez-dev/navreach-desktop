@@ -32,6 +32,8 @@ export class TaskQueueService {
         if (this.isProcessing) return;
         this.isProcessing = true;
 
+        let shouldCheckAgainImmediately = false;
+
         try {
             const { accessToken, refreshToken } = mainTokenStore.getTokens();
             if (!accessToken) {
@@ -56,6 +58,11 @@ export class TaskQueueService {
 
             if (cleanupError) {
                 console.error('[TaskQueueService] Failed to cleanup zombie tasks:', cleanupError);
+                // If the cleanup fails due to auth/rate limit, don't proceed to fetching
+                if (cleanupError.message?.includes('JWT expired') || cleanupError.message?.includes('rate limit')) {
+                    this.isProcessing = false;
+                    return;
+                }
             }
 
             // Find one pending task
@@ -78,6 +85,9 @@ export class TaskQueueService {
                 this.isProcessing = false;
                 return;
             }
+
+            // We found a task, so we should check for more after this one is done
+            shouldCheckAgainImmediately = true;
 
             console.log(`[TaskQueueService] Processing task: ${task.id} (${task.task_type})`);
 
@@ -130,12 +140,16 @@ export class TaskQueueService {
                     .eq('id', task.id);
             }
 
-        } catch (err) {
+        } catch (err: any) {
             console.error('[TaskQueueService] Fatal error in processNextTask:', err);
+            shouldCheckAgainImmediately = false; // Stop immediate retry on fatal error
         } finally {
             this.isProcessing = false;
-            // Check for more tasks immediately
-            setTimeout(() => this.processNextTask(), 500);
+            // Check for more tasks immediately ONLY if we just processed one successfully
+            // and no fatal error occurred. This prevents the "thundering herd" on errors.
+            if (shouldCheckAgainImmediately) {
+                setTimeout(() => this.processNextTask(), 1000); // 1s buffer instead of 500ms
+            }
         }
     }
 
