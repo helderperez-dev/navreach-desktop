@@ -789,7 +789,7 @@ export function ChatPanel() {
 
   return (
     <div className="relative flex flex-col h-full bg-card">
-      <div className="flex items-center justify-between h-12 px-4 border-b border-border bg-card/80 sticky top-0 z-20">
+      <div className="flex items-center justify-between h-12 px-4 border-b border-border/10 sticky top-0 z-20">
         <div className="flex items-center gap-3">
           <h2 className="text-sm font-semibold">{showHistory ? 'Chat History' : 'Reavion Agent'}</h2>
           {!showHistory && <TimerDisplay />}

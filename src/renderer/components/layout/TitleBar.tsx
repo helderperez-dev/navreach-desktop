@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { LogOut, Settings, User, Zap, HelpCircle } from 'lucide-react';
-import { WorkspaceSelector } from './WorkspaceSelector';
+
 import { useBillingStore } from '@/stores/billing.store';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -44,23 +44,30 @@ export function TitleBar() {
   const avatarUrl = user?.user_metadata?.avatar_url;
 
   return (
-    <div className="h-12 min-h-[48px] flex items-center justify-between bg-sidebar border-b border-border/30 drag-region transition-colors duration-200">
-      <div className="flex items-center gap-2 pl-6">
+    <div className="h-12 min-h-[48px] flex items-center bg-background border-b border-border/10 drag-region transition-colors duration-200 relative">
+      {/* Left section - Window controls space on macOS */}
+      <div className="flex-1 flex items-center pl-6">
+        {/* We can potentially add breadcrumbs or page title here later */}
+      </div>
+
+      {/* Center section - Logo */}
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
         <img
           src={reavionLogoWhite}
           alt="Reavion"
-          className={`h-3 w-auto select-none transition-all duration-300 ease-in-out hidden dark:block ${isFullScreen ? 'ml-0' : 'ml-14'}`}
+          className="h-3 w-auto select-none transition-all duration-300 ease-in-out hidden dark:block"
           draggable={false}
         />
         <img
           src={reavionLogoBlack}
           alt="Reavion"
-          className={`h-3 w-auto select-none transition-all duration-300 ease-in-out block dark:hidden ${isFullScreen ? 'ml-0' : 'ml-14'}`}
+          className="h-3 w-auto select-none transition-all duration-300 ease-in-out block dark:hidden"
           draggable={false}
         />
       </div>
 
-      <div className="flex items-center gap-4 pr-4 no-drag">
+      {/* Right section - User menu & status */}
+      <div className="flex-1 flex items-center justify-end gap-4 pr-4 no-drag">
         <TooltipProvider delayDuration={400}>
           {!isLoading && isPro && (
             <Tooltip>
@@ -82,8 +89,8 @@ export function TitleBar() {
               </TooltipContent>
             </Tooltip>
           )}
-          <WorkspaceSelector />
         </TooltipProvider>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="flex items-center justify-center transition-opacity hover:opacity-80 outline-none relative group">

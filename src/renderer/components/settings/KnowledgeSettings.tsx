@@ -209,7 +209,7 @@ export function KnowledgeSettings() {
                                     </Dialog>
                                 </div>
                                 {kbs.length === 0 ? (
-                                    <div className="flex-1 flex flex-col items-center justify-center p-12 border-2 border-dashed border-border rounded-xl text-muted-foreground">
+                                    <div className="flex-1 flex flex-col items-center justify-center p-12 border-2 border-dashed border-border/10 rounded-xl text-muted-foreground">
                                         <Database className="h-12 w-12 mb-4 opacity-20" />
                                         <p className="text-sm text-center">No knowledge bases yet. Create one to give your agent context about your company, persona, or specific strategies.</p>
                                     </div>
@@ -219,7 +219,7 @@ export function KnowledgeSettings() {
                                             <div
                                                 key={kb.id}
                                                 onClick={() => setSelectedKb(kb)}
-                                                className="p-4 border border-border rounded-xl bg-card hover:border-foreground/30 transition-all cursor-pointer group relative"
+                                                className="p-4 border border-border/10 rounded-xl bg-card hover:border-foreground/30 transition-all cursor-pointer group relative"
                                             >
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-primary">
@@ -269,7 +269,7 @@ export function KnowledgeSettings() {
                                 </div>
                                 <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                                     {kbContent.map(item => (
-                                        <div key={item.id} className="p-4 border border-border rounded-lg bg-card/40 hover:bg-card/60 transition-colors">
+                                        <div key={item.id} className="p-4 border border-border/10 rounded-lg bg-card/20 hover:bg-card/40 transition-colors">
                                             <div className="flex justify-between items-start mb-2">
                                                 <h4 className="font-medium text-primary text-sm">{item.title || 'Untitled Knowledge'}</h4>
                                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => handleDeleteContent(item.id)}>
@@ -280,7 +280,7 @@ export function KnowledgeSettings() {
                                         </div>
                                     ))}
                                     {kbContent.length === 0 && (
-                                        <div className="text-center py-20 text-muted-foreground border-2 border-dashed border-border rounded-xl">
+                                        <div className="text-center py-20 text-muted-foreground border-2 border-dashed border-border/10 rounded-xl">
                                             <p>This knowledge base is empty. Start adding information relevant to this category.</p>
                                         </div>
                                     )}
@@ -295,7 +295,7 @@ export function KnowledgeSettings() {
                             {elements.length > 0 && <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{elements.length} mapped</span>}
                         </div>
                         {editingId && (
-                            <div className="border border-border rounded-lg p-5 space-y-4 bg-muted/40 mb-6 animate-in slide-in-from-top-2">
+                            <div className="border border-border/10 rounded-lg p-5 space-y-4 bg-muted/20 mb-6 animate-in slide-in-from-top-2">
                                 <div className="flex justify-between items-center mb-1">
                                     <span className="text-xs font-bold uppercase tracking-wider text-foreground">Editing Element Mapping</span>
                                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingId(null)}><X className="h-4 w-4" /></Button>
@@ -332,13 +332,13 @@ export function KnowledgeSettings() {
                         )}
                         <div className="space-y-4 pb-10">
                             {elements.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-border rounded-xl text-muted-foreground">
+                                <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed border-border/10 rounded-xl text-muted-foreground">
                                     <Code className="h-12 w-12 mb-4 opacity-20" />
                                     <p className="text-sm text-center">Use the Element Inspector in the browser to map complex UI elements and give the agent specific instructions on how to handle them.</p>
                                 </div>
                             ) : (
                                 elements.map(item => (
-                                    <div key={item.id} className="p-4 border border-border rounded-xl bg-card/40 hover:bg-card/80 transition-all group">
+                                    <div key={item.id} className="p-4 border border-border/10 rounded-xl bg-card/20 hover:bg-card/40 transition-all group">
                                         <div className="flex items-start justify-between">
                                             <div className="space-y-1">
                                                 <div className="flex items-center gap-2">

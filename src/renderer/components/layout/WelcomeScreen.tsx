@@ -18,8 +18,7 @@ import type { Conversation, KnowledgeBase, KnowledgeContent } from '@shared/type
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { knowledgeService } from '@/services/knowledgeService';
 
-import reavionLogoWhite from '@assets/reavion-white-welcome.png';
-import reavionLogoBlack from '@assets/reavion-black-welcome.png';
+
 
 // --- SMART SUGGESTIONS LOGIC ---
 
@@ -421,23 +420,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
       </AnimatePresence>
 
       <div className="flex flex-col items-center w-full max-w-2xl px-6">
-        <motion.div
-          className="mb-12"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 0.8, y: 0 }}
-          transition={{ delay: 0.1, duration: 0.4 }}
-        >
-          <img
-            src={reavionLogoWhite}
-            alt="Reavion"
-            className="h-8 opacity-80 hidden dark:block"
-          />
-          <img
-            src={reavionLogoBlack}
-            alt="Reavion"
-            className="h-8 opacity-80 block dark:hidden"
-          />
-        </motion.div>
+
 
         <motion.div
           className="w-full"

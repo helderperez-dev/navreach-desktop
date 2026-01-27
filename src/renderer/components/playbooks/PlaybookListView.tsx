@@ -125,7 +125,7 @@ export function PlaybookListView({ onCreate, onSelect, playbooks, loading, onRef
     return (
         <div className="flex flex-col h-full bg-background">
             {/* Header Section */}
-            <div className="h-16 border-b border-border flex items-center justify-between px-6 bg-card/80 backdrop-blur-md sticky top-0 z-30">
+            <div className="h-16 border-b border-border/10 flex items-center justify-between px-6 bg-card/40 backdrop-blur-md sticky top-0 z-30">
                 <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-muted/40 flex items-center justify-center border border-border/40 shadow-sm transition-all">
                         <Workflow className="h-4 w-4 text-muted-foreground/70" />
@@ -234,7 +234,7 @@ export function PlaybookListView({ onCreate, onSelect, playbooks, loading, onRef
                         {filteredPlaybooks.map((playbook) => (
                             <div
                                 key={playbook.id}
-                                className="group relative flex flex-col p-4 rounded-xl border border-border bg-card/60 backdrop-blur-sm hover:border-muted-foreground/30 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
+                                className="group relative flex flex-col p-4 rounded-xl border border-border/50 bg-card/60 backdrop-blur-sm hover:border-muted-foreground/30 hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer"
                                 onClick={() => onSelect(playbook.id)}
                             >
                                 <div className="flex items-start justify-between gap-4">

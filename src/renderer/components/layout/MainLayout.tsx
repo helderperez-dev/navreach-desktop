@@ -198,14 +198,14 @@ export function MainLayout() {
             {/* Persistent Browser View - NEVER REMOUNTED for maximum stability */}
             <div
               className={cn(
-                "absolute transition-opacity duration-300 ease-in-out bg-[#0A0A0B]",
+                "absolute transition-opacity duration-300 ease-in-out bg-background",
                 // Normal Browser View
                 activeView === 'browser' && "inset-0 z-0",
                 // Playbook Split View (Right Side)
                 activeView === 'playbooks' && showPlaybookBrowser
                   ? (playbookBrowserMaximized
                     ? "inset-0 z-20 border-none"
-                    : "top-0 bottom-0 right-0 w-1/2 border-l border-border z-0")
+                    : "top-0 bottom-0 right-0 w-1/2 border-l border-border/20 z-0")
                   : (activeView !== 'browser' && "inset-0 opacity-0 pointer-events-none z-[-1]")
               )}
               style={{ willChange: 'opacity' }}

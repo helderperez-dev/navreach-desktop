@@ -79,7 +79,7 @@ export function GeneralSettings() {
                     </p>
                 </div>
 
-                <div className="p-4 rounded-xl bg-muted/40 border border-border space-y-6">
+                <div className="p-4 rounded-xl bg-muted/20 border border-border/10 space-y-6">
                     <div className="flex items-center gap-4 mb-2">
                         <div className="p-2 rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-muted/80">
                             <User className="h-5 w-5" />
@@ -140,7 +140,7 @@ export function GeneralSettings() {
                                             setHasChanges(true);
                                         }}
                                         placeholder="Enter your name"
-                                        className="bg-background/50 border-border focus:ring-1 focus:ring-foreground/10 h-10"
+                                        className="bg-background/50 border-border/10 focus:ring-1 focus:ring-foreground/10 h-10"
                                     />
                                 </div>
 
@@ -149,7 +149,7 @@ export function GeneralSettings() {
                                     <Input
                                         value={user?.email || ''}
                                         disabled
-                                        className="bg-muted/30 text-muted-foreground/70 border-border h-10 cursor-not-allowed"
+                                        className="bg-muted/30 text-muted-foreground/70 border-border/10 h-10 cursor-not-allowed"
                                     />
                                 </div>
                             </div>
@@ -180,7 +180,7 @@ export function GeneralSettings() {
                     </p>
                 </div>
 
-                <div className="space-y-4 p-4 rounded-xl bg-muted/40 border border-border transition-all hover:bg-muted/60">
+                <div className="space-y-4 p-4 rounded-xl bg-muted/20 border border-border/10 transition-all hover:bg-muted/30">
                     <div className="flex items-center gap-4 mb-2">
                         <div className="p-2 rounded-lg bg-muted text-muted-foreground transition-colors group-hover:bg-muted/80">
                             <Palette className="h-5 w-5" />
@@ -224,7 +224,7 @@ export function GeneralSettings() {
                     </p>
                 </div>
 
-                <div className="flex items-center justify-between p-4 rounded-xl bg-muted/40 border border-border group transition-all hover:bg-muted/60">
+                <div className="flex items-center justify-between p-4 rounded-xl bg-muted/20 border border-border/10 group transition-all hover:bg-muted/30">
                     <div className="flex items-center gap-4">
                         <div className="p-2 rounded-lg bg-muted text-muted-foreground transition-all group-hover:bg-muted/80">
                             <Monitor className="h-5 w-5" />

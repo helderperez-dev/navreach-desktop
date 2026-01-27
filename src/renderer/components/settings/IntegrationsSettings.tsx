@@ -102,7 +102,7 @@ export function IntegrationsSettings() {
             ) : (
                 <div className="grid gap-6">
                     {/* External Collection Toggle */}
-                    <div className="flex items-center justify-between p-6 rounded-2xl bg-muted/30 border border-border shadow-sm">
+                    <div className="flex items-center justify-between p-6 rounded-2xl bg-muted/20 border border-border/10 shadow-sm">
                         <div className="flex gap-4">
                             <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform border border-border/50">
                                 <Shield className="h-6 w-6 text-muted-foreground/70" />
@@ -124,7 +124,7 @@ export function IntegrationsSettings() {
                     </div>
 
                     {/* API Endpoint */}
-                    <div className="p-6 rounded-2xl bg-muted/30 border border-border shadow-sm space-y-4">
+                    <div className="p-6 rounded-2xl bg-muted/20 border border-border/10 shadow-sm space-y-4">
                         <div className="flex gap-4">
                             <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-transform border border-border/50">
                                 <ExternalLink className="h-6 w-6 text-muted-foreground/70" />
@@ -134,13 +134,13 @@ export function IntegrationsSettings() {
                                 <p className="text-xs text-muted-foreground">The base URL for all API requests.</p>
                             </div>
                         </div>
-                        <div className="flex-1 bg-muted/50 border border-border rounded-xl px-4 py-3 font-mono text-sm text-foreground/80 font-medium tracking-tight">
+                        <div className="flex-1 bg-muted/30 border border-border/10 rounded-xl px-4 py-3 font-mono text-sm text-foreground/80 font-medium tracking-tight">
                             {apiUrl}
                         </div>
                     </div>
 
                     {/* API Key Management */}
-                    <div className="p-6 rounded-2xl bg-muted/30 border border-border shadow-sm space-y-4">
+                    <div className="p-6 rounded-2xl bg-muted/20 border border-border/10 shadow-sm space-y-4">
                         <div className="flex items-center justify-between mb-2">
                             <div className="flex gap-4">
                                 <div className="w-12 h-12 rounded-xl bg-muted flex items-center justify-center flex-shrink-0 group-hover:bg-muted/80 transition-all border border-border/50">
@@ -163,7 +163,7 @@ export function IntegrationsSettings() {
                         </div>
 
                         <div className="flex gap-2">
-                            <div className="flex-1 bg-muted/50 border border-border rounded-xl px-4 py-3 font-mono text-sm text-foreground/70 flex items-center justify-between shadow-inner">
+                            <div className="flex-1 bg-muted/30 border border-border/10 rounded-xl px-4 py-3 font-mono text-sm text-foreground/70 flex items-center justify-between shadow-inner">
                                 {isLoading ? (
                                     <CircularLoader className="h-4 w-4" />
                                 ) : (
@@ -199,7 +199,7 @@ export function IntegrationsSettings() {
                     </div>
 
                     {/* Documentation Link */}
-                    <div className="p-6 rounded-2xl border border-dashed border-border flex items-center justify-between">
+                    <div className="p-6 rounded-2xl border border-dashed border-border/20 flex items-center justify-between">
                         <div>
                             <h4 className="text-sm font-medium text-foreground mb-1">Developer Documentation</h4>
                             <p className="text-xs text-muted-foreground">View full API reference and integration guides.</p>

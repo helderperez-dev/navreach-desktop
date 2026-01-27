@@ -89,13 +89,13 @@ export function TargetListSidebar() {
             }}
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className={cn(
-                "relative border-r border-border/30 bg-card/10 flex flex-col h-full group/sidebar overflow-hidden shrink-0 transition-colors duration-300",
+                "relative border-r border-border/10 bg-card/10 flex flex-col h-full group/sidebar overflow-hidden shrink-0 transition-colors duration-300",
                 isResizingActive && "border-border/50 bg-muted/5",
                 targetSidebarCollapsed && "border-r-0"
             )}
         >
             <div className="flex flex-col h-full w-full" style={{ width: `${width}px` }}>
-                <div className="p-5 border-b border-border/10 flex items-center justify-between">
+                <div className="p-5 border-b border-border/5 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground/50 truncate">Lists</h2>
                         {!isPro() && (
@@ -141,7 +141,7 @@ export function TargetListSidebar() {
                 </div>
 
                 <div className="px-4 py-2">
-                    <div className="h-[1px] bg-border/30 w-full" />
+                    <div className="h-[1px] bg-border/10 w-full" />
                 </div>
 
                 <ScrollArea className="flex-1 w-full">

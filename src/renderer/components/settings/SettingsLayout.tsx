@@ -29,7 +29,7 @@ export function SettingsLayout() {
 
   return (
     <div className="flex flex-col h-full bg-background overflow-hidden">
-      <div className="h-16 border-b border-border flex items-center px-6 bg-card/50 backdrop-blur-sm gap-3">
+      <div className="h-16 border-b border-border/10 flex items-center px-6 bg-card/50 backdrop-blur-sm gap-3">
         <div className="w-9 h-9 rounded-xl bg-muted/40 flex items-center justify-center border border-border/40 shadow-sm transition-all">
           <Settings className="h-4 w-4 text-muted-foreground/70" />
         </div>
@@ -40,7 +40,7 @@ export function SettingsLayout() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-64 border-r border-border bg-card/30 p-4 space-y-1">
+        <div className="w-64 border-r border-border/10 bg-card/30 p-4 space-y-1">
           {tabs.map((tab) => (
             <button
               key={tab.id}

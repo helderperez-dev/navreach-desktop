@@ -374,7 +374,7 @@ export function ModelProvidersSettings() {
           </div>
 
           {(isAdding || editingId) && (
-            <div className="border border-border rounded-lg p-4 space-y-4 bg-card">
+            <div className="border border-border/10 rounded-lg p-4 space-y-4 bg-card">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Name</label>
@@ -621,7 +621,7 @@ export function ModelProvidersSettings() {
             {modelProviders.map((provider) => (
               <div
                 key={provider.id}
-                className="flex items-center justify-between p-4 border border-border rounded-lg bg-card"
+                className="flex items-center justify-between p-4 border border-border/10 rounded-lg bg-card"
               >
                 <div className="flex items-center gap-3">
                   <div

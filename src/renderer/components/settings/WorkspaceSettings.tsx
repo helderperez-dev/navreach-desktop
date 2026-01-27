@@ -117,7 +117,7 @@ export function WorkspaceSettings() {
                         />
                     </div>
                 </CardContent>
-                <CardFooter className="border-t px-6 py-4">
+                <CardFooter className="border-t border-border/10 px-6 py-4">
                     <Button onClick={handleSave} disabled={isSaving || name === currentWorkspace.name}>
                         {isSaving ? 'Saving...' : 'Save Changes'}
                     </Button>

@@ -357,7 +357,7 @@ export function MCPSettings() {
       </div>
 
       {(isAdding || editingId) && (
-        <div className="border border-border rounded-lg p-4 space-y-4 bg-card">
+        <div className="border border-border/10 rounded-lg p-4 space-y-4 bg-card">
           <div className="flex items-center gap-2 mb-4">
             <Button
               variant={!jsonMode ? 'secondary' : 'ghost'}
@@ -547,7 +547,7 @@ export function MCPSettings() {
             {mcpServers.map((server) => (
               <div
                 key={server.id}
-                className="flex items-center justify-between p-4 border border-border rounded-lg bg-card"
+                className="flex items-center justify-between p-4 border border-border/10 rounded-lg bg-card"
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full ${server.enabled ? 'bg-green-500' : 'bg-muted'}`} />

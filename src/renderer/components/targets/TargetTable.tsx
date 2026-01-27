@@ -489,7 +489,7 @@ export function TargetTable({
             <div className="flex-1 overflow-auto shadow-none relative scrollbar-hide" ref={tableRef}>
                 <table className="text-left border-separate border-spacing-0 table-fixed w-full">
                     <thead className="sticky top-0 bg-background z-20 shadow-sm shadow-black/5">
-                        <tr className="border-b border-border/30">
+                        <tr className="border-b border-border/10">
                             <th className="px-6 py-4 w-[50px] bg-background">
                                 <Checkbox
                                     checked={

@@ -190,7 +190,7 @@ export function TargetListView() {
 
             <div className="flex-1 flex flex-col min-w-0">
                 {/* Header Section */}
-                <div className="h-16 border-b border-border/30 flex items-center justify-between px-6 bg-card/40 backdrop-blur-md sticky top-0 z-30">
+                <div className="h-16 border-b border-border/10 flex items-center justify-between px-6 bg-card/40 backdrop-blur-md sticky top-0 z-30">
                     <div className="flex items-center gap-3">
                         <Button
                             variant="ghost"

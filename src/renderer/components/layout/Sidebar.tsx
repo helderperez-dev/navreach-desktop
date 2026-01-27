@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { useEffect } from 'react';
 
+import { WorkspaceSelector } from './WorkspaceSelector';
+
 interface NavItem {
   id: string;
   label: string;
@@ -18,10 +20,9 @@ interface NavItem {
 }
 const navItems: NavItem[] = [
   { id: 'browser', label: 'Browser', icon: <Compass className="h-5 w-5" />, view: 'browser' },
+  { id: 'playbooks', label: 'Playbooks', icon: <Workflow className="h-5 w-5" />, view: 'playbooks' },
   { id: 'targets', label: 'Targets', icon: <Users className="h-5 w-5" />, view: 'targets' },
   { id: 'analytics', label: 'Analytics', icon: <BarChart2 className="h-5 w-5" />, view: 'analytics' },
-  { id: 'playbooks', label: 'Playbooks', icon: <Workflow className="h-5 w-5" />, view: 'playbooks' },
-  { id: 'settings', label: 'Settings', icon: <Settings className="h-5 w-5" />, view: 'settings' },
 ];
 
 export function Sidebar() {
@@ -54,9 +55,9 @@ export function Sidebar() {
         initial={false}
         animate={{ width: sidebarCollapsed ? 56 : 200 }}
         transition={{ duration: 0.2, ease: 'easeInOut' }}
-        className="flex flex-col h-full bg-sidebar border-r border-border/30 transition-colors duration-200"
+        className="flex flex-col h-full bg-sidebar border-r border-border/10 transition-colors duration-200"
       >
-        <nav className={cn("flex-1 py-2 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
+        <nav className={cn("flex-1 pt-6 py-1 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
           {navItems.map((item) => (
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
@@ -64,19 +65,20 @@ export function Sidebar() {
                   variant={activeView === item.view ? 'secondary' : 'ghost'}
                   size={sidebarCollapsed ? "icon" : "default"}
                   className={cn(
-                    'w-full justify-start gap-3 transition-all duration-200',
-                    sidebarCollapsed && 'justify-center h-10 w-full',
-                    activeView === item.view ? 'bg-muted text-foreground shadow-sm' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                    'w-full justify-start gap-3 transition-all duration-200 h-9 px-2',
+                    sidebarCollapsed && 'justify-center w-full h-10',
+                    activeView === item.view
+                      ? 'bg-muted text-foreground font-medium shadow-none'
+                      : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground shadow-none'
                   )}
                   onClick={() => setActiveView(item.view)}
                 >
                   <span className="flex-shrink-0">{item.icon}</span>
                   {!sidebarCollapsed && (
                     <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      className="text-sm font-medium"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-sm"
                     >
                       {item.label}
                     </motion.span>
@@ -98,18 +100,18 @@ export function Sidebar() {
                   variant="ghost"
                   size={sidebarCollapsed ? "icon" : "default"}
                   className={cn(
-                    'w-full justify-start gap-3 hover:bg-muted/50 transition-all duration-200',
-                    sidebarCollapsed && 'justify-center h-10 w-full'
+                    'w-full justify-start gap-3 transition-all duration-200 h-9 px-2',
+                    sidebarCollapsed && 'justify-center w-full h-10',
+                    'text-muted-foreground hover:bg-muted/50 hover:text-foreground shadow-none'
                   )}
                   onClick={toggleChatPanel}
                 >
                   <MessageSquare className="h-5 w-5 flex-shrink-0" />
                   {!sidebarCollapsed && (
                     <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      className="text-sm font-medium"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-sm"
                     >
                       AI Chat
                     </motion.span>
@@ -130,15 +132,15 @@ export function Sidebar() {
                 variant={!queueSidebarCollapsed ? 'secondary' : 'ghost'}
                 size={sidebarCollapsed ? "icon" : "default"}
                 className={cn(
-                  'w-full justify-start gap-3 transition-all duration-200',
-                  sidebarCollapsed && 'justify-center h-10 w-full',
+                  'w-full justify-start gap-3 transition-all duration-200 h-9 px-2',
+                  sidebarCollapsed && 'justify-center w-full h-10',
                   !queueSidebarCollapsed
-                    ? 'bg-muted text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                    ? 'bg-muted text-foreground font-medium shadow-none'
+                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground shadow-none'
                 )}
                 onClick={toggleQueueSidebar}
               >
-                <span className="relative flex-shrink-0">
+                <div className="relative flex-shrink-0">
                   <Layers className="h-5 w-5" />
                   {/* Badge over icon only when collapsed */}
                   {sidebarCollapsed && pendingCount > 0 && (
@@ -146,14 +148,13 @@ export function Sidebar() {
                       {pendingCount > 99 ? '99+' : pendingCount}
                     </span>
                   )}
-                </span>
+                </div>
                 {!sidebarCollapsed && (
                   <>
                     <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      className="text-sm font-medium"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-sm"
                     >
                       Queue
                     </motion.span>
@@ -182,7 +183,7 @@ export function Sidebar() {
         )}
 
         {!isLoading && !isPro && !sidebarCollapsed && (
-          <div className="mx-3 mb-4 p-3 rounded-xl bg-gradient-to-br from-primary/10 to-blue-500/10 border border-primary/20">
+          <div className="mx-3 mb-4 p-3 rounded-xl bg-muted/30 border border-border/50">
             <div className="flex items-center gap-2 mb-2">
               <Zap className="h-3.5 w-3.5 text-primary" />
               <span className="text-[11px] font-bold uppercase tracking-wider text-primary">Free Plan</span>
@@ -238,19 +239,47 @@ export function Sidebar() {
 
 
 
-        <div className={cn("py-2 border-t border-border/30", sidebarCollapsed ? "px-2" : "px-3")}>
+        <div className={cn("py-2 border-t border-border/10 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
+          <div className="mb-2">
+            <WorkspaceSelector isCollapsed={sidebarCollapsed} />
+          </div>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={activeView === 'settings' ? 'secondary' : 'ghost'}
+                size={sidebarCollapsed ? "icon" : "default"}
+                className={cn(
+                  'w-full justify-start gap-3 transition-all duration-200 h-9 px-2',
+                  sidebarCollapsed && 'justify-center w-full h-10',
+                  activeView === 'settings' ? 'bg-muted text-foreground font-medium shadow-none' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground shadow-none'
+                )}
+                onClick={() => setActiveView('settings')}
+              >
+                <Settings className="h-5 w-5 flex-shrink-0" />
+                {!sidebarCollapsed && <span className="text-sm">Settings</span>}
+              </Button>
+            </TooltipTrigger>
+            {sidebarCollapsed && (
+              <TooltipContent side="right" sideOffset={8}>
+                Settings
+              </TooltipContent>
+            )}
+          </Tooltip>
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size={sidebarCollapsed ? "icon" : "default"}
                 className={cn(
-                  "w-full justify-start gap-3",
-                  sidebarCollapsed && "h-10 w-full justify-center"
+                  "w-full justify-start gap-3 transition-all duration-200 h-9 px-2",
+                  sidebarCollapsed && "h-10 w-full justify-center",
+                  "text-muted-foreground hover:bg-muted/50 hover:text-foreground shadow-none"
                 )}
                 onClick={toggleSidebar}
               >
-                <PanelLeft className="h-5 w-5 flex-shrink-0" />
+                <PanelLeft className="h-5 w-5 flex-shrink-0 rotate-180" />
                 {!sidebarCollapsed && <span className="text-sm">Collapse</span>}
               </Button>
             </TooltipTrigger>
@@ -260,7 +289,6 @@ export function Sidebar() {
               </TooltipContent>
             )}
           </Tooltip>
-
         </div>
       </motion.aside>
     </TooltipProvider >
