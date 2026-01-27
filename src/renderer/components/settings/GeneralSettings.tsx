@@ -94,7 +94,7 @@ export function GeneralSettings() {
                         {/* Avatar Column */}
                         <div className="flex flex-col items-center gap-3">
                             <div className="relative group h-28 w-28">
-                                <div className="h-full w-full rounded-full overflow-hidden border-2 border-primary/20 bg-background shadow-md flex items-center justify-center bg-muted">
+                                <div className="h-full w-full rounded-full overflow-hidden border-2 border-border bg-background shadow-md flex items-center justify-center bg-muted">
                                     {avatarUrl ? (
                                         <img
                                             src={avatarUrl}
@@ -126,14 +126,6 @@ export function GeneralSettings() {
                                 disabled={isLoading}
                             />
 
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 px-3 text-[11px] font-semibold text-muted-foreground hover:text-foreground"
-                                onClick={() => document.getElementById('avatar-upload')?.click()}
-                            >
-                                Edit Image
-                            </Button>
                         </div>
 
                         {/* Form Column */}
@@ -148,7 +140,7 @@ export function GeneralSettings() {
                                             setHasChanges(true);
                                         }}
                                         placeholder="Enter your name"
-                                        className="bg-background/50 border-border focus:ring-1 focus:ring-primary/20 h-10"
+                                        className="bg-background/50 border-border focus:ring-1 focus:ring-foreground/10 h-10"
                                     />
                                 </div>
 
@@ -166,7 +158,7 @@ export function GeneralSettings() {
                                 <Button
                                     onClick={handleSaveProfile}
                                     disabled={!hasChanges || isLoading}
-                                    className="min-w-[120px] shadow-sm shadow-primary/10"
+                                    className="min-w-[120px] shadow-sm"
                                 >
                                     {isLoading ? (
                                         <CircularLoader className="mr-2 h-4 w-4" />
@@ -211,7 +203,7 @@ export function GeneralSettings() {
                                 className={`
                                     flex flex-col items-center gap-2 p-3 rounded-lg border transition-all duration-200
                                     ${theme === item.value
-                                        ? 'bg-muted border-primary/50 text-foreground shadow-sm ring-1 ring-primary/10'
+                                        ? 'bg-muted border-foreground/30 text-foreground shadow-sm ring-1 ring-foreground/5'
                                         : 'bg-background/30 border-border text-muted-foreground hover:bg-muted/50 hover:border-border/80 hover:text-foreground'
                                     }
                                 `}

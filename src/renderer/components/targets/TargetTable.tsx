@@ -500,7 +500,7 @@ export function TargetTable({
                                                 : false)
                                     }
                                     onCheckedChange={handleSelectAll}
-                                    className="border-muted-foreground/30 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                                    className="border-muted-foreground/30 data-[state=checked]:bg-foreground data-[state=checked]:border-foreground"
                                 />
                             </th>
                             {visibleColumns.name && (
@@ -658,7 +658,7 @@ export function TargetTable({
                                     <Checkbox
                                         checked={selectedTargets.has(target.id)}
                                         onCheckedChange={(checked) => handleSelectOne(target.id, !!checked)}
-                                        className="border-muted-foreground/30 data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                                        className="border-muted-foreground/30 data-[state=checked]:bg-foreground data-[state=checked]:border-foreground"
                                     />
                                 </td>
                                 {visibleColumns.name && (

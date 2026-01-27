@@ -219,7 +219,7 @@ export function KnowledgeSettings() {
                                             <div
                                                 key={kb.id}
                                                 onClick={() => setSelectedKb(kb)}
-                                                className="p-4 border border-border rounded-xl bg-card hover:border-primary transition-all cursor-pointer group relative"
+                                                className="p-4 border border-border rounded-xl bg-card hover:border-foreground/30 transition-all cursor-pointer group relative"
                                             >
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-primary">
@@ -295,9 +295,9 @@ export function KnowledgeSettings() {
                             {elements.length > 0 && <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{elements.length} mapped</span>}
                         </div>
                         {editingId && (
-                            <div className="border border-primary/20 rounded-lg p-5 space-y-4 bg-primary/5 mb-6 animate-in slide-in-from-top-2">
+                            <div className="border border-border rounded-lg p-5 space-y-4 bg-muted/40 mb-6 animate-in slide-in-from-top-2">
                                 <div className="flex justify-between items-center mb-1">
-                                    <span className="text-xs font-bold uppercase tracking-wider text-primary">Editing Element Mapping</span>
+                                    <span className="text-xs font-bold uppercase tracking-wider text-foreground">Editing Element Mapping</span>
                                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditingId(null)}><X className="h-4 w-4" /></Button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
@@ -358,7 +358,7 @@ export function KnowledgeSettings() {
                                             </div>
                                         </div>
                                         {item.instruction && (
-                                            <div className="mt-3 text-xs bg-muted/30 p-2.5 border-l-2 border-primary/40 text-foreground/80 leading-relaxed italic">
+                                            <div className="mt-3 text-xs bg-muted/30 p-2.5 border-l-2 border-foreground/40 text-foreground/80 leading-relaxed italic">
                                                 "{item.instruction}"
                                             </div>
                                         )}

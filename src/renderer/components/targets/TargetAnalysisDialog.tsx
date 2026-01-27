@@ -68,7 +68,7 @@ export function TargetAnalysisDialog({ open, onOpenChange, target, lists, onConf
                         <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
                             placeholder="Search existing lists..."
-                            className="pl-9 bg-muted/30 border-muted-foreground/20 focus-visible:ring-primary/20"
+                            className="pl-9 bg-muted/30 border-muted-foreground/20 focus-visible:ring-foreground/10"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
@@ -83,7 +83,7 @@ export function TargetAnalysisDialog({ open, onOpenChange, target, lists, onConf
                                 className={cn(
                                     "relative flex cursor-pointer select-none items-center rounded-lg border p-3 transition-colors hover:bg-muted/50",
                                     selectedListId === null
-                                        ? "border-primary bg-primary/5 hover:bg-primary/5"
+                                        ? "border-foreground/30 bg-muted"
                                         : "border-transparent bg-muted/20"
                                 )}
                             >
@@ -119,7 +119,7 @@ export function TargetAnalysisDialog({ open, onOpenChange, target, lists, onConf
                                         className={cn(
                                             "relative flex cursor-pointer select-none items-center rounded-lg border p-3 transition-colors hover:bg-muted/50",
                                             selectedListId === list.id
-                                                ? "border-primary bg-primary/5 hover:bg-primary/5"
+                                                ? "border-foreground/30 bg-muted"
                                                 : "border-transparent"
                                         )}
                                     >
@@ -133,7 +133,7 @@ export function TargetAnalysisDialog({ open, onOpenChange, target, lists, onConf
                                             </div>
                                         </div>
                                         {selectedListId === list.id && (
-                                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
                                                 <Check className="h-3 w-3" />
                                             </div>
                                         )}
