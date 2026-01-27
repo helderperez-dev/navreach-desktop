@@ -44,14 +44,9 @@ export function TitleBar() {
   const avatarUrl = user?.user_metadata?.avatar_url;
 
   return (
-    <div className="h-12 min-h-[48px] flex items-center bg-background border-b border-border/10 drag-region transition-colors duration-200 relative">
+    <div className="h-12 min-h-[48px] flex items-center bg-background border-b border-border/20 drag-region transition-colors duration-200 relative">
       {/* Left section - Window controls space on macOS */}
-      <div className="flex-1 flex items-center pl-6">
-        {/* We can potentially add breadcrumbs or page title here later */}
-      </div>
-
-      {/* Center section - Logo */}
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+      <div className="flex-1 flex items-center pl-[84px]">
         <img
           src={reavionLogoWhite}
           alt="Reavion"

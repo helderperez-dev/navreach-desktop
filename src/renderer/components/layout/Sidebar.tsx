@@ -55,9 +55,9 @@ export function Sidebar() {
         initial={false}
         animate={{ width: sidebarCollapsed ? 56 : 200 }}
         transition={{ duration: 0.2, ease: 'easeInOut' }}
-        className="flex flex-col h-full bg-sidebar border-r border-border/10 transition-colors duration-200"
+        className="flex flex-col h-full bg-background border-r border-border/20 transition-colors duration-200"
       >
-        <nav className={cn("flex-1 pt-6 py-1 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
+        <nav className={cn("flex-1 pt-3 pb-1 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
           {navItems.map((item) => (
             <Tooltip key={item.id}>
               <TooltipTrigger asChild>
@@ -239,7 +239,7 @@ export function Sidebar() {
 
 
 
-        <div className={cn("py-2 border-t border-border/10 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
+        <div className={cn("py-2 border-t border-border/20 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
           <div className="mb-2">
             <WorkspaceSelector isCollapsed={sidebarCollapsed} />
           </div>

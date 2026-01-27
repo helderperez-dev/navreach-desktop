@@ -5,9 +5,9 @@ This document defines the standard color palette and design tokens for Reavion. 
 ## Core Principles
 1. **Neutral Grayscale**: No blue, purple, or warm tints in the dark mode. Use strictly saturation `0%` for all background and surface colors.
 2. **Soft Borders**: High-contrast lines create visual noise. Layout borders should almost always use `border-border/10` (10% opacity) unless a distinct separation is absolutely necessary.
-3. **Layered Surface Contrast**:
-    - **Sidebar (Left)**: Slightly raised (`5%` lightness).
-    - **Titlebar (Top)**: Same as background (`3.9%` lightness) to anchor the app.
+3. **Unified Layout Contrast**:
+    - **Sidebar (Left)**: Now matches the main background (`3.9%` lightness) to create a seamless "shell" look.
+    - **Titlebar (Top)**: Same as background (`3.9%` lightness).
     - **Main Background**: Deep neutral black (`3.9%` lightness).
     - **Interactive Cards**: Subtle elevation (`bg-muted/20` or darker variations).
 
@@ -39,10 +39,10 @@ Located in `src/renderer/styles/globals.css`:
 ```
 
 ## Border Usage Standards
-To avoid the "prison bars" effect (crossing hard lines), always prefer low-opacity borders for UI scaffolding:
+To maintain clarity while keeping a premium feel, borders use slightly higher opacity for structural definition:
 
-- **Layout Dividers**: `border-border/10`
-- **Subtle Row Separators**: `border-border/5`
+- **Primary Layout Dividers**: `border-border/20` (TitleBar bottom, Sidebar right)
+- **Subtle Row Separators**: `border-border/10`
 - **Card Outlines**: `border-border/10`
 - **Active Focus**: `border-border/30` or `ring-1`
 
@@ -68,4 +68,15 @@ Navigation items are ordered by workflow logic:
 ### 3. Global Actions & Configuration
 - **Settings**: Placed at the bottom of the sidebar, separated from the operational flow.
 - **Queue/Tasks**: Positioned within the main flow but visually distinct, featuring a badge for pending actions.
-- **Title Bar**: Kept minimal with the logo centered and user profile/status on the right.
+- **Title Bar**: Minimal layout with the **logo left-aligned** (`pl-[84px]`) to clear macOS window controls. User profile and Pro status Badge are on the right.
+
+## Component Aesthetics
+
+### 1. Tooltips & Floating Panels
+- **Aesthetic**: Modern glassmorphism without heavy drop shadows.
+- **Background**: `bg-background/60` with `backdrop-blur-xl`.
+- **Border**: `border-white/20` with a subtle inner ring (`ring-white/5`).
+- **Shadows**: No external shadows (`shadow-none`) for a cleaner, flatter look.
+
+### 2. Sidebar spacing
+- **Top Padding**: The navigation items start with a `pt-3` padding.
