@@ -759,6 +759,13 @@ export function TargetTable({
                                         </div>
                                     </td>
                                 )}
+                                {visibleColumns.email && (
+                                    <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
+                                        <div className="text-[11px] text-muted-foreground truncate">
+                                            {target.email || '-'}
+                                        </div>
+                                    </td>
+                                )}
                                 {visibleColumns.type && (
                                     <td className="px-6 py-4 overflow-hidden first:rounded-l-xl last:rounded-r-xl">
                                         <span className={cn(

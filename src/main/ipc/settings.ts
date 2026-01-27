@@ -100,7 +100,7 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       const defaultProviderType = sysSettings['default_ai_provider'];
       const defaultModelId = sysSettings['default_ai_model'];
 
-      const modelProviders = (providersRes.data || []).map(p => ({
+      const modelProviders = (providersRes.data || []).map((p: any) => ({
         id: p.id,
         name: p.name,
         type: p.type,
@@ -110,7 +110,7 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
         enabled: p.enabled
       }));
 
-      const mcpServers = (serversRes.data || []).map(s => ({
+      const mcpServers = (serversRes.data || []).map((s: any) => ({
         id: s.id,
         name: s.name,
         type: s.type,
@@ -118,7 +118,7 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
         config: s.config
       }));
 
-      const apiTools = (toolsRes.data || []).map(t => ({
+      const apiTools = (toolsRes.data || []).map((t: any) => ({
         id: t.id,
         name: t.name,
         description: t.description,
@@ -149,10 +149,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
           ]
         };
 
-        const finalProviders = [systemProvider, ...modelProviders.filter(p => p.id !== 'system-default')];
+        const finalProviders = [systemProvider, ...modelProviders.filter((p: any) => p.id !== 'system-default')];
 
         return {
           ...localSettings,
+          defaultModelId, // Include the system default ID
           modelProviders: finalProviders,
           mcpServers,
           apiTools

@@ -1,6 +1,10 @@
 import { IpcMain, BrowserWindow, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+
+// SILENCE NOISY LANGCHAIN WARNINGS
+process.env.LANGCHAIN_ADAPTER_MIGRATION_WARNING = 'false';
+process.env.LANGCHAIN_VERBOSE = 'false';
 import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
@@ -156,7 +160,8 @@ function convertMessages(messages: Message[], systemPrompt?: string, disableVisi
                     id: tc.id,
                     name: tc.name,
                     args: tc.args || tc.arguments || {}
-                })) || []
+                })) || [],
+                additional_kwargs: {} // Explicitly empty to prevent legacy parsing logic
             }));
 
             // 2. Add the tool response messages immediately after if they exist in history
@@ -465,33 +470,23 @@ export async function resolveAIConfig(
             userSettings = userData;
         }
 
-        // 3. Determine Effective Config
-        // 3. Determine Effective Config
-        // Priority: 
-        // 1. Cloud User Override (e.g. forced by admin/plan)
-        // 2. Local User Selection ('defaultModelId' from input settings)
-        // 3. System Default (if nothing else selected)
+        const sysProviderType = sysSettings['default_ai_provider'];
+        const sysModelId = sysSettings['default_ai_model'];
 
         const cloudProviderType = userSettings?.ai_provider;
         const cloudModelId = userSettings?.ai_model;
         const cloudApiKey = userSettings?.ai_api_key;
 
-        const sysProviderType = sysSettings['default_ai_provider'];
-        const sysModelId = sysSettings['default_ai_model'];
+        // Priority Logic:
+        // 1. Explicit Request (if not system-default/automatic)
+        // 2. Cloud User Override
+        // 3. Local User Selection
+        // 4. System Default
 
-        // If localDefaultModelId is provided, we need to find what provider it belongs to.
-        // We assume valid model IDs formats or that we can resolve provider later.
-        let localProviderType = null;
-        if (localDefaultModelId) {
-            // Heuristic: If we have store access (we are in main process), we could look it up.
-            // But simpler: If the ID matches a known pattern or check all provider models.
-            // Since we can't easily access the full provider list here without passing it, 
-            // we rely on the caller to have handled some of this or we do basic checks.
-            // OR: We check if the 'localDefaultModelId' matches the requested provider's models first.
-        }
+        const isExplicitRequest = model.id && model.id !== 'system-default' && model.id !== 'automatic';
 
-        const targetProviderType = cloudProviderType || (localDefaultModelId ? undefined : sysProviderType);
-        const targetModelId = cloudModelId || localDefaultModelId || sysModelId;
+        const targetProviderType = isExplicitRequest ? (provider.type || provider.id) : (cloudProviderType || (localDefaultModelId ? undefined : sysProviderType));
+        const targetModelId = isExplicitRequest ? model.id : (cloudModelId || localDefaultModelId || sysModelId);
         const targetApiKey = cloudApiKey || sysSettings['system_ai_api_key'];
 
         // If we have a local model ID but no provider override from cloud, 
@@ -509,36 +504,31 @@ export async function resolveAIConfig(
         let finalModelId = targetModelId;
         let finalProviderType = targetProviderType;
 
+        // Fetch all available providers once for validation and inference
+        const { data: dbProviders } = await supabaseClient.from('model_providers').select('*');
+        const providers: ModelProvider[] = (dbProviders || []).map((p: any) => ({
+            id: p.id,
+            name: p.name,
+            type: p.type,
+            apiKey: p.api_key,
+            baseUrl: p.base_url,
+            models: p.models || [],
+            enabled: p.enabled
+        }));
+
+        const managedSystemProvider: ModelProvider[] = sysProviderType && sysModelId ? [{
+            id: 'system-default',
+            name: 'Reavion',
+            type: sysProviderType as any,
+            apiKey: 'managed-by-system',
+            models: [{ id: sysModelId, name: 'Reavion Flash', providerId: 'system-default', contextWindow: 128000, enabled: true }],
+            enabled: true
+        }] : [];
+
+        const allProviders = [...providers, ...managedSystemProvider];
+
         // If we are using local default, we need to infer provider if not set
         if (!cloudProviderType && localDefaultModelId && !finalProviderType) {
-            // We don't have the provider mapping here easily unless we pass all providers.
-            // BUT, usually the 'provider' arg passed to this function is the 'start' point.
-            // If the localDefaultModelId is inside the passed 'provider', we are good.
-            // If it's a cross-provider switch (e.g. OpenAI -> Anthropic), we have a problem 
-            // unless we fetch the full list.
-
-            // To fix properly: We need to search all providers for this model ID.
-            const { data: dbProviders } = await supabaseClient.from('model_providers').select('*');
-            const providers: ModelProvider[] = (dbProviders || []).map((p: any) => ({
-                id: p.id,
-                name: p.name,
-                type: p.type,
-                apiKey: p.api_key,
-                baseUrl: p.base_url,
-                models: p.models || [],
-                enabled: p.enabled
-            }));
-
-            const managedSystemProvider: ModelProvider[] = sysProviderType && sysModelId ? [{
-                id: 'system-default',
-                name: 'Reavion',
-                type: sysProviderType as any,
-                apiKey: 'managed-by-system',
-                models: [{ id: sysModelId, name: 'Reavion Flash', providerId: 'system-default', contextWindow: 4096, enabled: true }],
-                enabled: true
-            }] : [];
-
-            const allProviders = [...providers, ...managedSystemProvider];
             const foundProvider = allProviders.find((p: any) =>
                 p.models?.some((m: any) => m.id === localDefaultModelId)
             );
@@ -556,6 +546,24 @@ export async function resolveAIConfig(
             effectiveProvider.id = finalProviderType;
             if (finalProviderType === 'openrouter' && !effectiveProvider.baseUrl) {
                 effectiveProvider.baseUrl = 'https://openrouter.ai/api/v1';
+            }
+        }
+
+        // AUTO-MIGRATION/RECOVERY:
+        // If the finalized modelId is NOT found in the effective provider's models,
+        // it means either the provider changed or the model is legacy.
+        // We MUST fall back to the system default model ID in this case to prevent 404s.
+        const modelExists = finalModelId && (
+            (finalProviderType === 'system-default' && sysModelId === finalModelId) ||
+            providers.some((p: any) => p.type === finalProviderType && p.models?.some((m: any) => m.id === finalModelId))
+        );
+
+        if (finalModelId && !modelExists && sysModelId) {
+            console.log(`[AI Service] Model ${finalModelId} not found in effective providers. Falling back to system default: ${sysModelId}`);
+            finalModelId = sysModelId;
+            if (sysProviderType) {
+                effectiveProvider.type = sysProviderType as any;
+                effectiveProvider.id = 'system-default';
             }
         }
 
@@ -1578,7 +1586,6 @@ You are in FAST mode.
                             responseLower.includes("first, i'll") || responseLower.includes("i will navigate");
 
                         if (isBrowserTask && isPromissory && iteration < 3 && !isPlaybookRun) {
-                            console.log(`[AI Service] Stalling detected (Turn ${iteration}). Nudging...`);
                             langchainMessages.push(new HumanMessage("(System: Proceed with your plan. Execute the next action tool immediately. Do not stop to chat.)"));
                             continue;
                         }
@@ -1587,7 +1594,6 @@ You are in FAST mode.
                         const hasFinishedSignal = responseLower.includes("[complete]") || responseLower.includes("i have finished") || responseLower.includes("mission accomplished");
 
                         if (infiniteMode && baseUserGoal && iteration < hardStopIterations && !hasFinishedSignal) {
-                            console.log(`[AI Service] Infinite Mode: Autonomous loop continuing.`);
                             langchainMessages.push(
                                 new HumanMessage(
                                     `Remain in autonomous mode. Goal: "${baseUserGoal}". Immediately plan and execute the next set of actions. 
@@ -1605,8 +1611,6 @@ Summarize briefly (1 line) and continue.`
                     }
 
                     langchainMessages.push(response);
-
-                    console.log("Response: ", response);
 
                     // Extract and clean narration from the model response
                     // Some models (like DeepSeek via OpenRouter) return reasoning in a separate field

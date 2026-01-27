@@ -17,11 +17,25 @@ export function ModelSelector() {
   const enabledProviders = modelProviders.filter((p) => p.enabled);
 
   useEffect(() => {
-    if (!selectedModel && enabledProviders.length > 0) {
-      const firstProvider = enabledProviders[0];
-      if (firstProvider.models.length > 0) {
-        setSelectedModel({ ...firstProvider.models[0], providerId: firstProvider.id });
+    const systemProvider = enabledProviders.find(p => p.id === 'system-default');
+    const systemModel = systemProvider?.models[0];
+
+    // Case 1: No model selected - use system default if available, otherwise first available model
+    if (!selectedModel) {
+      if (systemModel) {
+        setSelectedModel({ ...systemModel, providerId: 'system-default' });
+      } else if (enabledProviders.length > 0) {
+        const firstProvider = enabledProviders[0];
+        if (firstProvider.models.length > 0) {
+          setSelectedModel({ ...firstProvider.models[0], providerId: firstProvider.id });
+        }
       }
+      return;
+    }
+
+    // Case 2: User is on system-default, but the model ID has changed in the system settings
+    if (selectedModel.providerId === 'system-default' && systemModel && selectedModel.id !== systemModel.id) {
+      setSelectedModel({ ...systemModel, providerId: 'system-default' });
     }
   }, [selectedModel, enabledProviders, setSelectedModel]);
 

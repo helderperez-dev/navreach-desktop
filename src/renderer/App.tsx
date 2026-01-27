@@ -46,8 +46,6 @@ export function App() {
           setSession(session);
         } else {
           console.log('[App] No session found on startup');
-          // We wait for onAuthStateChange to confirm before setting to null
-          // to avoid flickering if it's just taking a moment to load from storage
         }
       } catch (err: any) {
         console.error('[App] Initial session check failed:', err);
@@ -56,6 +54,23 @@ export function App() {
     };
 
     checkSession();
+
+    // Periodic settings refresh (every 5 minutes) to stay in sync with system defaults
+    const refreshInterval = setInterval(() => {
+      if (useAuthStore.getState().session) {
+        console.log('[App] Periodic settings refresh...');
+        loadSettings();
+      }
+    }, 5 * 60 * 1000);
+
+    // Refresh on window focus to be more reactive to admin changes
+    const onFocus = () => {
+      if (useAuthStore.getState().session) {
+        console.log('[App] Window focused, refreshing settings...');
+        loadSettings();
+      }
+    };
+    window.addEventListener('focus', onFocus);
 
     /* 
       We explicitly sync the session to Main process on startup if one exists. 
@@ -147,6 +162,8 @@ export function App() {
     });
 
     return () => {
+      clearInterval(refreshInterval);
+      window.removeEventListener('focus', onFocus);
       subscription.unsubscribe();
       unsubscribeAuth?.();
       unsubscribeMenu?.();

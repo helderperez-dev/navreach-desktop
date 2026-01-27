@@ -1361,162 +1361,179 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         const contents = await getContents();
         const result = await contents.executeJavaScript(`
           (function() {
-            const elements = [];
-            const vWidth = window.innerWidth;
-            const vHeight = window.innerHeight;
-            
-            function isVisible(el) {
-                if (!el) return false;
-                const rect = el.getBoundingClientRect();
-                
-                // If it has visible children despite 0 size, we might want it, 
-                // but usually the children will be caught anyway.
-                if (rect.width === 0 && rect.height === 0) return false;
-                
-                if (${only_visible !== false}) {
-                    const buffer = 200; // More focused buffer to avoid off-screen clutter
-                    if (rect.bottom < -buffer || rect.top > vHeight + buffer || rect.right < -buffer || rect.left > vWidth + buffer) return false;
-                }
-
-                const style = window.getComputedStyle(el);
-                if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
-                
-                if (el.getAttribute('aria-hidden') === 'true') return false;
-                return true;
-            }
-
-            const selector = 'button, a, input, textarea, select, summary, [role], [data-testid], [tabindex]:not([tabindex="-1"]), [contenteditable], [onclick], iframe';
-            
-            function collect(root, ox = 0, oy = 0) {
-                const candidates = root.querySelectorAll(selector);
-                candidates.forEach(node => {
-                    const role = node.getAttribute('role');
-                    const tag = node.tagName.toLowerCase();
-                    const isIframe = tag === 'iframe';
+            try {
+              const elements = [];
+              const vWidth = window.innerWidth;
+              const vHeight = window.innerHeight;
+              
+              function isVisible(el) {
+                  if (!el) return false;
+                  try {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.width === 0 && rect.height === 0) return false;
                     
-                    let isActuallyInteractive = 
-                        ['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY'].includes(node.tagName) ||
-                        ['button', 'link', 'checkbox', 'menuitem', 'option', 'tab', 'switch', 'textbox', 'combobox', 'searchbox', 'listbox'].includes(role) ||
-                        node.hasAttribute('onclick') ||
-                        node.hasAttribute('contenteditable');
-
-                    const rect = node.getBoundingClientRect();
-                    const testId = node.getAttribute('data-testid');
-                    let ariaLabel = node.getAttribute('aria-label');
-                    if (!ariaLabel && node.getAttribute('aria-labelledby')) {
-                        const ids = node.getAttribute('aria-labelledby').split(' ');
-                        ariaLabel = ids.map(id => root.getElementById(id)?.innerText).filter(Boolean).join(' ');
+                    if (${only_visible !== false}) {
+                        const buffer = 200;
+                        if (rect.bottom < -buffer || rect.top > vHeight + buffer || rect.right < -buffer || rect.left > vWidth + buffer) return false;
                     }
-                    const title = node.getAttribute('title');
-                    const placeholder = node.getAttribute('placeholder') || node.getAttribute('aria-placeholder');
-                    const innerText = node.innerText?.trim();
-                    const value = node.value?.trim();
-                    const href = node.getAttribute('href');
-
-                    let name = ariaLabel || testId || title || placeholder || innerText || '';
-
-                    // FORCE reCAPTCHA Visibility and optimized targeting
-                    if (isIframe && (node.src?.includes('recaptcha') || node.name?.includes('recaptcha'))) {
-                        isActuallyInteractive = true;
-                        // reCAPTCHA Checkbox iframe is usually ~304x78. The checkbox is at ~28,39 relative to top-left.
-                        if (rect.width > 200 && rect.width < 400 && rect.height < 100) {
-                             node.__REAVION_CUSTOM_POS__ = { 
-                                 x: Math.round(ox + rect.left + 28), 
-                                 y: Math.round(oy + rect.top + 39) 
-                             };
-                             name = 'reCAPTCHA checkbox';
-                        }
-                    }
-
-                    if (isActuallyInteractive && isVisible(node)) {
-                        const i = elements.length;
+  
+                    const style = window.getComputedStyle(el);
+                    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                    
+                    if (el.getAttribute('aria-hidden') === 'true') return false;
+                    return true;
+                  } catch (e) { return false; }
+              }
+  
+              const selector = 'button, a, input, textarea, select, summary, [role], [data-testid], [tabindex]:not([tabindex="-1"]), [contenteditable], [onclick], iframe';
+              
+              function collect(root, ox = 0, oy = 0) {
+                  const candidates = root.querySelectorAll(selector);
+                  candidates.forEach(node => {
+                      try {
+                        const role = node.getAttribute('role');
+                        const tag = node.tagName.toLowerCase();
+                        const isIframe = tag === 'iframe';
                         
-                        if (isIframe && !name) {
-                            name = 'reCAPTCHA Challenge Container';
+                        let isActuallyInteractive = 
+                            ['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT', 'SUMMARY'].includes(node.tagName) ||
+                            ['button', 'link', 'checkbox', 'menuitem', 'option', 'tab', 'switch', 'textbox', 'combobox', 'searchbox', 'listbox'].includes(role) ||
+                            node.hasAttribute('onclick') ||
+                            node.hasAttribute('contenteditable');
+    
+                        const rect = node.getBoundingClientRect();
+                        const testId = node.getAttribute('data-testid');
+                        let ariaLabel = node.getAttribute('aria-label');
+    
+                        if (!ariaLabel && node.getAttribute('aria-labelledby')) {
+                            try {
+                              const ids = node.getAttribute('aria-labelledby').split(/\\s+/);
+                              ariaLabel = ids.map(id => {
+                                  if (!id) return null;
+                                  const found = root.getElementById ? root.getElementById(id) : root.querySelector('[id="' + id.replace(/"/g, '\\\\"') + '"]');
+                                  return found ? found.innerText : null;
+                              }).filter(Boolean).join(' ');
+                            } catch (e) {}
                         }
-
-                        if (!name && (tag === 'input' || tag === 'textarea' || tag === 'select') && node.id) {
-                            const labelEl = root.querySelector('label[for="' + node.id + '"]');
-                            if (labelEl) name = labelEl.innerText;
-                        }
-
-                        if (!name) {
-                            const icon = node.querySelector('svg, i, img');
-                            if (icon) {
-                                name = icon.getAttribute('aria-label') || icon.getAttribute('title') || icon.getAttribute('alt') || icon.querySelector('title')?.innerText || '';
+                        const title = node.getAttribute('title');
+                        const placeholder = node.getAttribute('placeholder') || node.getAttribute('aria-placeholder');
+                        const innerText = node.innerText?.trim();
+                        const value = node.value?.trim();
+                        const href = node.getAttribute('href');
+    
+                        let name = ariaLabel || testId || title || placeholder || innerText || '';
+    
+                        if (isIframe && (node.src?.includes('recaptcha') || node.name?.includes('recaptcha'))) {
+                            isActuallyInteractive = true;
+                            if (rect.width > 200 && rect.width < 400 && rect.height < 100) {
+                                 node.__REAVION_CUSTOM_POS__ = { 
+                                     x: Math.round(ox + rect.left + 28), 
+                                     y: Math.round(oy + rect.top + 39) 
+                                 };
+                                 name = 'reCAPTCHA checkbox';
                             }
                         }
-
-                        name = name.replace(/\\s+/g, ' ').trim().slice(0, 80);
-                        let description = (innerText && name !== innerText) ? innerText.replace(/\\s+/g, ' ').trim().slice(0, 120) : undefined;
-                        if (description && (description.length < 2 || description === name)) description = undefined;
-                        
-                        const state = [];
-                        if (node.getAttribute('aria-expanded') === 'true') state.push('expanded');
-                        const ariaSelected = node.getAttribute('aria-selected') === 'true';
-                        const hasActiveClass = node.classList.contains('active') || node.classList.contains('selected');
-                        
-                        if (ariaSelected || hasActiveClass) state.push('selected');
-                        if (node.disabled) state.push('disabled');
-                        if (node.checked) state.push('checked');
-
-                        node.setAttribute('data-reavion-id', i.toString());
-
-                        let suggested = '';
-                        if (testId) suggested = '[data-testid="' + testId + '"]';
-                        else if (ariaLabel && ariaLabel.length < 50) suggested = 'aria/' + ariaLabel;
-                        else if (node.id && !node.id.match(/^ember\d+/i) && !node.id.match(/^[a-z0-9]{8,}$/)) suggested = '#' + node.id;
-                        else if (name && name.length < 50 && (tag === 'button' || tag === 'a' || role === 'button' || role === 'link')) suggested = 'text/' + name;
-                        else suggested = 'id/' + i; 
-
-                        elements.push({
-                            _ref: i,
-                            suggestedSelector: suggested || undefined,
-                            role: role || tag,
-                            name: name || (tag === 'button' ? 'Unlabeled button' : tag === 'a' ? 'Unlabeled link' : undefined),
-                            description: description,
-                            ariaLabel: ariaLabel || undefined,
-                            placeholder: placeholder || undefined,
-                            testId: testId || undefined,
-                            nodeId: node.id || undefined,
-                            nameAttr: node.getAttribute('name') || undefined,
-                            value: (tag === 'input' || tag === 'textarea') ? value : undefined,
-                            href: (tag === 'a') ? href : undefined,
-                            pos: node.__REAVION_CUSTOM_POS__ || { 
-                                x: Math.round(ox + rect.left + rect.width / 2), 
-                                y: Math.round(oy + rect.top + rect.height / 2) 
-                            },
-                            state: state.length > 0 ? state.join(', ') : undefined
-                        });
-                    }
-                });
-
-                // Traverse Shadow DOM and IFrames
-                const walker = document.createTreeWalker(root, 1, function(node) { 
-                    try { return (node.shadowRoot || (node.tagName === 'IFRAME' && node.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
-                });
-                let host;
-                while (host = walker.nextNode()) {
-                    if (host.shadowRoot) collect(host.shadowRoot, ox, oy);
-                    try {
-                        if (host.tagName === 'IFRAME' && host.contentDocument) {
-                            const iRect = host.getBoundingClientRect();
-                            collect(host.contentDocument, ox + iRect.left, oy + iRect.top);
+    
+                        if (isActuallyInteractive && isVisible(node)) {
+                            const i = elements.length;
+                            
+                            if (isIframe && !name) {
+                                name = 'reCAPTCHA Challenge Container';
+                            }
+    
+                            if (!name && (tag === 'input' || tag === 'textarea' || tag === 'select') && node.id) {
+                                try {
+                                  const labelEl = root.querySelector('label[for="' + node.id.replace(/"/g, '\\\\"') + '"]');
+                                  if (labelEl) name = labelEl.innerText;
+                                } catch (e) {}
+                            }
+    
+                            if (!name) {
+                                const icon = node.querySelector('svg, i, img');
+                                if (icon) {
+                                    name = icon.getAttribute('aria-label') || icon.getAttribute('title') || icon.getAttribute('alt') || icon.querySelector('title')?.innerText || '';
+                                }
+                            }
+    
+                            name = name.replace(/\\s+/g, ' ').trim().slice(0, 80);
+                            let description = (innerText && name !== innerText) ? innerText.replace(/\\s+/g, ' ').trim().slice(0, 120) : undefined;
+                            if (description && (description.length < 2 || description === name)) description = undefined;
+                            
+                            const state = [];
+                            if (node.getAttribute('aria-expanded') === 'true') state.push('expanded');
+                            const ariaSelected = node.getAttribute('aria-selected') === 'true';
+                            const hasActiveClass = node.classList.contains('active') || node.classList.contains('selected');
+                            
+                            if (ariaSelected || hasActiveClass) state.push('selected');
+                            if (node.disabled) state.push('disabled');
+                            if (node.checked) state.push('checked');
+    
+                            node.setAttribute('data-reavion-id', i.toString());
+    
+                            let suggested = '';
+                            if (testId) suggested = '[data-testid="' + testId + '"]';
+                            else if (ariaLabel && ariaLabel.length < 50) suggested = 'aria/' + ariaLabel;
+                            else if (node.id && !node.id.match(/^ember\\d+/i) && !node.id.match(/^[a-z0-9]{8,}$/)) suggested = '#' + node.id;
+                            else if (name && name.length < 50 && (tag === 'button' || tag === 'a' || role === 'button' || role === 'link')) suggested = 'text/' + name;
+                            else suggested = 'id/' + i; 
+    
+                            elements.push({
+                                _ref: i,
+                                suggestedSelector: suggested || undefined,
+                                role: role || tag,
+                                name: name || (tag === 'button' ? 'Unlabeled button' : tag === 'a' ? 'Unlabeled link' : undefined),
+                                description: description,
+                                ariaLabel: ariaLabel || undefined,
+                                placeholder: placeholder || undefined,
+                                testId: testId || undefined,
+                                nodeId: node.id || undefined,
+                                nameAttr: node.getAttribute('name') || undefined,
+                                value: (tag === 'input' || tag === 'textarea') ? value : undefined,
+                                href: (tag === 'a') ? href : undefined,
+                                pos: node.__REAVION_CUSTOM_POS__ || { 
+                                    x: Math.round(ox + rect.left + rect.width / 2), 
+                                    y: Math.round(oy + rect.top + rect.height / 2) 
+                                },
+                                state: state.length > 0 ? state.join(', ') : undefined
+                            });
                         }
-                    } catch(e) {}
-                }
+                      } catch (nodeErr) {}
+                  });
+  
+                  const walker = document.createTreeWalker(root, 1, function(node) { 
+                      try { return (node.shadowRoot || (node.tagName === 'IFRAME' && node.contentDocument)) ? 1 : 3; } catch(e) { return 3; }
+                  });
+                  let host;
+                  while (host = walker.nextNode()) {
+                      if (host.shadowRoot) collect(host.shadowRoot, ox, oy);
+                      try {
+                          if (host.tagName === 'IFRAME' && host.contentDocument) {
+                              const iRect = host.getBoundingClientRect();
+                              collect(host.contentDocument, ox + iRect.left, oy + iRect.top);
+                          }
+                      } catch(e) {}
+                  }
+              }
+  
+              collect(document);
+  
+              return { 
+                  url: window.location.href, 
+                  title: document.title, 
+                  viewport: { width: vWidth, height: vHeight },
+                  elements: elements.slice(0, 1500) 
+              };
+            } catch (err) {
+              return { error: err.message, stack: err.stack };
             }
-
-            collect(document);
-
-            return { 
-                url: window.location.href, 
-                title: document.title, 
-                viewport: { width: vWidth, height: vHeight },
-                elements: elements.slice(0, 1500) 
-            };
           })()
         `);
+
+        if (result && result.error) {
+          sendDebugLog('error', 'browser_dom_snapshot: Inner script failure', { error: result.error, stack: result.stack });
+          return JSON.stringify({ success: false, error: result.error });
+        }
+
         return JSON.stringify({ success: true, snapshot: result });
       } catch (error) {
         sendDebugLog('error', 'browser_dom_snapshot: Tool failure', { error: String(error) });

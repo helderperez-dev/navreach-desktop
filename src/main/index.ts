@@ -1,4 +1,18 @@
 import { app, BrowserWindow, shell, ipcMain, nativeImage } from 'electron';
+
+// SILENCE NOISY LANGCHAIN WARNINGS
+process.env.LANGCHAIN_ADAPTER_MIGRATION_WARNING = 'false';
+process.env.LANGCHAIN_VERBOSE = 'false';
+
+// Monkey-patch console.warn to forcefully silence the migration warning
+const originalWarn = console.warn;
+console.warn = (...args) => {
+  if (typeof args[0] === 'string' && args[0].includes('New LangChain packages are available')) {
+    return;
+  }
+  originalWarn(...args);
+};
+
 import { autoUpdater } from 'electron-updater';
 import { join } from 'path';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
