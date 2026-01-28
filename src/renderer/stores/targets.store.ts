@@ -859,12 +859,19 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             const upsertPayload: any[] = [];
             uniqueInputMap.forEach((targetData, url) => {
                 const existingId = existingMap.get(url);
-                upsertPayload.push({
-                    ...targetData,
-                    id: existingId, // If undefined, Supabase creates new. If present, it updates.
+                const { list_id, ...data } = targetData; // Remove list_id as it doesn't belong in 'targets' table anymore
+
+                const payloadItem: any = {
+                    ...data,
                     user_id: user.id,
                     workspace_id: workspaceId
-                });
+                };
+
+                if (existingId) {
+                    payloadItem.id = existingId;
+                }
+
+                upsertPayload.push(payloadItem);
             });
 
             // 4. Perform Bulk Upsert via Service

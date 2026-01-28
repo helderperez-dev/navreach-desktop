@@ -214,9 +214,16 @@ export const targetService = {
     },
 
     async bulkCreateTargets(targets: any[]) {
+        // Sanitize targets: remove list_id (handled in assignments) and empty IDs
+        const sanitizedTargets = targets.map(target => {
+            const { list_id, ...data } = target;
+            if (!data.id) delete data.id;
+            return data;
+        });
+
         const { data, error } = await supabase
             .from('targets')
-            .upsert(targets, { onConflict: 'url, workspace_id' })
+            .upsert(sanitizedTargets, { onConflict: 'url, workspace_id' })
             .select();
         return { data: data as Target[], error };
     },

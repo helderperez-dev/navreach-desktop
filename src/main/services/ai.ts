@@ -9,6 +9,31 @@ import { ChatOpenAI } from '@langchain/openai';
 import { ChatAnthropic } from '@langchain/anthropic';
 import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
 import type { BaseMessage } from '@langchain/core/messages';
+
+/**
+ * Strips model-specific formatting, internal monologue tags, and common prefixes.
+ * This is used to ensure the UI turns are clean and overlap detection is reliable.
+ */
+function cleanModelOutput(text: string): string {
+    if (!text) return '';
+    return text
+        // 1. Strip entire thinking/thought blocks (XML style)
+        .replace(/<(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+).*?>[\s\S]*?<\/(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+)>/gi, '')
+        // 2. Strip any remaining stray XML-like tags
+        .replace(/<(\/?[a-z0-9_-]+).*?>/gi, '')
+        // 3. Strip common multi-line prefixes (case-insensitive, multi-line)
+        // Includes Agent/Assistant/Narration/Response/Output at start of lines
+        .replace(/^(Narration|Assistant|Reasoning|Thought|Thinking|Response|Output|Action|Agent|Message):\s*/gmi, '')
+        // 4. Strip specific Markdown-style markers models sometimes use
+        .replace(/^(\*\*|\[)?(Narration|Assistant|Reasoning|Thought|Thinking|Response|Output|Action|Agent|Final Answer)(\*\*|\])?:?\s*/gmi, '')
+        // 5. Strip leading fillers like "Ok. ", "Yes. " but only if they are isolated or at the very start
+        .replace(/^(Yes|OK|Ok)[\.,]?\s+(?=[A-Z])/i, '')
+        .replace(/^(Yes|OK|Ok)[\.]?\s*$/gmi, '')
+        // 6. Clean up boxed content markers and surrounding quotes
+        .replace(/\\boxed\{([\s\S]*?)\}/g, '$1')
+        .replace(/^["']|["']$/g, '')
+        .trim();
+}
 import type { ModelProvider, ModelConfig, Message } from '../../shared/types';
 import { createBrowserTools, getWebviewContents, resetBrowser } from './browser-tools';
 import { createTargetTools } from './target-tools';
@@ -1554,16 +1579,7 @@ You are in FAST mode.
                         // Send the final response text to the frontend
                         if (responseContent && responseContent.trim() && window && !window.isDestroyed()) {
                             // Clean up the final response
-                            let cleanResponse = responseContent
-                                .replace(/<(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+).*?>[\s\S]*?<\/(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+)>/gi, '') // Strip entire blocks
-                                .replace(/<(\/?[a-z0-9_-]+).*?>/gi, '') // Strip any remaining stray tags
-                                .replace(/^(Narration|Assistant|Reasoning|Thought|Thinking|Response|Output|Action):\s*/gmi, '') // Multi-line prefix strip
-                                .replace(/^(Yes|OK|Ok)[\.,]?\s+(?=[A-Z])/i, '') // Strip leading fillers like "Ok. " but only if followed by valid text
-                                .replace(/^(Yes|OK|Ok)[\.]?\s*$/gmi, '') // Strip standalone fillers
-                                .replace(/\\boxed\{([\s\S]*?)\}/g, '$1')
-                                .replace(/(\*\*|\[)?Final Answer(\*\*|\])?:?/gi, '')
-                                .replace(/^["']|["']$/g, '')
-                                .trim();
+                            let cleanResponse = cleanModelOutput(responseContent);
 
                             // DEDUPLICATION: Longest Prefix Clipping
                             let deDuped = cleanResponse;
@@ -1673,16 +1689,7 @@ Summarize briefly (1 line) and continue.`
                     // Send narration if we have any meaningful text. 
                     // We send this even if there are no tool calls, as it might be a multi-turn intermediate thought.
                     if (agentNarration && agentNarration.trim() && window && !window.isDestroyed()) {
-                        const cleanNarration = agentNarration
-                            .replace(/<(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+).*?>[\s\S]*?<\/(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+)>/gi, '') // Strip entire blocks
-                            .replace(/<(\/?[a-z0-9_-]+).*?>/gi, '') // Strip any remaining stray tags
-                            .replace(/^(Narration|Assistant|Reasoning|Thought|Thinking|Response|Output|Action):\s*/gmi, '') // Multi-line prefix strip
-                            .replace(/^(Yes|OK|Ok)[\.,]?\s+(?=[A-Z])/i, '') // Strip leading fillers like "Ok. " but only if followed by valid text
-                            .replace(/^(Yes|OK|Ok)[\.]?\s*$/gmi, '') // Strip standalone fillers
-                            .replace(/\\boxed\{([\s\S]*?)\}/g, '$1')
-                            .replace(/(\*\*|\[)?Final Answer(\*\*|\])?:?/gi, '')
-                            .replace(/^["']|["']$/g, '') // Remove surrounding quotes
-                            .trim();
+                        const cleanNarration = cleanModelOutput(agentNarration);
 
                         if (cleanNarration && cleanNarration.length >= 1) {
                             // DEDUPLICATION: Longest Prefix Clipping

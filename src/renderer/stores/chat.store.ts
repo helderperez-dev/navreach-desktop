@@ -156,8 +156,7 @@ export const useChatStore = create<ChatState>()(
 
               // D. Overlap Detection (Suffix-Prefix)
               // Check if the END of existingContent matches the START of newContent.
-              // We use a simplified check: search for the first 30 chars of newContent in the last 1000 chars of existingContent.
-              if (shouldAppend && normalizedNew.length > 5) {
+              if (shouldAppend && normalizedNew.length > 2) {
                 const searchWindow = 1000;
 
                 // CRITICAL: For turn-based deduplication, if the current message is short, 
@@ -166,28 +165,29 @@ export const useChatStore = create<ChatState>()(
                 if (existingContent.length < 500) {
                   const prevAssistantMsg = messages.slice(0, messages.length - 1).reverse().find(m => m.role === 'assistant');
                   if (prevAssistantMsg) {
+                    // Include the previous message and a separator to catch turn-to-turn transitions
                     comprehensiveHistory = (prevAssistantMsg.content || '') + "\n" + existingContent;
                   }
                 }
 
                 const existingTail = comprehensiveHistory.slice(-searchWindow);
                 const lowerNew = normalizedNew.toLowerCase();
-                const trimmedTail = existingTail.trimEnd(); // CRITICAL: Strip trailing newlines for overlap check
+                const trimmedTail = existingTail.trimEnd(); // Strip trailing whitespace for better matching
 
                 let overlapIndex = -1;
+                // Find the longest overlap: start checking from the beginning of the tail
                 for (let i = 0; i < trimmedTail.length; i++) {
                   const suffix = trimmedTail.slice(i);
-                  // Case-insensitive check for prefix overlap
-                  if (lowerNew.startsWith(suffix.toLowerCase())) {
+                  // Case-insensitive check: does the new content START with this suffix of the history?
+                  if (suffix.length > 5 && lowerNew.startsWith(suffix.toLowerCase())) {
                     overlapIndex = i;
                     break;
                   }
 
-                  // Relaxed check for robustness
-                  const trimSuffix = suffix.trim();
-                  if (trimSuffix.length > 20) { // Only loose match substantial blocks
-                    const matchIdx = lowerNew.indexOf(trimSuffix.toLowerCase());
-                    if (matchIdx !== -1 && matchIdx < 5) {
+                  // Robust check for substantial blocks even if not a perfect prefix match
+                  if (suffix.length > 20) {
+                    const matchIdx = lowerNew.indexOf(suffix.toLowerCase());
+                    if (matchIdx !== -1 && matchIdx < 10) {
                       overlapIndex = i;
                       break;
                     }
@@ -195,22 +195,25 @@ export const useChatStore = create<ChatState>()(
                 }
 
                 if (overlapIndex !== -1) {
-                  // align suffix to original untrimmed tail to keep correct slice point
                   const suffix = trimmedTail.slice(overlapIndex);
+                  // Find where the suffix match ends in the new content
+                  const lowerSuffix = suffix.toLowerCase();
+                  const matchInNew = lowerNew.indexOf(lowerSuffix);
 
-                  // If we found an overlap that spans INTO the previous message, 
-                  // we should just trim the newContent completely or partially.
-                  const deDuped = newContent.slice(suffix.length);
+                  // Slice the new content AFTER the overlap
+                  const deDuped = newContent.slice(matchInNew + suffix.length);
 
-                  if (!deDuped.trim() || deDuped.length < 2) {
+                  if (!deDuped.trim()) {
                     shouldAppend = false;
                   } else {
                     const needsSpaceLocal = existingContent.length > 0 && !existingContent.match(/\s$/) && !deDuped.match(/^\s/);
+                    const finalContent = existingContent + (needsSpaceLocal ? ' ' : '') + deDuped;
+
                     return {
                       ...conv,
                       messages: messages.map((m, idx) => idx === messages.length - 1 ? {
                         ...m,
-                        content: existingContent + (needsSpaceLocal ? ' ' : '') + deDuped,
+                        content: finalContent,
                         toolCalls: [...(m.toolCalls || []), ...(messageUpdate.toolCalls || [])],
                         toolResults: [...(m.toolResults || []), ...(messageUpdate.toolResults || [])],
                         updatedAt: Date.now()
