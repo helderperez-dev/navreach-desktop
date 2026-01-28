@@ -209,7 +209,6 @@ export function CSVImportDialog({ open, onOpenChange }: CSVImportDialogProps) {
             }
 
             await bulkAddTargets(targets);
-            toast.success(`Successfully imported ${targets.length} targets`);
             onOpenChange(false);
         } catch (err: any) {
             setError(err.message || 'Import failed');

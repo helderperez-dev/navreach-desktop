@@ -796,13 +796,20 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
 
         const listId = targetsInput[0]?.list_id;
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+
+        if (!workspaceId) {
+            toast.error('No active workspace');
+            return;
+        }
+
         if (listId) {
             const subStore = useSubscriptionStore.getState();
             const limits = subStore.limits;
             const isPro = subStore.isPro();
             const list = get().lists.find(l => l.id === listId);
 
-            if (!isPro && (list?.target_count || 0) >= limits.target_limit) {
+            if (!isPro && (list?.target_count || 0) + targetsInput.length > limits.target_limit) {
                 subStore.openUpgradeModal(
                     "Target Limit Reached",
                     `Free accounts are limited to ${limits.target_limit} targets per list. Upgrade to Pro to add unlimited targets and scale your growth.`
@@ -811,19 +818,106 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             }
         }
 
-        const targetsWithUser = targetsInput.map(t => ({ ...t, user_id: user.id }));
-        const { data, error } = await targetService.bulkCreateTargets(targetsWithUser);
+        set({ isLoading: true });
 
-        if (error) {
-            toast.error(`Failed to import targets: ${error.message}`);
-        } else if (data && data.length > 0) {
-            const listId = data[0].list_id;
-            set({
-                targets: [...data, ...get().targets],
-                lists: get().lists.map(l => l.id === listId ? { ...l, target_count: (l.target_count || 0) + data.length } : l)
+        try {
+            // 1. Deduplicate local input by URL
+            const uniqueInputMap = new Map<string, any>();
+            targetsInput.forEach(t => {
+                const url = t.url?.toLowerCase().trim();
+                const cleanUrl = url?.replace(/\/$/, '');
+                if (cleanUrl && !uniqueInputMap.has(cleanUrl)) {
+                    uniqueInputMap.set(cleanUrl, { ...t, url: cleanUrl });
+                }
             });
-            get().fetchLists(true); // Sync counts with DB
-            toast.success(`Successfully imported ${data.length} targets`);
+
+            const uniqueUrls = Array.from(uniqueInputMap.keys());
+            if (uniqueUrls.length === 0) {
+                set({ isLoading: false });
+                return;
+            }
+
+            // 2. Lookup existing IDs for these URLs to enable correct UPSERT
+            const existingMap = new Map<string, string>(); // URL -> ID
+            const chunkSize = 100;
+
+            for (let i = 0; i < uniqueUrls.length; i += chunkSize) {
+                const chunk = uniqueUrls.slice(i, i + chunkSize);
+                const { data: existing } = await supabase
+                    .from('targets')
+                    .select('id, url')
+                    .eq('workspace_id', workspaceId)
+                    .in('url', chunk);
+
+                existing?.forEach(t => {
+                    const matchUrl = t.url?.toLowerCase().trim().replace(/\/$/, '');
+                    if (matchUrl) existingMap.set(matchUrl, t.id);
+                });
+            }
+
+            // 3. Prepare Upsert Payload (Attach IDs to existing, new ones get simple insert)
+            const upsertPayload: any[] = [];
+            uniqueInputMap.forEach((targetData, url) => {
+                const existingId = existingMap.get(url);
+                upsertPayload.push({
+                    ...targetData,
+                    id: existingId, // If undefined, Supabase creates new. If present, it updates.
+                    user_id: user.id,
+                    workspace_id: workspaceId
+                });
+            });
+
+            // 4. Perform Bulk Upsert via Service
+            const { data: resultTargets, error } = await targetService.bulkCreateTargets(upsertPayload);
+            if (error) throw error;
+            if (!resultTargets) throw new Error("No data returned from import");
+
+            // 5. Ensure Assignments
+            if (listId && resultTargets.length > 0) {
+                const assignments = resultTargets.map(t => ({
+                    target_id: t.id,
+                    list_id: listId
+                }));
+                const { error: assignError } = await targetService.bulkCreateAssignments(assignments);
+                if (assignError) throw assignError;
+            }
+
+            // 6. Update Store
+            set((state) => {
+                const updatedTargets = [...state.targets];
+                const stateIds = new Set(updatedTargets.map(t => t.id));
+                let newCount = 0;
+
+                resultTargets.forEach(t => {
+                    if (!stateIds.has(t.id)) {
+                        updatedTargets.unshift(t);
+                        newCount++;
+                    } else {
+                        // Update existing in place
+                        const idx = updatedTargets.findIndex(ut => ut.id === t.id);
+                        if (idx !== -1) updatedTargets[idx] = t;
+                    }
+                });
+
+                const updatedLists = state.lists.map(l =>
+                    l.id === listId
+                        ? { ...l, target_count: (l.target_count || 0) + newCount }
+                        : l
+                );
+
+                return { targets: updatedTargets, lists: updatedLists };
+            });
+
+            // 7. Refresh & Toast
+            get().fetchLists(true);
+            if (listId) get().fetchTargets(listId, true);
+
+            toast.success(`Successfully processed ${resultTargets.length} targets`);
+
+        } catch (error: any) {
+            toast.error(`Failed to import targets: ${error.message}`);
+        } finally {
+            set({ isLoading: false });
         }
     },
 

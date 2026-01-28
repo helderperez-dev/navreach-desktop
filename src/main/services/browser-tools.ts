@@ -358,12 +358,18 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
       }
       
       // 2. Mock chrome object (essential for "Is Chrome" checks)
-      window.chrome = {
-        runtime: {},
-        loadTimes: function() {},
-        csi: function() {},
-        app: {}
-      };
+      if (!window.chrome) {
+        window.chrome = {
+          runtime: {},
+          loadTimes: function() {},
+          csi: function() {},
+          app: {}
+        };
+      } else {
+        // Enhance existing chrome object if needed
+        if (!window.chrome.runtime) window.chrome.runtime = {};
+        if (!window.chrome.app) window.chrome.app = {};
+      }
 
       // 3. Mock Plugins (standard Chrome profiles)
       if (!navigator.plugins.length) {
@@ -380,18 +386,24 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
       Object.defineProperty(Screen.prototype, 'pixelDepth', { get: () => 24, configurable: true });
 
       // 5. Hide common automation properties and Electron leaks
-      // We set them to undefined rather than deleting to avoid Proxy traps/errors
       try {
-        window.process = undefined;
-        window.electron = undefined;
-        window.ipcRenderer = undefined;
+        if (window.process) delete window.process;
+        if (window.electron) delete window.electron;
+        if (window.ipcRenderer) delete window.ipcRenderer;
+        
+        // Proxy protection
+        const hiddenProps = ['process', 'electron', 'ipcRenderer', 'webdriver'];
+        /* 
+           Note: We avoid wrapping window in a Proxy as it breaks some frameworks.
+           Instead we just delete the properties.
+        */
       } catch(e) {}
       
       // 6. Advanced evasion for Google/ReCAPTCHA/Turnstile
       const removeCDC = () => {
         for (const prop in window) {
           if (prop.match(/^cdc_[a-z0-9]+$/)) {
-            try { window[prop] = undefined; } catch(e) {}
+            try { delete window[prop]; } catch(e) {}
           }
         }
       };
@@ -628,7 +640,6 @@ const SCRIPT_HELPERS = `
     if (isFast) adjustedMs = ms * multiplier;
 
     return new Promise((resolve) => {
-       // Simple timeout for generic tools
        setTimeout(resolve, adjustedMs);
     });
   };
@@ -639,7 +650,14 @@ const SCRIPT_HELPERS = `
       host = document.createElement('div');
       host.id = 'reavion-pointer-host';
       host.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;pointer-events:none;';
-      const shadow = host.attachShadow({ mode: 'open' });
+      
+      let root = host;
+      try {
+          if (host.attachShadow) {
+              root = host.attachShadow({ mode: 'open' });
+          }
+      } catch(e) { /* Shadow DOM might be blocked */ }
+
       const style = document.createElement('style');
       style.textContent = 
         '@keyframes breathe { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } } ' +
@@ -669,31 +687,30 @@ const SCRIPT_HELPERS = `
           'z-index: 2147483646; ' +
           'animation: ripple 0.6s ease-out forwards; ' +
         '}';
-      shadow.appendChild(style);
-      document.documentElement.appendChild(host);
-    }
-    if (host.parentElement !== document.documentElement) document.documentElement.appendChild(host);
-    
-    // Auto-create pointer if missing
-    const root = host.shadowRoot;
-    let p = root.querySelector('.pointer');
-    if (!p) {
-      p = document.createElement('div');
+      root.appendChild(style);
+      
+      // Auto-create pointer if missing
+      let p = document.createElement('div');
       p.className = 'pointer';
       p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="2"/></svg>';
       root.appendChild(p);
-      const initX = window.__LAST_MOUSE_POS__.x || 100;
-      const initY = window.__LAST_MOUSE_POS__.y || 100;
-      p.style.left = initX + 'px';
-      p.style.top = initY + 'px';
-      window.__LAST_MOUSE_POS__ = { x: initX, y: initY };
+
+      document.documentElement.appendChild(host);
     }
-    return root;
+    
+    // Ensure it's in the DOM
+    if (!host.parentElement && document.documentElement) {
+        document.documentElement.appendChild(host);
+    }
+    
+    return host.shadowRoot || host;
   };
 
   window.movePointer = (targetX, targetY) => {
     const root = window.ensurePointer();
     const p = root.querySelector('.pointer');
+    if (!p) return Promise.resolve(); // Should not happen
+
     p.classList.add('moving');
 
     const start = { ...window.__LAST_MOUSE_POS__ };
@@ -729,21 +746,25 @@ const SCRIPT_HELPERS = `
 
             try {
                 const elAtPoint = document.elementFromPoint(x, y);
-                const evt = new MouseEvent('mousemove', {
-                   view: window,
-                   bubbles: true,
-                   cancelable: true,
-                   clientX: x,
-                   clientY: y,
-                   screenX: x + window.screenX, 
-                   screenY: y + window.screenY
-                });
-                if (elAtPoint && (elAtPoint.closest('button, a, [role="button"], input, textarea, select') || elAtPoint.onclick)) {
-                    p.classList.add('hovering');
-                } else {
-                    p.classList.remove('hovering');
+                // Dispatch mousemove for hover effects
+                if (elAtPoint) {
+                    const evt = new MouseEvent('mousemove', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: x,
+                        clientY: y,
+                        screenX: x + window.screenX, 
+                        screenY: y + window.screenY
+                    });
+                    elAtPoint.dispatchEvent(evt);
+
+                    if (elAtPoint.closest('button, a, [role="button"], input, textarea, select') || elAtPoint.onclick) {
+                        p.classList.add('hovering');
+                    } else {
+                        p.classList.remove('hovering');
+                    }
                 }
-                elAtPoint?.dispatchEvent(evt);
             } catch(e) {}
 
             if (progress < 1) {
@@ -780,7 +801,12 @@ const SCRIPT_HELPERS = `
     
     // For LinkedIn/Google compatibility: find the real clickable target
     const clickable = el.closest('button, [role="button"], a, input, textarea, select, [onclick]') || el;
-    clickable.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+    try {
+        clickable.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' });
+    } catch(e) {
+        // Fallback for older browsers or strict contexts
+        clickable.scrollIntoView(true);
+    }
     await window.wait(400);
     
     const rect = clickable.getBoundingClientRect();
@@ -791,8 +817,12 @@ const SCRIPT_HELPERS = `
     const x = Math.round(ox + rect.left + rect.width / 2);
     const y = Math.round(oy + rect.top + rect.height / 2);
     
-    await window.movePointer(x, y);
-    await window.wait(100); 
+    try {
+        await window.movePointer(x, y);
+        await window.wait(100);
+    } catch (e) {
+        // If pointer movement fails, ignore and proceed to click
+    }
     
     const finalRect = clickable.getBoundingClientRect();
     return { 
@@ -998,6 +1028,9 @@ function buildTaskScript(coreLogic: string): string {
     '  try {\n' +
     '    if (!window.__REAVION_HELPERS_LOADED__) {\n' +
     SCRIPT_HELPERS + '\n' +
+    '    }\n' +
+    '    if (typeof window.safeMoveToElement !== "function") {\n' +
+    '      throw new Error("Browser automation helpers failed to initialize. The page may require a reload.");\n' +
     '    }\n' +
     coreLogic + '\n' +
     '  } catch (err) {\n' +

@@ -86,17 +86,54 @@ function parseMessageContent(content: string) {
   const blocks: { type: 'text' | 'tool-group' | 'error' | 'thought'; content: string; title?: string; status?: 'running' | 'success' | 'failed'; duration?: string; result?: string; params?: string }[] = [];
 
   let currentBlock: any = null;
+  let inThinkingBlock = false;
 
   for (const line of lines) {
-    // Check for Tool Execution Start - catch 🔧 or "Executing:"
+    const trimmed = line.trim();
+
+    // 1. Check for XML Thinking Start
+    // Handles: "<thinking>", "<thinking> content", "<thinking> content </thinking>"
+    const thinkingStartMatch = trimmed.match(/^<thinking>(.*)/i);
+    if (thinkingStartMatch) {
+      inThinkingBlock = true;
+      const initialContent = thinkingStartMatch[1];
+
+      // Check if it closes on the same line
+      const sameLineEnd = initialContent.match(/(.*)<\/thinking>$/i);
+
+      currentBlock = {
+        type: 'thought',
+        content: sameLineEnd ? sameLineEnd[1].trim() + '\n' : initialContent + '\n'
+      };
+      blocks.push(currentBlock);
+
+      if (sameLineEnd) {
+        currentBlock = null;
+        inThinkingBlock = false;
+      }
+      continue;
+    }
+
+    // 2. Check for XML Thinking End (multiline)
+    if (inThinkingBlock) {
+      const thinkingEndMatch = trimmed.match(/(.*)<\/thinking>$/i);
+      if (thinkingEndMatch) {
+        if (currentBlock && currentBlock.type === 'thought') {
+          currentBlock.content += thinkingEndMatch[1] + '\n';
+        }
+        currentBlock = null;
+        inThinkingBlock = false;
+      } else {
+        if (currentBlock && currentBlock.type === 'thought') {
+          currentBlock.content += line + '\n';
+        }
+      }
+      continue;
+    }
+
+    // 3. Tool Execution Start - catch 🔧 or "Executing:"
     const execMatch = line.match(/^(?:🔧\s*)?(?:Using tool:|Executing:)\s*(\w+)/);
     if (execMatch) {
-      // If we were building a text block, push it
-      if (currentBlock && currentBlock.type === 'text') {
-        blocks.push(currentBlock);
-        currentBlock = null;
-      }
-
       const toolName = execMatch[1];
       // Start a new tool group
       currentBlock = {
@@ -111,7 +148,7 @@ function parseMessageContent(content: string) {
       continue;
     }
 
-    // Check for Tool Completion/Status - catch ✅/❌/⚠️ or "Success"/"Error"
+    // 4. Tool Completion/Status - catch ✅/❌/⚠️ or "Success"/"Error"
     const statusMatch = line.match(/^(?:✅|❌|⚠️|Success|Completed|Error)\s*(?::\s*)?(?:\(([\d.]+)s\))?/i);
     if (statusMatch) {
       const isError = line.startsWith('❌') || line.startsWith('⚠️') || line.toLowerCase().startsWith('error');
@@ -125,9 +162,6 @@ function parseMessageContent(content: string) {
         if (duration) lastTool.duration = duration;
       } else if (isError) {
         // If it's an error not associated with a tool, create an error block
-        if (currentBlock && currentBlock.type === 'text') {
-          blocks.push(currentBlock);
-        }
         blocks.push({ type: 'error', content: line.replace(/^(?:❌|Error)\s*/, '').trim() });
         currentBlock = null;
       }
@@ -135,16 +169,8 @@ function parseMessageContent(content: string) {
       continue;
     }
 
-    // Explicit thought block
-    if (line.trim().startsWith('Thinking:')) {
-      if (currentBlock && currentBlock.type !== 'thought') {
-        // Close current text block if open
-        if (currentBlock.type === 'text') {
-          blocks.push(currentBlock);
-          currentBlock = null; // Will start new thought block
-        }
-      }
-
+    // 5. Legacy "Thinking:" Prefix
+    if (trimmed.startsWith('Thinking:')) {
       if (!currentBlock || currentBlock.type !== 'thought') {
         currentBlock = { type: 'thought', content: line.replace('Thinking:', '').trim() + '\n' };
         blocks.push(currentBlock);
@@ -154,23 +180,32 @@ function parseMessageContent(content: string) {
       continue;
     }
 
-    // Explicitly ignore troubleshooting and technical doc lines to keep UI clean
+    // 6. Explicitly ignore troubleshooting and technical doc lines
     const isInternalDoc =
-      line.trim().startsWith('Troubleshooting') ||
-      (line.trim().startsWith('http') && (line.includes('langchain') || line.includes('openrouter.ai/docs'))) ||
+      trimmed.startsWith('Troubleshooting') ||
+      (trimmed.startsWith('http') && (line.includes('langchain') || line.includes('openrouter.ai/docs'))) ||
       line.toLowerCase().includes('to learn more about provider routing');
 
     if (isInternalDoc) {
       continue;
     }
 
-    // Skip purely structural/emoji lines if they haven't been caught yet to avoid noise
-    if (line.trim().match(/^[🔧✅❌⚠️]/)) {
+    // 7. Skip pure artifact/json lines often leaked by raw LLM output
+    // e.g., {"id": "..."} or {"message": "..."} sitting alone
+    // We only skip if it *looks* like a standalone JSON object and we aren't inside a code block (simple check)
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      // Heuristic: Don't show raw JSON lines if they look like tool artifacts
+      if (trimmed.includes('"id":') || trimmed.includes('"message":') || trimmed.includes('"tool_call_id":')) {
+        continue;
+      }
+    }
+
+    // 8. Skip purely structural/emoji lines if they haven't been caught yet
+    if (trimmed.match(/^[🔧✅❌⚠️]/)) {
       continue;
     }
 
-    // Aggressively skip snapshot/technical dump lines
-    // These are lines that contain selector info or long lists of UI elements
+    // 9. Aggressively skip snapshot/technical dump lines
     const isSnapshotDump =
       line.includes('selector: [') ||
       line.includes('Buttons: 0:') ||
@@ -181,12 +216,11 @@ function parseMessageContent(content: string) {
       continue;
     }
 
-    // Normal Line Processing
+    // 10. Normal Line Processing
     if (currentBlock) {
       if (currentBlock.type === 'tool-group') {
         // If the tool already has a status (Success/Completed/Error), line goes to result
         if (currentBlock.status !== 'running') {
-          // Only add to result if it's NOT a snapshot dump (extra safety)
           if (!isSnapshotDump) {
             currentBlock.result = (currentBlock.result || '') + line + '\n';
           }
@@ -194,17 +228,21 @@ function parseMessageContent(content: string) {
           // Otherwise it's params
           currentBlock.params = (currentBlock.params || '') + line + '\n';
         }
+      } else if (currentBlock.type === 'thought') {
+        // Continue thought block if active (from legacy Thinking: prefix)
+        currentBlock.content += line + '\n';
       } else {
         currentBlock.content += line + '\n';
       }
     } else {
       // Start new text block - ensure we don't start with empty lines
-      if (line.trim()) {
+      if (trimmed) {
         currentBlock = { type: 'text', content: line + '\n' };
         blocks.push(currentBlock);
       }
     }
   }
+
   return blocks;
 }
 

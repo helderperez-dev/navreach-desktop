@@ -1555,18 +1555,39 @@ You are in FAST mode.
                         if (responseContent && responseContent.trim() && window && !window.isDestroyed()) {
                             // Clean up the final response
                             let cleanResponse = responseContent
-                                .replace(/^(Narration|Assistant|Reasoning):\s*/gi, '')
-                                .replace(/^(Yes|OK)[\.]?\s*$/gi, '')
+                                .replace(/<(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+).*?>[\s\S]*?<\/(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+)>/gi, '') // Strip entire blocks
+                                .replace(/<(\/?[a-z0-9_-]+).*?>/gi, '') // Strip any remaining stray tags
+                                .replace(/^(Narration|Assistant|Reasoning|Thought|Thinking|Response|Output|Action):\s*/gmi, '') // Multi-line prefix strip
+                                .replace(/^(Yes|OK|Ok)[\.,]?\s+(?=[A-Z])/i, '') // Strip leading fillers like "Ok. " but only if followed by valid text
+                                .replace(/^(Yes|OK|Ok)[\.]?\s*$/gmi, '') // Strip standalone fillers
                                 .replace(/\\boxed\{([\s\S]*?)\}/g, '$1')
                                 .replace(/(\*\*|\[)?Final Answer(\*\*|\])?:?/gi, '')
                                 .replace(/^["']|["']$/g, '')
                                 .trim();
 
-                            window.webContents.send('ai:stream-chunk', {
-                                content: cleanResponse,
-                                done: false,
-                                isNarration: false, // Mark as actual response, not narration
-                            });
+                            // DEDUPLICATION: Longest Prefix Clipping
+                            let deDuped = cleanResponse;
+                            let longestPrefix = "";
+
+                            const normalized = cleanResponse.toLowerCase().trim();
+                            for (const prev of sentNarrations) {
+                                if (normalized.startsWith(prev) && prev.length > longestPrefix.length) {
+                                    longestPrefix = prev;
+                                }
+                            }
+
+                            if (longestPrefix) {
+                                deDuped = cleanResponse.slice(longestPrefix.length).trim();
+                            }
+
+                            if (deDuped) {
+                                sentNarrations.add(normalized);
+                                window.webContents.send('ai:stream-chunk', {
+                                    content: deDuped,
+                                    done: false,
+                                    isNarration: false, // Mark as actual response, not narration
+                                });
+                            }
                         }
 
                         // Check stop signal before continuing in infinite mode
@@ -1653,30 +1674,52 @@ Summarize briefly (1 line) and continue.`
                     // We send this even if there are no tool calls, as it might be a multi-turn intermediate thought.
                     if (agentNarration && agentNarration.trim() && window && !window.isDestroyed()) {
                         const cleanNarration = agentNarration
-                            .replace(/<(tool_call|function|parameter|call|arg_[a-z]+).*?>[\s\S]*?<\/(tool_call|function|parameter|call|arg_[a-z]+)>/gi, '') // Strip entire blocks
+                            .replace(/<(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+).*?>[\s\S]*?<\/(thinking|thought|reasoning|internal_monologue|tool_call|function|parameter|call|arg_[a-z]+)>/gi, '') // Strip entire blocks
                             .replace(/<(\/?[a-z0-9_-]+).*?>/gi, '') // Strip any remaining stray tags
-                            .replace(/^(Narration|Assistant|Reasoning|Thought):\s*/gi, '')
-                            .replace(/^Yes\.?\s*$/gi, '')
-                            .replace(/^Ok\.?\s*$/gi, '')
+                            .replace(/^(Narration|Assistant|Reasoning|Thought|Thinking|Response|Output|Action):\s*/gmi, '') // Multi-line prefix strip
+                            .replace(/^(Yes|OK|Ok)[\.,]?\s+(?=[A-Z])/i, '') // Strip leading fillers like "Ok. " but only if followed by valid text
+                            .replace(/^(Yes|OK|Ok)[\.]?\s*$/gmi, '') // Strip standalone fillers
                             .replace(/\\boxed\{([\s\S]*?)\}/g, '$1')
                             .replace(/(\*\*|\[)?Final Answer(\*\*|\])?:?/gi, '')
                             .replace(/^["']|["']$/g, '') // Remove surrounding quotes
                             .trim();
 
                         if (cleanNarration && cleanNarration.length >= 1) {
-                            // Send narration if it exists (relaxed limits: 50,000 chars for long reasoning)
-                            if (cleanNarration.length < 50000) {
-                                window.webContents.send('ai:stream-chunk', {
-                                    content: cleanNarration,
-                                    done: false,
-                                    isNarration: true
-                                });
-                            } else {
-                                window.webContents.send('ai:stream-chunk', {
-                                    content: cleanNarration.slice(0, 49990) + '... (thinking truncated)',
-                                    done: false,
-                                    isNarration: true
-                                });
+                            // DEDUPLICATION: Longest Prefix Clipping
+                            // Handles models that send the full accumulated context again in each turn
+                            let deDuped = cleanNarration;
+                            let longestPrefix = "";
+
+                            for (const prev of sentNarrations) {
+                                // Find if prev is a prefix of deDuped
+                                // We use a case-insensitive check but slice the original
+                                if (deDuped.toLowerCase().startsWith(prev) && prev.length > longestPrefix.length) {
+                                    longestPrefix = prev;
+                                }
+                            }
+
+                            if (longestPrefix) {
+                                deDuped = deDuped.slice(longestPrefix.length).trim();
+                            }
+
+                            if (deDuped) {
+                                // Add the full original to sentNarrations so future turns can clip it
+                                sentNarrations.add(cleanNarration.toLowerCase().trim());
+
+                                // Send narration if it exists (relaxed limits: 50,000 chars for long reasoning)
+                                if (deDuped.length < 50000) {
+                                    window.webContents.send('ai:stream-chunk', {
+                                        content: deDuped,
+                                        done: false,
+                                        isNarration: true
+                                    });
+                                } else {
+                                    window.webContents.send('ai:stream-chunk', {
+                                        content: deDuped.slice(0, 49990) + '... (thinking truncated)',
+                                        done: false,
+                                        isNarration: true
+                                    });
+                                }
                             }
                         }
                     }
@@ -1730,21 +1773,90 @@ Summarize briefly (1 line) and continue.`
                         // Track this call - usage removed
                         // Loop detection removed per user request
 
-                        // --- Placeholder Guardian ---
+                        // --- Placeholder Guardian (Relaxed for Playbooks) ---
                         const argsStr = JSON.stringify(toolCall.args);
                         // Catch ANY {{placeholder}} pattern
                         const placeholderMatch = argsStr.match(/\{\{.*?\}\}/);
                         if (placeholderMatch) {
                             const placeholder = placeholderMatch[0];
-                            const warningMsg = `STOP: You attempted to call tool "${toolCall.name}" with a literal placeholder "${placeholder}". Resolve variables before calling tools.`;
-                            console.warn(`[AI Service] Placeholder detected: ${placeholder}`);
 
-                            langchainMessages.push(new ToolMessage({
-                                tool_call_id: toolCall.id || '',
-                                content: JSON.stringify({ error: warningMsg }),
-                            }));
-                            toolExecutionFailed = true;
-                            continue; // Don't break, must answer all tool calls for Azure/OpenAI strictness
+                            // 1. Auto-Resolution for {{agent.decide}}
+                            // If the agent was lazy and passed {{agent.decide}}, we FORCE it to decide now.
+                            if (placeholder.includes('agent.decide') && (isPlaybookRun || infiniteMode)) {
+                                console.log(`[AI Service] Auto-resolving ${placeholder} for tool ${toolCall.name}...`);
+                                try {
+                                    // Notify UI of "Thinking" state
+                                    if (window && !window.isDestroyed()) {
+                                        window.webContents.send('ai:stream-chunk', {
+                                            content: 'Resolving content generation...\n',
+                                            isNarration: true
+                                        });
+                                    }
+
+                                    // Quick one-shot generation
+                                    const decisionPrompt = `You are executing a tool call to "${toolCall.name}".
+                                    One of the arguments was set to "{{agent.decide}}".
+                                    
+                                    Based on the conversation history and the specific field requirement, GENERATE the actual content for this argument.
+                                    
+                                    Context:
+                                    - Tool: ${toolCall.name}
+                                    - Full Arguments: ${argsStr}
+                                    
+                                    Output ONLY the generated string content. No quotes, no explanations.`;
+
+                                    const resolutionModel = createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
+                                    const decision = await resolutionModel.invoke([
+                                        ...langchainMessages.slice(-5), // Recent context
+                                        new HumanMessage(decisionPrompt)
+                                    ]);
+
+                                    const generatedContent = typeof decision.content === 'string' ? decision.content : "Content generation failed.";
+                                    console.log(`[AI Service] Resolved ${placeholder} -> "${generatedContent.substring(0, 50)}..."`);
+
+                                    // Mutate the args ! 
+                                    // We need to find WHICH key had the placeholder. 
+                                    // Simple recursive replacement for JSON object
+                                    const replaceValue = (obj: any): any => {
+                                        if (typeof obj === 'string') {
+                                            if (obj.includes('{{agent.decide}}')) return generatedContent;
+                                            return obj;
+                                        }
+                                        if (Array.isArray(obj)) return obj.map(replaceValue);
+                                        if (typeof obj === 'object' && obj !== null) {
+                                            const newObj: any = {};
+                                            for (const key in obj) {
+                                                newObj[key] = replaceValue(obj[key]);
+                                            }
+                                            return newObj;
+                                        }
+                                        return obj;
+                                    };
+
+                                    toolCall.args = replaceValue(toolCall.args);
+
+                                } catch (resolveErr) {
+                                    console.error('[AI Service] Failed to auto-resolve placeholder:', resolveErr);
+                                    // Fallthrough to warning
+                                }
+                            }
+
+                            // If it's a playbook run, we allow it (the tool itself will retry or fail gracefully)
+                            // or simple string substitution didn't happen.
+                            // We do NOT block execution anymore as it causes "Too many consecutive failures"
+                            if (isPlaybookRun || infiniteMode) {
+                                console.warn(`[AI Service] Placeholder detected (${placeholder}) but allowing execution in Playbook/Infinite mode.`);
+                            } else {
+                                const warningMsg = `STOP: You attempted to call tool "${toolCall.name}" with a literal placeholder "${placeholder}". Resolve variables before calling tools.`;
+                                console.warn(`[AI Service] Placeholder detected: ${placeholder}`);
+
+                                langchainMessages.push(new ToolMessage({
+                                    tool_call_id: toolCall.id || '',
+                                    content: JSON.stringify({ error: warningMsg }),
+                                }));
+                                toolExecutionFailed = true;
+                                continue;
+                            }
                         }
 
                         if (window && !window.isDestroyed()) {

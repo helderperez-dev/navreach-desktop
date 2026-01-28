@@ -250,5 +250,12 @@ export const targetService = {
         if (toRemove.length > 0) {
             await supabase.from('target_assignments').delete().eq('target_id', targetId).in('list_id', toRemove);
         }
+    },
+
+    async bulkCreateAssignments(assignments: { target_id: string; list_id: string }[]) {
+        const { error } = await supabase
+            .from('target_assignments')
+            .upsert(assignments, { onConflict: 'target_id, list_id', ignoreDuplicates: true });
+        return { error };
     }
 };

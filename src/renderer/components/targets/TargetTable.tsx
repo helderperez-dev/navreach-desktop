@@ -22,6 +22,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDistanceToNow } from 'date-fns';
+import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
 
 interface TargetTableProps {
     onEdit: (target: Target) => void;
@@ -60,6 +61,8 @@ export function TargetTable({
     const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
     const [analyzeTarget, setAnalyzeTarget] = useState<Target | null>(null);
     const [targetToSave, setTargetToSave] = useState<Target | null>(null);
+    const [targetToDelete, setTargetToDelete] = useState<Target | null>(null);
+    const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
     const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
     const [isAllSelectedGlobally, setIsAllSelectedGlobally] = useState(false);
     const [isBulkSaveOpen, setIsBulkSaveOpen] = useState(false);
@@ -449,6 +452,28 @@ export function TargetTable({
         setIsBulkSaveOpen(false);
     };
 
+    const handleBulkDelete = async () => {
+        const count = isAllSelectedGlobally ? totalCountInList : selectedTargets.size;
+        toast.info(`Deleting ${count} targets...`);
+
+        try {
+            if (isAllSelectedGlobally && selectedListId) {
+                const idsToDelete = Array.from(selectedTargets);
+                for (const id of idsToDelete) {
+                    await deleteTarget(id);
+                }
+            } else {
+                const idsToDelete = Array.from(selectedTargets);
+                await Promise.all(idsToDelete.map(id => deleteTarget(id)));
+            }
+
+            setSelectedTargets(new Set());
+            setIsAllSelectedGlobally(false);
+            toast.success('Targets deleted');
+        } catch (error: any) {
+            toast.error(`Failed to delete targets: ${error.message}`);
+        }
+    };
 
     if (!isLayoutReady) {
         return (
@@ -877,9 +902,7 @@ export function TargetTable({
                                                     className="gap-2 text-xs text-red-400 focus:text-red-400 focus:bg-destructive/10 cursor-pointer rounded-lg mx-1"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
-                                                        if (confirm('Are you sure you want to delete this contact?')) {
-                                                            deleteTarget(target.id);
-                                                        }
+                                                        setTargetToDelete(target);
                                                     }}
                                                 >
                                                     <Trash2 className="h-3.5 w-3.5" />
@@ -981,44 +1004,7 @@ export function TargetTable({
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={async () => {
-                                        const count = isAllSelectedGlobally ? totalCountInList : selectedTargets.size;
-                                        if (confirm(`Are you sure you want to delete ${count} targets? This action cannot be undone.`)) {
-
-                                            toast.info(`Deleting ${count} targets...`);
-
-                                            // Handle global delete
-                                            if (isAllSelectedGlobally && selectedListId) {
-                                                // If we had a bulkDelete store method we would use it.
-                                                // For now, let's look at doing it in batches or if there is a store method we missed?
-                                                // Checking store interface: deleteTarget is singular.
-                                                // We will iterate for now or implement bulkDelete in store if needed.
-                                                // Since we don't have bulkDelete in store interface shown, we iterate.
-                                                // BUT iterating 1000 items is bad.
-                                                // Assuming we operate on loaded targets for now if 'isAllSelectedGlobally' isn't fully backed
-                                                // by a backend bulk delete endpoint exposed here.
-                                                // Actually, let's just delete the ids we have in selectedTargets or
-                                                // if it's all, we might need a backend call.
-                                                // For safety/speed in this context, let's stick to deleting the visible/loaded selected mainly
-                                                // unless we iterate.
-
-                                                // Iterating local 'selectedTargets' (which contains actual IDs)
-                                                const idsToDelete = Array.from(selectedTargets);
-                                                for (const id of idsToDelete) {
-                                                    await deleteTarget(id);
-                                                }
-
-                                            } else {
-                                                const idsToDelete = Array.from(selectedTargets);
-                                                // Parallel limit might be good, but let's just Promise.all a chunk
-                                                await Promise.all(idsToDelete.map(id => deleteTarget(id)));
-                                            }
-
-                                            setSelectedTargets(new Set());
-                                            setIsAllSelectedGlobally(false);
-                                            toast.success('Targets deleted');
-                                        }
-                                    }}
+                                    onClick={() => setIsBulkDeleteOpen(true)}
                                     className="h-8 gap-2 px-3 rounded-full hover:bg-white/10 text-zinc-200 hover:text-white font-medium ml-1"
                                 >
                                     <Trash2 className="h-3.5 w-3.5" />
@@ -1066,6 +1052,26 @@ export function TargetTable({
                         handleBulkSaveConfirm(listId);
                     }
                 }}
+            />
+
+            <ConfirmationDialog
+                open={!!targetToDelete}
+                onOpenChange={(open) => !open && setTargetToDelete(null)}
+                title="Delete Contact"
+                description={`Are you sure you want to delete ${targetToDelete?.name}? This action cannot be undone.`}
+                confirmLabel="Delete"
+                variant="destructive"
+                onConfirm={() => targetToDelete && deleteTarget(targetToDelete.id)}
+            />
+
+            <ConfirmationDialog
+                open={isBulkDeleteOpen}
+                onOpenChange={setIsBulkDeleteOpen}
+                title="Delete Multiple Contacts"
+                description={`Are you sure you want to delete ${isAllSelectedGlobally ? totalCountInList : selectedTargets.size} targets? This action cannot be undone.`}
+                confirmLabel="Delete All"
+                variant="destructive"
+                onConfirm={handleBulkDelete}
             />
         </div >
     );

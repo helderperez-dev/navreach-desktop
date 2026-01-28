@@ -154,7 +154,73 @@ export const useChatStore = create<ChatState>()(
                 }
               }
 
-              // Calculate separator (add space if joining words, but not if starts/ends with whitespace)
+              // D. Overlap Detection (Suffix-Prefix)
+              // Check if the END of existingContent matches the START of newContent.
+              // We use a simplified check: search for the first 30 chars of newContent in the last 1000 chars of existingContent.
+              if (shouldAppend && normalizedNew.length > 5) {
+                const searchWindow = 1000;
+
+                // CRITICAL: For turn-based deduplication, if the current message is short, 
+                // we should also look at the PREVIOUS assistant message's tail.
+                let comprehensiveHistory = existingContent;
+                if (existingContent.length < 500) {
+                  const prevAssistantMsg = messages.slice(0, messages.length - 1).reverse().find(m => m.role === 'assistant');
+                  if (prevAssistantMsg) {
+                    comprehensiveHistory = (prevAssistantMsg.content || '') + "\n" + existingContent;
+                  }
+                }
+
+                const existingTail = comprehensiveHistory.slice(-searchWindow);
+                const lowerNew = normalizedNew.toLowerCase();
+                const trimmedTail = existingTail.trimEnd(); // CRITICAL: Strip trailing newlines for overlap check
+
+                let overlapIndex = -1;
+                for (let i = 0; i < trimmedTail.length; i++) {
+                  const suffix = trimmedTail.slice(i);
+                  // Case-insensitive check for prefix overlap
+                  if (lowerNew.startsWith(suffix.toLowerCase())) {
+                    overlapIndex = i;
+                    break;
+                  }
+
+                  // Relaxed check for robustness
+                  const trimSuffix = suffix.trim();
+                  if (trimSuffix.length > 20) { // Only loose match substantial blocks
+                    const matchIdx = lowerNew.indexOf(trimSuffix.toLowerCase());
+                    if (matchIdx !== -1 && matchIdx < 5) {
+                      overlapIndex = i;
+                      break;
+                    }
+                  }
+                }
+
+                if (overlapIndex !== -1) {
+                  // align suffix to original untrimmed tail to keep correct slice point
+                  const suffix = trimmedTail.slice(overlapIndex);
+
+                  // If we found an overlap that spans INTO the previous message, 
+                  // we should just trim the newContent completely or partially.
+                  const deDuped = newContent.slice(suffix.length);
+
+                  if (!deDuped.trim() || deDuped.length < 2) {
+                    shouldAppend = false;
+                  } else {
+                    const needsSpaceLocal = existingContent.length > 0 && !existingContent.match(/\s$/) && !deDuped.match(/^\s/);
+                    return {
+                      ...conv,
+                      messages: messages.map((m, idx) => idx === messages.length - 1 ? {
+                        ...m,
+                        content: existingContent + (needsSpaceLocal ? ' ' : '') + deDuped,
+                        toolCalls: [...(m.toolCalls || []), ...(messageUpdate.toolCalls || [])],
+                        toolResults: [...(m.toolResults || []), ...(messageUpdate.toolResults || [])],
+                        updatedAt: Date.now()
+                      } : m),
+                      updatedAt: Date.now()
+                    };
+                  }
+                }
+              }
+
               const needsSpace = shouldAppend && isTextUpdate &&
                 existingContent.length > 0 &&
                 !existingContent.match(/\s$/) &&
@@ -180,7 +246,7 @@ export const useChatStore = create<ChatState>()(
               return { ...conv, messages, updatedAt: Date.now() };
             }
 
-            // Otherwise, add as new (same as addMessage)
+            // Otherwise, add as new
             const newMessage: Message = {
               role: messageUpdate.role,
               content: messageUpdate.content || '',
@@ -194,7 +260,7 @@ export const useChatStore = create<ChatState>()(
               messages: [...conv.messages, newMessage],
               updatedAt: Date.now()
             };
-          })
+          }),
         }));
       },
 

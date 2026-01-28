@@ -370,7 +370,8 @@ export function ChatPanel() {
           streamingContentRef.current = '';
           setStreamingContent('');
 
-          // Add a fresh assistant message that subsequent chunks will merge into
+          // NEW: Ensure we separate turns into distinct bubbles for better UX
+          // (Reverting the merge-into-one-bubble experiment based on user feedback)
           addMessage(targetId, {
             role: 'assistant',
             content: '',
@@ -586,14 +587,15 @@ export function ChatPanel() {
           messages: [],
           createdAt: Date.now(),
           updatedAt: Date.now(),
-          modelId: model.id
+          modelId: model.id,
+          workspaceId: currentWorkspace?.id
         }, ...state.conversations]
       }));
     }
 
-    // Only set as active if NOT isolated. 
-    // This ensures the main chat panel stays on its current conversation during playbook runs.
-    if (!isIsolated && !activeConversationId) {
+    // Always switch to the new conversation, even for isolated runs, 
+    // so the user can visually track the agent's progress.
+    if (!activeConversationId || conversationId !== activeConversationId) {
       setActiveConversation(conversationId);
     }
 
