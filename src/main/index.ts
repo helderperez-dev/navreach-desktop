@@ -3,6 +3,7 @@ import { app, BrowserWindow, shell, ipcMain, nativeImage } from 'electron';
 // SILENCE NOISY LANGCHAIN WARNINGS
 process.env.LANGCHAIN_ADAPTER_MIGRATION_WARNING = 'false';
 process.env.LANGCHAIN_VERBOSE = 'false';
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true';
 
 // Monkey-patch console.warn to forcefully silence the migration warning
 const originalWarn = console.warn;

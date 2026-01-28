@@ -331,7 +331,7 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
                 {isFailed ? 'System Error' : 'Tool Result'}
               </div>
               <div className={cn(
-                "rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed",
+                "rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed",
                 isFailed ? "bg-destructive/5 border-destructive/20 text-destructive/90" : "bg-background/50 border-border/30 text-muted-foreground"
               )}>
                 {resultDisplay}
@@ -660,7 +660,7 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
               {isFailed ? 'Error' : 'Output'}
             </div>
             <div className={cn(
-              "whitespace-pre-wrap pl-2 border-l",
+              "whitespace-pre-wrap break-all pl-2 border-l",
               isFailed ? "text-destructive/80 border-destructive/20" : "text-muted-foreground border-border"
             )}>
               <ProcessedText text={block.result.trim()} variables={variables} />

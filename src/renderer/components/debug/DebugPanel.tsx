@@ -13,11 +13,11 @@ export function DebugPanel() {
 
   const copyLogs = async () => {
     const logsText = logs.map(log => {
-      const time = log.timestamp.toLocaleTimeString('en-US', { 
-        hour12: false, 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        second: '2-digit' 
+      const time = log.timestamp.toLocaleTimeString('en-US', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
       });
       let text = `[${time}] [${log.type.toUpperCase()}]`;
       if (log.tool) text += ` ${log.tool}`;
@@ -27,7 +27,7 @@ export function DebugPanel() {
       }
       return text;
     }).join('\n\n');
-    
+
     await navigator.clipboard.writeText(logsText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -47,11 +47,11 @@ export function DebugPanel() {
   };
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
-      hour12: false, 
-      hour: '2-digit', 
-      minute: '2-digit', 
-      second: '2-digit' 
+    return date.toLocaleTimeString('en-US', {
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
     });
   };
 
@@ -95,9 +95,9 @@ export function DebugPanel() {
       </div>
 
       <ScrollArea className="flex-1">
-        <div className="p-2 space-y-1">
+        <div className="p-3 space-y-3">
           {logs.length === 0 ? (
-            <div className="text-center text-xs text-muted-foreground py-8">
+            <div className="text-center text-xs text-muted-foreground py-12 opacity-50 italic">
               No logs yet. Actions will appear here.
             </div>
           ) : (
@@ -105,33 +105,41 @@ export function DebugPanel() {
               <div
                 key={log.id}
                 className={cn(
-                  "p-2 rounded text-xs font-mono",
-                  log.type === 'error' && "bg-red-500/10 border border-red-500/20",
-                  log.type === 'tool' && "bg-blue-500/10 border border-blue-500/20",
-                  log.type === 'result' && "bg-emerald-500/10 border border-emerald-500/20",
-                  log.type === 'info' && "bg-muted/50"
+                  "p-3.5 rounded-xl text-xs font-mono transition-all border shadow-sm",
+                  log.type === 'error' && "bg-red-500/10 border-red-500/20 shadow-red-500/5",
+                  log.type === 'tool' && "bg-blue-500/10 border-blue-500/20 shadow-blue-500/5",
+                  log.type === 'result' && "bg-emerald-500/10 border-emerald-500/20 shadow-emerald-500/5",
+                  log.type === 'info' && "bg-muted/30 border-border/50"
                 )}
               >
-                <div className="flex items-start gap-2">
-                  {getIcon(log.type)}
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 shrink-0">
+                    {getIcon(log.type)}
+                  </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-foreground">
-                        {log.tool || log.type.toUpperCase()}
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className={cn(
+                        "font-bold uppercase tracking-tight text-[10px]",
+                        log.type === 'error' && "text-red-400",
+                        log.type === 'tool' && "text-blue-400",
+                        log.type === 'result' && "text-emerald-400",
+                        log.type === 'info' && "text-muted-foreground"
+                      )}>
+                        {log.tool || log.type}
                       </span>
-                      <span className="text-muted-foreground text-[10px]">
+                      <span className="text-muted-foreground/40 text-[9px] font-medium">
                         {formatTime(log.timestamp)}
                       </span>
                     </div>
-                    <div className="text-muted-foreground mt-0.5 break-words">
+                    <div className="text-foreground/90 leading-relaxed break-all select-text">
                       {log.message}
                     </div>
                     {log.data && (
-                      <pre className="mt-1 p-1.5 bg-black/20 rounded text-[10px] overflow-x-auto max-h-48 overflow-y-auto whitespace-pre-wrap">
-                        {typeof log.data === 'string' 
-                          ? log.data.slice(0, 2000) 
-                          : JSON.stringify(log.data, null, 2).slice(0, 2000)}
-                        {(typeof log.data === 'string' ? log.data.length : JSON.stringify(log.data).length) > 2000 && '\n... (truncated)'}
+                      <pre className="mt-2.5 p-2 bg-black/40 rounded-lg text-[10px] max-h-64 overflow-y-auto whitespace-pre-wrap break-all custom-scrollbar border border-white/5 text-muted-foreground/80">
+                        {typeof log.data === 'string'
+                          ? log.data.slice(0, 3000)
+                          : JSON.stringify(log.data, null, 2).slice(0, 3000)}
+                        {(typeof log.data === 'string' ? log.data.length : JSON.stringify(log.data).length) > 3000 && '\n... (truncated for performance)'}
                       </pre>
                     )}
                   </div>

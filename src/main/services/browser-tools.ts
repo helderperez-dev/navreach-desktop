@@ -572,6 +572,10 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
     consoleLogs.set(tabId, logs);
 
     if (level === 2) { // ERROR level
+      // Silence noisy Electron security warnings about CSP in development/webviews
+      if (message.includes('Insecure Content-Security-Policy') || message.includes('unsafe-eval')) {
+        return;
+      }
       sendDebugLog('error', `Browser Console Error [${tabId}]: ${message}`, { line, sourceId });
     }
   });
