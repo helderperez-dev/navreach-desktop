@@ -58,14 +58,26 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_PASSWORD }}
         run: npm run build:${{ matrix.os == 'macos-latest' && 'mac' || matrix.os == 'windows-latest' && 'win' || 'linux' }} -- --publish always
 
-      - name: Notarize (macOS)
+      - name: Notarize and Staple (macOS)
         if: matrix.os == 'macos-latest'
-        uses: lando/notarize-action@v2
-        timeout-minutes: 350
-        with:
-          product-path: "dist/Reavion-${{ steps.sync_version.outputs.VERSION }}-universal.dmg"
-          primary-bundle-id: "com.reavion.app"
-          appstore-connect-username: ${{ secrets.APPLE_ID }}
-          appstore-connect-password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          appstore-connect-team-id: ${{ secrets.APPLE_TEAM_ID }}
-          verbose: true
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VERSION: ${{ steps.sync_version.outputs.VERSION }}
+        run: |
+          PRODUCT_PATH="dist/Reavion-${VERSION}-universal.dmg"
+          echo "Notarizing $PRODUCT_PATH..."
+          
+          # Submit to Apple Notary Service and wait for result
+          xcrun notarytool submit "$PRODUCT_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --wait
+            
+          # Staple the notarization ticket to the DMG
+          echo "Stapling notarization ticket..."
+          xcrun stapler staple "$PRODUCT_PATH"
+          
+          echo "Notarization and Stapling complete!"
