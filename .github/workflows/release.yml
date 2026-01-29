@@ -39,13 +39,6 @@ jobs:
           npm version $VERSION --allow-same-version --no-git-tag-version
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Import Apple Certificates
-        if: matrix.os == 'macos-latest'
-        uses: apple-actions/import-codesign-certs@v2
-        with:
-          p12-file-base64: ${{ secrets.CSC_LINK }}
-          p12-password: ${{ secrets.CSC_PASSWORD }}
-
       - name: Build, Sign and Notarize
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -60,4 +53,6 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Logging to see exactly where it is in the codesign process
+          DEBUG: 'electron-builder'
         run: npm run build:${{ matrix.os == 'macos-latest' && 'mac' || matrix.os == 'windows-latest' && 'win' || 'linux' }} -- --publish always
