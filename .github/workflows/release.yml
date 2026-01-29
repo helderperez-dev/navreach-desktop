@@ -49,6 +49,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         
         # 'npm run build:mac' etc already include 'electron-builder' which handles publishing based on config
