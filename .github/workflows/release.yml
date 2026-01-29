@@ -45,15 +45,15 @@ jobs:
           # macOS signing
           mac_certs: ${{ secrets.CSC_LINK }}
           mac_certs_password: ${{ secrets.CSC_PASSWORD }}
-          # macOS notarization
-          apple_id: ${{ secrets.APPLE_ID }}
-          apple_id_password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         env:
           # App Environment Variables for the build process
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          # macOS Notarization - MUST BE IN ENV
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Verbose logging to troubleshoot if it hangs again
+          # Verbose logging
           NOTARIZE_VERBOSE: 'true'
           DEBUG: 'electron-builder'
