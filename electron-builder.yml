@@ -14,8 +14,7 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   hardenedRuntime: true
   gatekeeperAssess: false
-  notarize:
-    teamId: "${APPLE_TEAM_ID}"
+  notarize: true
   target:
     - dmg
     - zip
