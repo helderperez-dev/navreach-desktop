@@ -34,6 +34,51 @@ function cleanModelOutput(text: string): string {
         .replace(/^["']|["']$/g, '')
         .trim();
 }
+
+/**
+ * Prunes the message history to prevent token overflow while maintaining necessary context.
+ */
+function pruneMessageHistory(messages: BaseMessage[], maxCount: number = 40): BaseMessage[] {
+    if (messages.length <= maxCount) return messages;
+
+    // Always keep the System Message (messages[0])
+    const systemMessage = messages[0] instanceof SystemMessage ? messages[0] : null;
+
+    // Find the first Human Message (often the initial prompt)
+    const firstHuman = messages.find((m, i) => m instanceof HumanMessage && i > 0);
+
+    // Take the most recent messages (sliding window)
+    // We increase the slice a bit to ensure we don't accidentally cut off the very last turn's ToolMessages
+    const recentMessages = messages.slice(-maxCount);
+
+    const pruned: BaseMessage[] = [];
+    if (systemMessage) pruned.push(systemMessage);
+    if (firstHuman && !recentMessages.includes(firstHuman)) pruned.push(firstHuman);
+
+    // Process recent messages to truncate long content if they aren't the absolute latest results
+    // We iterate over the messages and add them to pruned if they aren't already there (system/firstHuman)
+    for (let i = 0; i < recentMessages.length; i++) {
+        const msg = recentMessages[i];
+
+        // If it's a ToolMessage with huge content and NOT from the current or previous turn (last 6 messages)
+        // A turn is usually AIMessage + [N ToolMessages] + [N ToolResults (HumanMessage/ToolMessage)]
+        // Keeping 6 is safe to preserve the immediate context of the current goal.
+        if (msg instanceof ToolMessage && i < recentMessages.length - 6) {
+            if (typeof msg.content === 'string' && msg.content.length > 1500) {
+                if (msg.content.includes('suggestedSelector') || msg.content.includes('searchResults') || msg.content.includes('semantics') || msg.content.includes('elements') || msg.content.includes('dom')) {
+                    // It's a snapshot or extraction - truncate it!
+                    msg.content = `[Previous Context Result Truncated. Original length: ${msg.content.length} chars. The agent has already seen this state.]`;
+                }
+            }
+        }
+
+        if (!pruned.includes(msg)) {
+            pruned.push(msg);
+        }
+    }
+
+    return pruned;
+}
 import type { ModelProvider, ModelConfig, Message } from '../../shared/types';
 import { createBrowserTools, getWebviewContents, resetBrowser } from './browser-tools';
 import { createTargetTools } from './target-tools';
@@ -48,6 +93,7 @@ import type { AppSettings } from '../../shared/types';
 import { systemSettingsService } from './settings.service';
 import { usageService } from './usage.service';
 import { stripeService } from './stripe.service';
+import { taskQueueService } from './task-queue.service';
 import { analytics } from './analytics';
 
 export const store = new Store<AppSettings>({
@@ -91,12 +137,23 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
 
     const baseUrl = provider.baseUrl?.trim() || undefined;
 
-    const baseConfig = {
+    const baseConfig: any = {
         modelName: model.id,
-        temperature: 0.1, // Reduced from 0.7 for higher deterministic execution
-        maxTokens: 4096,  // Ensure consistent multi-step thinking/tool generation
+        model: model.id,
+        temperature: 0.1,
+        maxTokens: 4096,
         streaming,
     };
+
+    // For Z.AI/GLM models, we MUST be extremely strict with parameters.
+    // They often reject even standard OpenAI parameters like parallel_tool_calls.
+    const isZAI = model.id.toLowerCase().includes('z-ai') || model.id.toLowerCase().includes('glm');
+
+    if (isZAI) {
+        baseConfig.streaming = false;
+        // Some Z.AI models on OpenRouter fail with specific temperature/tokens settings
+        // We'll keep them but be ready to omit if 400 persists.
+    }
 
     console.log(`[AI Service] Creating model ${model.id} (SafeMode: ${safeMode}, NoReasoning: ${disableReasoning})`);
 
@@ -110,17 +167,23 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
                 },
             });
         case 'custom':
-            return new ChatOpenAI({
+            const customConfig: any = {
                 ...baseConfig,
                 apiKey: provider.apiKey,
                 configuration: {
                     baseURL: baseUrl,
                 },
-                // Disable parallel tool calls for custom providers as they often don't support it
-                modelKwargs: {
-                    parallel_tool_calls: false
-                }
-            });
+                modelKwargs: undefined
+            };
+
+            if (isZAI) {
+                console.log('[AI Service] Custom Provider: Z.AI/GLM detected, ensuring parallel_tool_calls is disabled.');
+                customConfig.parallelToolCalls = false;
+            } else {
+                customConfig.modelKwargs = { parallel_tool_calls: false };
+            }
+
+            return new ChatOpenAI(customConfig);
         case 'anthropic':
             return new ChatAnthropic({
                 ...baseConfig,
@@ -131,7 +194,7 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
                 ...baseConfig,
                 apiKey: provider.apiKey,
                 configuration: {
-                    baseURL: 'https://openrouter.ai/api/v1',
+                    baseURL: baseUrl || 'https://openrouter.ai/api/v1',
                     defaultHeaders: {
                         'HTTP-Referer': 'https://reavion.ai',
                         'X-Title': 'Reavion Desktop',
@@ -157,6 +220,20 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
                     };
                 }
             }
+
+            // Fix for Z.AI / GLM models:
+            if (isZAI) {
+                openAIConfig.streaming = false;
+                openAIConfig.parallelToolCalls = false;
+
+                // If there are modelKwargs (like reasoning), ensure parallel_tool_calls isn't there
+                if (openAIConfig.modelKwargs) {
+                    delete (openAIConfig.modelKwargs as any).parallel_tool_calls;
+                }
+                console.log('[AI Service] Applied Z.AI strict compatibility (No Stream, parallelToolCalls: false)');
+            }
+
+            console.log('[AI Service] OpenAI Config:', JSON.stringify(openAIConfig, null, 2));
 
             return new ChatOpenAI(openAIConfig);
         default:
@@ -589,6 +666,7 @@ export async function resolveAIConfig(
             if (sysProviderType) {
                 effectiveProvider.type = sysProviderType as any;
                 effectiveProvider.id = 'system-default';
+                effectiveProvider.apiKey = 'managed-by-system';
             }
         }
 
@@ -604,6 +682,13 @@ export async function resolveAIConfig(
             // Fallback: Use user's access token if no specific API key is found (common for system proxies)
             console.log('[AI Service] Using User Access Token as Model API Key');
             effectiveProvider.apiKey = accessToken;
+
+            // Ensure we point to our internal proxy if no baseUrl is set for a managed request
+            if (!effectiveProvider.baseUrl) {
+                const gatewayUrl = (process.env.VITE_API_URL || 'https://reavion.com/api').replace(/\/$/, '');
+                effectiveProvider.baseUrl = `${gatewayUrl}/ai`;
+                console.log(`[AI Service] Using System Managed Gateway: ${effectiveProvider.baseUrl}`);
+            }
         } else if (effectiveProvider.type !== provider.type && (!effectiveProvider.apiKey || effectiveProvider.apiKey.trim() === '')) {
             console.warn(`[AI Service] Provider switched to ${effectiveProvider.type} but no API Key found in settings!`);
         }
@@ -617,7 +702,7 @@ export async function resolveAIConfig(
 
 export function setupAIHandlers(ipcMain: IpcMain): void {
     const browserTools = createBrowserTools();
-    const targetTools = createTargetTools();
+    const targetTools = createTargetTools({ taskQueueService });
     const playbookTools = createPlaybookTools();
     const integrationTools = createIntegrationTools();
     const utilityTools = createUtilityTools();
@@ -981,7 +1066,7 @@ CRITICAL:
             };
 
             const requestBrowserTools = createBrowserTools({ getSpeed, workspaceId: request.workspaceId, getAccessToken });
-            const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase, workspaceId: request.workspaceId });
+            const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase, workspaceId: request.workspaceId, taskQueueService });
             let requestPlaybookTools = createPlaybookTools({
                 playbooks,
                 supabaseClient: scopedSupabase,
@@ -1014,9 +1099,15 @@ CRITICAL:
             const deduplicatedTools: DynamicStructuredTool[] = [];
             const seenNames = new Set<string>();
             const duplicatesFound: string[] = [];
+            const disabledToolsSet = new Set(request.workspaceSettings?.disabledTools || []);
 
             for (const tool of requestToolsRaw) {
                 const normalizedName = tool.name.trim();
+                // Skip if tool is disabled in workspace settings
+                if (disabledToolsSet.has(normalizedName)) {
+                    continue;
+                }
+
                 if (!seenNames.has(normalizedName)) {
                     seenNames.add(normalizedName);
                     deduplicatedTools.push(tool);
@@ -1235,11 +1326,31 @@ You are in FAST mode.
 
             if (enableTools) {
                 let chatModel = createChatModel(effectiveProvider, effectiveModel, false);
-                console.log('Registering AI Tools:', deduplicatedTools.map(t => t.name).join(', '));
-                // Bind tools without strict mode to avoid "all fields must be required" warning
-                // The strict mode requires all schema fields to be required, which conflicts with optional tool parameters
                 console.log(`[AI Service] Binding ${deduplicatedTools.length} tools to model`);
-                let modelWithTools = chatModel.bindTools(deduplicatedTools, { strict: false } as any);
+
+                let modelWithTools: any;
+
+                const isZAI = effectiveModel.id.toLowerCase().includes('z-ai') || effectiveModel.id.toLowerCase().includes('glm');
+                if (isZAI) {
+                    console.log('[AI Service] Z.AI/GLM detected. Attempting Safe Tool Binding...');
+                    try {
+                        if (typeof (chatModel as any).bindTools === 'function') {
+                            modelWithTools = chatModel.bindTools(deduplicatedTools, {
+                                parallel_tool_calls: false
+                            } as any);
+                            console.log('[AI Service] Success: Bound tools with parallel_tool_calls: false');
+                        } else {
+                            console.warn('[AI Service] bindTools missing on model instance, using standard binding');
+                            modelWithTools = chatModel.bindTools(deduplicatedTools, { strict: false } as any);
+                        }
+                    } catch (err) {
+                        console.error('[AI Service] bindTools failed for Z.AI:', err);
+                        modelWithTools = chatModel.bindTools(deduplicatedTools, { strict: false } as any);
+                    }
+                } else {
+                    // Standard binding for other providers
+                    modelWithTools = chatModel.bindTools(deduplicatedTools, { strict: false } as any);
+                }
 
                 let langchainMessages = convertMessages(messages, effectiveSystemPrompt);
                 let fullResponse = '';
@@ -1261,37 +1372,52 @@ You are in FAST mode.
                         const currentToken = getAccessToken();
                         if (!currentToken) throw new Error('No access token available');
                         const userId = getUserIdFromToken(currentToken);
+                        console.log(`[AI Service] Starting usage init for user: ${userId}`);
                         const [subRes, limits, usage] = await Promise.all([
                             scopedSupabase
                                 .from('subscriptions')
-                                .select('status')
+                                .select('status, id')
                                 .eq('user_id', userId)
-                                .in('status', ['active', 'trialing'])
+                                .in('status', ['active', 'trialing', 'past_due'])
                                 .limit(1)
                                 .maybeSingle(),
                             systemSettingsService.getTierLimits(getAccessToken() || accessToken),
                             usageService.getUsage(getAccessToken() || accessToken, 'ai_actions')
                         ]);
 
+                        if (subRes.error) {
+                            console.error(`[AI Service] Subscription query error for ${userId}:`, subRes.error);
+                        }
+
                         isPro = !!subRes.data;
+                        if (isPro) {
+                            console.log(`[AI Service] Confirmed Pro status via DB: ${subRes.data.status} (ID: ${subRes.data.id})`);
+                        } else {
+                            console.log(`[AI Service] No active/trialing/past_due subscription found in DB for ${userId}`);
+                        }
+
                         aiActionsLimit = limits.ai_actions_limit;
                         currentUsage = usage?.count || 0;
 
                         // FALLBACK TO STRIPE DIRECTLY IF SUPABASE RECORD MISSING
                         // This ensures Pro users are never blocked even if webhooks/DB sync is delayed
                         if (!isPro && userId) {
+                            console.log(`[AI Service] Attempting Stripe fallback for ${userId}...`);
                             try {
-                                const { data: profile } = await scopedSupabase
+                                const { data: profile, error: profileErr } = await scopedSupabase
                                     .from('profiles')
                                     .select('stripe_customer_id, email')
                                     .eq('id', userId)
                                     .maybeSingle();
+
+                                if (profileErr) console.error('[AI Service] Profile lookup error:', profileErr);
 
                                 if (profile) {
                                     let cid = profile.stripe_customer_id;
 
                                     // If CID missing, try recovering by email
                                     if (!cid && profile.email) {
+                                        console.log(`[AI Service] No Stripe CID found for profile ${userId}, trying recovery by email: ${profile.email}`);
                                         const customer = await stripeService.createCustomer(profile.email);
                                         cid = customer.id;
                                         // Proactively update profile in background
@@ -1300,22 +1426,25 @@ You are in FAST mode.
 
                                     if (cid) {
                                         const stripeSubs = await stripeService.getSubscriptions(cid);
-                                        const activeSub = stripeSubs.find((s: any) => s.status === 'active' || s.status === 'trialing');
+                                        const activeSub = stripeSubs.find((s: any) => s.status === 'active' || s.status === 'trialing' || s.status === 'past_due');
                                         if (activeSub) {
                                             isPro = true;
-                                            console.log(`[AI Service] Pro status recovered via Stripe email lookup (${profile.email}) for user ${userId}`);
+                                            console.log(`[AI Service] Pro status RECOVERED via Stripe direct lookup for user ${userId} (${profile.email})`);
+                                        } else {
+                                            console.log(`[AI Service] No active Stripe subscription found for customer ${cid}`);
                                         }
+                                    } else {
+                                        console.log(`[AI Service] No Stripe customer ID found/recovered for user ${userId}`);
                                     }
+                                } else {
+                                    console.log(`[AI Service] No profile found for user ${userId}`);
                                 }
                             } catch (stripeErr) {
                                 console.error('[AI Service] Stripe fallback verification failed:', stripeErr);
                             }
                         }
 
-                        console.log(`[AI Service] Usage Init: ${currentUsage}/${aiActionsLimit} (Pro: ${isPro}, User: ${userId})`);
-                        if (subRes.error) {
-                            console.error('[AI Service] Subscription query error:', subRes.error);
-                        }
+                        console.log(`[AI Service] Usage Init Final: ${currentUsage}/${aiActionsLimit} (Pro: ${isPro}, User: ${userId})`);
                     } catch (e) {
                         console.error('[AI Service] Limit initialization error:', e);
                     }
@@ -1347,6 +1476,9 @@ You are in FAST mode.
                         const timeoutPromise = new Promise((_, reject) =>
                             setTimeout(() => reject(new Error('Model call timed out after 180s')), 180000)
                         );
+
+                        // Prune message history before calling the model to manage context window and prevent token limits
+                        langchainMessages = pruneMessageHistory(langchainMessages);
 
                         // Wrap the invoke call to catch LangChain internal errors
                         const invokeWithErrorHandling = async () => {
@@ -1480,7 +1612,7 @@ You are in FAST mode.
                                         });
                                     }
 
-                                    const downgradedModel = createChatModel(provider, model, { streaming: false, disableReasoning: true });
+                                    const downgradedModel = createChatModel(effectiveProvider, effectiveModel, { streaming: false, disableReasoning: true });
                                     const bindedDowngraded = downgradedModel.bindTools(deduplicatedTools, { strict: false } as any);
 
                                     response = await bindedDowngraded.invoke(langchainMessages);
@@ -1506,7 +1638,7 @@ You are in FAST mode.
                                             isNarration: true,
                                         });
                                     }
-                                    const plainModel = createChatModel(provider, model, { streaming: false, safeMode: true });
+                                    const plainModel = createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
                                     response = await plainModel.invoke(langchainMessages);
 
                                     // In plain mode, we stop trying to use tools for this iteration's model

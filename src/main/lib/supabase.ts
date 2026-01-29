@@ -47,87 +47,76 @@ export function getUserIdFromToken(accessToken: string): string | null {
     }
 }
 
-// Keep a simple cache to avoid redundant client creation and setSession calls
-let cachedClient: any = null;
-let cachedAccessToken: string | null = null;
-let cachedRefreshToken: string | null = null;
+// Keep a per-token cache to avoid redundant client creation and setSession calls
+// Using a Map keyed by accessToken ensures that concurrent sessions/windows don't conflict
+const clientCache = new Map<string, any>();
 
 export async function getScopedSupabase(accessToken?: string, refreshToken?: string) {
     if (!accessToken) return supabase;
 
-    // If we already have a client with this exact access token, reuse it
-    // This dramatically reduces redundant Auth calls if called in a loop
-    if (cachedClient && cachedAccessToken === accessToken) {
-        return cachedClient;
+    // 1. Check if we have a cached client for EXACTLY this access token
+    if (clientCache.has(accessToken)) {
+        return clientCache.get(accessToken);
     }
 
-    // Try to reuse the client with setSession if we have a refresh token
-    if (refreshToken && cachedClient && cachedRefreshToken === refreshToken) {
-        try {
-            // Even if refreshToken matches, accessToken might be new (refreshed by renderer)
-            const { error } = await cachedClient.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken
-            });
-
-            if (!error) {
-                cachedAccessToken = accessToken;
-                return cachedClient;
-            }
-            console.warn('[Supabase Main] Failed to update session on cached client:', error.message);
-        } catch (e) {
-            console.error('[Supabase Main] Exception updating session on cached client:', e);
+    // 2. Determine if the token is likely expired (simple check)
+    let isExpired = false;
+    try {
+        const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64').toString());
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.exp && payload.exp < now) {
+            isExpired = true;
+            console.log(`[Supabase Main] Detected likely expired access token (${payload.exp} < ${now}) during initialization`);
         }
+    } catch (e) {
+        // Ignore parsing errors
     }
 
-    // If we reach here, we either don't have a cached client or setSession failed
-    // If we have a refresh token, try to set the full session on a new client
-    if (refreshToken) {
-        const client = createClient(supabaseUrl || '', supabaseAnonKey || '', {
-            auth: {
-                persistSession: false,
-                autoRefreshToken: true,
-                detectSessionInUrl: false
-            }
-        });
+    // 3. Create a unique memory storage for THIS client instance to avoid cross-window collisions
+    const clientStorageMap = new Map<string, string>();
+    const clientStorage = {
+        getItem: (key: string) => clientStorageMap.get(key) || null,
+        setItem: (key: string, value: string) => { clientStorageMap.set(key, value); },
+        removeItem: (key: string) => { clientStorageMap.delete(key); },
+    };
 
-        try {
-            const { error } = await client.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken
-            });
-
-            if (!error) {
-                cachedClient = client;
-                cachedAccessToken = accessToken;
-                cachedRefreshToken = refreshToken;
-                return client;
-            }
-            console.warn('[Supabase Main] Failed to set scoped session with refresh token, falling back to stateless:', error.message);
-        } catch (e) {
-            console.error('[Supabase Main] Exception setting scoped session:', e);
-        }
-    }
-
-    // Fallback: Create a client with explicit Authorization header
-    // This works even without a valid refresh token (stateless mode)
-    const statelessClient = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+    // 4. Create a fresh client
+    // We explicitly include the Authorization header as a fallback/primary for RLS stability,
+    // while still maintaining the stateful auth for autoRefreshToken support.
+    const client = createClient(supabaseUrl || '', supabaseAnonKey || '', {
         global: {
             headers: {
                 Authorization: `Bearer ${accessToken}`
             }
         },
         auth: {
-            persistSession: false,
-            autoRefreshToken: false,
-            detectSessionInUrl: false
+            persistSession: true, // Use storage to support auto-refresh mechanics
+            autoRefreshToken: true,
+            detectSessionInUrl: false,
+            storage: clientStorage
         }
     });
 
-    // Update cache with stateless client if we didn't manage to get a stateful one
-    cachedClient = statelessClient;
-    cachedAccessToken = accessToken;
-    cachedRefreshToken = refreshToken || null;
+    try {
+        // 5. Set the session. If it's expired but we have a refresh token, setSession will try to refresh it immediately.
+        const { error } = await client.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken || ''
+        });
 
-    return statelessClient;
+        if (error) {
+            console.warn('[Supabase Main] Error setting session on new scoped client:', error.message);
+        }
+    } catch (e) {
+        console.error('[Supabase Main] Exception setting session on scoped client:', e);
+    }
+
+    // Cache the client so subsequent calls in the same turn/context are fast
+    if (clientCache.size > 20) {
+        const firstKey = clientCache.keys().next().value;
+        if (firstKey) clientCache.delete(firstKey);
+    }
+    clientCache.set(accessToken, client);
+
+    return client;
 }

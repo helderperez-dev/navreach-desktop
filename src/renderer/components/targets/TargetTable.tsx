@@ -2,7 +2,7 @@ import { useTargetsStore } from '@/stores/targets.store';
 import { targetService } from '@/lib/targets.service';
 import { Target } from '@/types/targets';
 import { CircularLoader } from '@/components/ui/CircularLoader';
-import { ExternalLink, MoreHorizontal, Trash2, Edit2, Tag, FolderPlus, ChevronUp, ChevronDown, Clock, Layers, X, Heart, MessageSquare, UserPlus, Send } from 'lucide-react';
+import { ExternalLink, MoreHorizontal, Trash2, Edit2, Tag, FolderPlus, ChevronUp, ChevronDown, Clock, Layers, X, Heart, MessageSquare, UserPlus, Send, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useTasksStore } from '@/stores/tasks.store';
 import { useAppStore } from '@/stores/app.store';
@@ -57,6 +57,7 @@ export function TargetTable({
     recentLogs = []
 }: TargetTableProps) {
     const { targets, isLoading, deleteTarget, viewMode, hasMore, isFetchingMore, loadMoreTargets, lists, selectedListId, saveTargetAssignments } = useTargetsStore();
+    const { tasks } = useTasksStore();
     const [sortField, setSortField] = useState<SortField>(viewMode === 'engaged' ? 'last_interaction_at' : 'created_at');
     const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
     const [analyzeTarget, setAnalyzeTarget] = useState<Target | null>(null);
@@ -769,8 +770,23 @@ export function TargetTable({
                                                 </Tooltip>
                                             </TooltipProvider>
                                             <div className="flex flex-col min-w-0 gap-0.5">
-                                                <div className="font-medium text-sm text-foreground group-hover:text-foreground/80 transition-colors truncate">
+                                                <div className="flex items-center gap-2 font-medium text-sm text-foreground group-hover:text-foreground/80 transition-colors truncate">
                                                     {target.name}
+                                                    {(() => {
+                                                        const activeTask = tasks.find(t =>
+                                                            (t.payload?.target_id === target.id || t.payload?.url === target.url) &&
+                                                            (t.status === 'processing' || t.status === 'queued')
+                                                        );
+                                                        if (activeTask) {
+                                                            return (
+                                                                <div className="flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20">
+                                                                    <RefreshCw className="h-2.5 w-2.5 text-blue-500 animate-spin" />
+                                                                    <span className="text-[9px] font-bold text-blue-500 uppercase tracking-tight">Analyzing</span>
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     {target.last_interaction_at && (

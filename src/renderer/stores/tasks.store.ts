@@ -47,8 +47,20 @@ export const useTasksStore = create<TasksState>((set, get) => ({
         set({ isLoading: true });
         try {
             const tasks = await window.api.tasks.list({ workspaceId });
-            const pendingCount = tasks.filter((t: any) => t.status === 'queued' || t.status === 'processing').length;
-            set({ tasks, isLoading: false, error: null, pendingCount });
+            const newPendingCount = tasks.filter((t: any) => t.status === 'queued' || t.status === 'processing').length;
+            const oldPendingCount = get().pendingCount;
+
+            // If we have active work or work just finished, refresh the targets list
+            if (newPendingCount > 0 || (oldPendingCount > 0 && newPendingCount === 0)) {
+                const { useTargetsStore } = await import('./targets.store');
+                const targetStore = useTargetsStore.getState();
+                // Avoid redundant fetches if already loading
+                if (!targetStore.isLoading) {
+                    targetStore.fetchTargets(undefined, true);
+                }
+            }
+
+            set({ tasks, isLoading: false, error: null, pendingCount: newPendingCount });
         } catch (err: any) {
             set({ error: err.message, isLoading: false });
         }

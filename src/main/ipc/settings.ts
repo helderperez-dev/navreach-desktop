@@ -130,6 +130,14 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
         responseMapping: t.response_mapping
       }));
 
+      // Sync to local store for main-process services (like AI Agent)
+      store.set('modelProviders', modelProviders);
+      store.set('mcpServers', mcpServers);
+      store.set('apiTools', apiTools);
+      if (defaultModelId) {
+        store.set('defaultModelId', defaultModelId);
+      }
+
       // In-memory merge with system defaults
       if (defaultProviderType && defaultModelId) {
         const systemProvider: ModelProvider = {
@@ -206,6 +214,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .single();
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('modelProviders') || [];
+    store.set('modelProviders', [...current, data]);
+
     return { success: true, provider: data };
   });
 
@@ -225,6 +238,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .eq('id', provider.id);
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('modelProviders') || [];
+    store.set('modelProviders', current.map((p: any) => p.id === provider.id ? { ...p, ...provider } : p));
+
     return { success: true, provider };
   });
 
@@ -236,6 +254,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .eq('id', providerId);
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('modelProviders') || [];
+    store.set('modelProviders', current.filter((p: any) => p.id !== providerId));
+
     return { success: true };
   });
 
@@ -262,6 +285,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .single();
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('mcpServers') || [];
+    store.set('mcpServers', [...current, data]);
+
     return { success: true, server: data };
   });
 
@@ -281,6 +309,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .single();
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('mcpServers') || [];
+    store.set('mcpServers', current.map((s: any) => s.id === server.id ? data : s));
+
     return { success: true, server: data };
   });
 
@@ -292,6 +325,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .eq('id', serverId);
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('mcpServers') || [];
+    store.set('mcpServers', current.filter((s: any) => s.id !== serverId));
+
     return { success: true };
   });
 
@@ -321,6 +359,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .single();
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('apiTools') || [];
+    store.set('apiTools', [...current, data]);
+
     return { success: true, tool: data };
   });
 
@@ -342,6 +385,21 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .eq('id', tool.id);
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('apiTools') || [];
+    store.set('apiTools', current.map((t: any) => t.id === tool.id ? {
+      ...t,
+      name: tool.name,
+      description: tool.description,
+      enabled: tool.enabled,
+      endpoint: tool.endpoint,
+      method: tool.method,
+      headers: tool.headers,
+      bodyTemplate: tool.bodyTemplate,
+      responseMapping: tool.responseMapping
+    } : t));
+
     return { success: true, tool };
   });
 
@@ -353,6 +411,11 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       .eq('id', toolId);
 
     if (error) return { success: false, error: error.message };
+
+    // Sync to local store
+    const current = store.get('apiTools') || [];
+    store.set('apiTools', current.filter((t: any) => t.id !== toolId));
+
     return { success: true };
   });
 

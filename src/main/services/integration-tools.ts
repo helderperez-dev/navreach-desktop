@@ -103,19 +103,40 @@ export function createIntegrationTools(workspaceSettings?: {
                 if (workspaceSettings?.disabledTools?.includes(tool_id)) {
                     throw new Error(`API Tool "${tool_id}" is disabled in this workspace.`);
                 }
-                const args = JSON.parse(arguments_json || '{}');
                 const tools = store.get('apiTools') || [];
                 const tool = tools.find(t => t.id === tool_id);
                 if (!tool) throw new Error('API Tool not found');
 
+                // Interpolate variables in endpoint and body
+                let finalEndpoint = tool.endpoint;
+                let finalBody: string | null = null;
+                const args = JSON.parse(arguments_json || '{}');
+
+                // 1. Interpolate Endpoint
+                Object.entries(args).forEach(([key, value]) => {
+                    const regex = new RegExp(`{{${key}}}`, 'g');
+                    finalEndpoint = finalEndpoint.replace(regex, String(value));
+                });
+
+                // 2. Interpolate Body Template or use fallback
+                if (tool.bodyTemplate) {
+                    finalBody = tool.bodyTemplate;
+                    Object.entries(args).forEach(([key, value]) => {
+                        const regex = new RegExp(`{{${key}}}`, 'g');
+                        finalBody = (finalBody as string).replace(regex, String(value));
+                    });
+                } else if (tool.method !== 'GET') {
+                    finalBody = JSON.stringify(args || {});
+                }
+
                 // Basic implementation of API call
-                const response = await fetch(tool.endpoint, {
+                const response = await fetch(finalEndpoint, {
                     method: tool.method || 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         ...(tool.headers || {}),
                     },
-                    body: JSON.stringify(args || {}),
+                    body: finalBody,
                 });
 
                 const data = await response.json();

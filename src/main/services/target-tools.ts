@@ -1,16 +1,20 @@
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { supabase } from '../lib/supabase';
+import { taskQueueService } from './task-queue.service';
 
 export interface TargetToolsContext {
     targetLists?: any[];
     supabaseClient?: any;
     workspaceId?: string;
+    taskQueueService?: any;
 }
 
 export function createTargetTools(context?: TargetToolsContext): DynamicStructuredTool[] {
     const supabaseClient = context?.supabaseClient || supabase;
     const currentWorkspaceId = context?.workspaceId;
+    const activeTaskQueueService = context?.taskQueueService || taskQueueService;
+    // Authorized Supabase client
 
     const getTargetsTool = new DynamicStructuredTool({
         name: 'db_get_targets',
@@ -83,7 +87,9 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                     list_name: listName
                 });
             } catch (error: any) {
-                return JSON.stringify({ success: false, error: error.message || String(error) });
+                console.error('db_get_targets error:', error);
+                const errorMsg = error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+                return JSON.stringify({ success: false, error: errorMsg });
             }
         },
     });
@@ -115,7 +121,9 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 if (error) throw error;
                 return JSON.stringify({ success: true, lists: data });
             } catch (error: any) {
-                return JSON.stringify({ success: false, error: error.message || String(error) });
+                console.error('db_get_target_lists error:', error);
+                const errorMsg = error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+                return JSON.stringify({ success: false, error: errorMsg });
             }
         },
     });
@@ -175,57 +183,86 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 if (error) throw error;
                 return JSON.stringify({ success: true, list: data });
             } catch (error: any) {
-                return JSON.stringify({ success: false, error: error.message || String(error) });
+                console.error('db_create_target_list error:', error);
+                const errorMsg = error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+                return JSON.stringify({ success: false, error: errorMsg });
             }
         },
     });
 
     const createTargetTool = new DynamicStructuredTool({
         name: 'db_create_target',
-        description: 'Add a new target (person/post/company) to a target list.',
+        description: 'Add a single specific target (person/post/company). CRITICAL: Do NOT use this for search results or bulk data; use capture_leads_bulk instead.',
         schema: z.object({
-            list_id: z.string().describe('The ID of the target list'),
+            list_id: z.string().nullable().describe('The ID of the target list. Pass null or empty string if not in a list.').default(null),
             name: z.string().describe('Name of the target'),
             url: z.string().describe('URL of the target (e.g., profile URL)'),
             type: z.string().describe('Type of target (person, post, company). Use "person" as default.'),
-            metadata_json: z.string().nullable().describe('Metadata fields as a JSON string. Pass "{}" if none.').default(null),
+            metadata_json: z.union([z.string(), z.record(z.any())]).nullable().describe('Metadata fields as a JSON string or object.').default(null),
         }),
         func: async (payload) => {
             try {
-                const { metadata_json, ...rest } = payload;
-                const metadata = JSON.parse(metadata_json || '{}');
+                const { metadata_json, list_id, ...rest } = payload;
                 const { data: { user } } = await supabaseClient.auth.getUser();
                 if (!user) throw new Error('Not authenticated');
 
+                let finalWorkspaceId = currentWorkspaceId;
+                if (list_id && list_id.trim().length > 10) {
+                    const { data: listData } = await supabaseClient
+                        .from('target_lists')
+                        .select('workspace_id')
+                        .eq('id', list_id)
+                        .single();
+                    if (listData?.workspace_id) finalWorkspaceId = listData.workspace_id;
+                }
+
+                const metadata = typeof metadata_json === 'string'
+                    ? JSON.parse(metadata_json || '{}')
+                    : (metadata_json || {});
+
+                const upsertData: any = {
+                    ...rest,
+                    metadata,
+                    user_id: user.id,
+                    workspace_id: finalWorkspaceId
+                };
+
                 const { data, error } = await supabaseClient
                     .from('targets')
-                    .insert([{ ...rest, metadata, user_id: user.id }])
+                    .upsert([upsertData], { onConflict: 'url, workspace_id' })
                     .select()
                     .single();
 
                 if (error) throw error;
 
-                // Auto-queue for profile analysis if enabled for workspace
-                try {
-                    const { data: list } = await supabaseClient.from('target_lists').select('workspace_id').eq('id', data.list_id).single();
-                    if (list?.workspace_id) {
-                        const { data: ws } = await supabaseClient.from('workspaces').select('auto_profile_analysis').eq('id', list.workspace_id).single();
-                        if (ws?.auto_profile_analysis && data.type === 'person') {
-                            const { taskQueueService } = require('./task-queue.service');
-                            await taskQueueService.addTask(list.workspace_id, user.id, 'profile_analysis', {
-                                url: data.url,
-                                target_id: data.id,
-                                username: data.name
-                            });
+                // Handle assignment if list_id is provided
+                if (list_id && list_id.trim().length > 10) {
+                    await supabaseClient
+                        .from('target_assignments')
+                        .upsert([{ target_id: data.id, list_id: list_id }], { onConflict: 'target_id, list_id' });
+
+                    // Auto-queue for profile analysis if enabled for workspace
+                    try {
+                        if (finalWorkspaceId) {
+                            const { data: ws } = await supabaseClient.from('workspaces').select('auto_profile_analysis').eq('id', finalWorkspaceId).single();
+                            if (ws?.auto_profile_analysis && data.type === 'person') {
+                                await activeTaskQueueService.addTask(finalWorkspaceId, user.id, 'profile_analysis', {
+                                    url: data.url,
+                                    target_id: data.id,
+                                    username: data.name
+                                });
+                            }
                         }
+                    } catch (autoErr) {
+                        console.error('Auto-queue failed:', autoErr);
                     }
-                } catch (autoErr) {
-                    console.error('Auto-queue failed:', autoErr);
                 }
 
                 return JSON.stringify({ success: true, target: data });
-            } catch (error) {
-                return JSON.stringify({ success: false, error: String(error) });
+            } catch (error: any) {
+                console.error('db_create_target error:', error);
+                const errorMsg = error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+                return JSON.stringify({ success: false, error: errorMsg });
             }
         },
     });
@@ -237,7 +274,7 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
             id: z.string().describe('The ID of the target to update'),
             status: z.string().nullable().describe('New status (e.g., "contacted", "engaged", "converted"). Pass empty string if no change.').default(null),
             last_interaction_at: z.string().nullable().describe('ISO timestamp of the interaction. Pass empty string if no change.').default(null),
-            metadata_json: z.string().nullable().describe('Key-value pairs to merge into existing metadata as a JSON string. Pass "{}" if no change.').default(null),
+            metadata_json: z.union([z.string(), z.record(z.any())]).nullable().describe('Key-value pairs to merge into existing metadata as a JSON string or object. Pass "{}" if no change.').default(null),
         }),
         func: async ({ id, status, last_interaction_at, metadata_json }) => {
             try {
@@ -245,7 +282,9 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 if (status) updates.status = status;
                 if (last_interaction_at) updates.last_interaction_at = last_interaction_at;
 
-                const metadata = JSON.parse(metadata_json || '{}');
+                const metadata = typeof metadata_json === 'string'
+                    ? JSON.parse(metadata_json || '{}')
+                    : (metadata_json || {});
                 // First get existing metadata to merge
                 if (metadata && Object.keys(metadata).length > 0) {
                     const { data: existing } = await supabaseClient.from('targets').select('metadata').eq('id', id).single();
@@ -268,8 +307,10 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
 
                 if (error) throw error;
                 return JSON.stringify({ success: true, target: data });
-            } catch (error) {
-                return JSON.stringify({ success: false, error: String(error) });
+            } catch (error: any) {
+                console.error('db_update_target error:', error);
+                const errorMsg = error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+                return JSON.stringify({ success: false, error: errorMsg });
             }
         },
     });
@@ -291,33 +332,61 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 const { data: { user } } = await supabaseClient.auth.getUser();
                 if (!user) throw new Error('Not authenticated');
 
-                const dataToInsert = leads.map(l => ({
-                    list_id: targetListId,
+                // 1. Resolve workspace_id for the list to ensure correct scoping
+                const { data: listData } = await supabaseClient
+                    .from('target_lists')
+                    .select('workspace_id')
+                    .eq('id', targetListId)
+                    .single();
+
+                const finalWorkspaceId = listData?.workspace_id || currentWorkspaceId;
+
+                const dataToUpsert = leads.map(l => ({
+                    workspace_id: finalWorkspaceId,
                     name: l.name,
                     url: l.url,
                     type: l.type,
                     metadata: l.metadata,
                     user_id: user.id
-                    // workspace_id: currentWorkspaceId // Column doesn't exist on targets
+                    // Note: We don't include list_id here because we'll handle assignments explicitly
+                    // to support targets existing in multiple lists.
                 }));
 
-                const { data, error } = await supabaseClient
+                // 2. Perform Upsert to handle "unique_target_url_per_workspace"
+                const { data: upsertedTargets, error: upsertError } = await supabaseClient
                     .from('targets')
-                    .insert(dataToInsert)
-                    .select();
+                    .upsert(dataToUpsert, {
+                        onConflict: 'url, workspace_id',
+                        ignoreDuplicates: false // Updates metadata if user exists
+                    })
+                    .select('id, url, name, type');
 
-                if (error) throw error;
+                if (upsertError) throw upsertError;
 
-                // Auto-queue for profile analysis if enabled for workspace
+                // 3. Ensure assignments in the junction table
+                if (upsertedTargets && upsertedTargets.length > 0) {
+                    const assignments = upsertedTargets.map((t: any) => ({
+                        target_id: t.id,
+                        list_id: targetListId
+                    }));
+
+                    const { error: assignError } = await supabaseClient
+                        .from('target_assignments')
+                        .upsert(assignments, { onConflict: 'target_id, list_id' });
+
+                    if (assignError) {
+                        console.error('Assignment error after bulk capture:', assignError);
+                    }
+                }
+
+                // 4. Auto-queue for profile analysis if enabled for workspace
                 try {
-                    const { data: list } = await supabaseClient.from('target_lists').select('workspace_id').eq('id', targetListId).single();
-                    if (list?.workspace_id) {
-                        const { data: ws } = await supabaseClient.from('workspaces').select('auto_profile_analysis').eq('id', list.workspace_id).single();
+                    if (finalWorkspaceId) {
+                        const { data: ws } = await supabaseClient.from('workspaces').select('auto_profile_analysis').eq('id', finalWorkspaceId).single();
                         if (ws?.auto_profile_analysis) {
-                            const { taskQueueService } = require('./task-queue.service');
-                            for (const target of data || []) {
+                            for (const target of upsertedTargets || []) {
                                 if (target.type === 'person') {
-                                    await taskQueueService.addTask(list.workspace_id, user.id, 'profile_analysis', {
+                                    await activeTaskQueueService.addTask(finalWorkspaceId, user.id, 'profile_analysis', {
                                         url: target.url,
                                         target_id: target.id,
                                         username: target.name
@@ -330,9 +399,15 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                     console.error('Auto-queue bulk failed:', autoErr);
                 }
 
-                return JSON.stringify({ success: true, count: data?.length || 0, message: `Successfully captured ${data?.length} leads.` });
+                return JSON.stringify({
+                    success: true,
+                    count: upsertedTargets?.length || 0,
+                    message: `Successfully captured ${upsertedTargets?.length} leads. Existing targets were updated and added to the list.`
+                });
             } catch (error: any) {
-                return JSON.stringify({ success: false, error: error.message || String(error) });
+                console.error('capture_leads_bulk error:', error);
+                const errorMsg = error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+                return JSON.stringify({ success: false, error: errorMsg });
             }
         }
     });

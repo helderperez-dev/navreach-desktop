@@ -548,7 +548,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                   if (!cleanContent) return null;
 
                   return (
-                    <div key={idx} className="prose prose-sm max-w-none w-full text-foreground leading-relaxed text-left dark:prose-invert break-words">
+                    <div key={idx} className="prose prose-sm max-w-full w-full text-foreground leading-relaxed text-left dark:prose-invert break-words min-w-0 overflow-hidden">
                       <ReactMarkdown
                         components={{
                           p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
@@ -556,8 +556,8 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                           ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ol>,
                           li: ({ children }) => <li className="pl-1">{withTags(children)}</li>,
                           strong: ({ children }) => <strong className="font-semibold text-foreground">{withTags(children)}</strong>,
-                          code: ({ children }) => <code className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono text-primary border border-border">{withTags(children)}</code>,
-                          pre: ({ children }) => <pre className="bg-muted p-3 rounded-lg border border-border overflow-x-auto my-3 text-xs font-mono shadow-inner">{children}</pre>,
+                          code: ({ children }) => <code className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono text-primary border border-border break-all">{withTags(children)}</code>,
+                          pre: ({ children }) => <pre className="bg-muted p-3 rounded-lg border border-border overflow-x-auto my-3 text-xs font-mono shadow-inner max-w-full">{children}</pre>,
                           a: ({ href, children }) => <a href={href} className="text-primary hover:text-primary/80 hover:underline decoration-primary/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
                           blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/50 pl-4 py-1 my-3 italic text-muted-foreground">{withTags(children)}</blockquote>,
                         }}
@@ -572,10 +572,12 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
 
               {/* Approval Request / Agent Control - Only if needs approval and is last */}
               {needsApproval && (
-                <AgentControlUI
-                  onApprove={onApprove}
-                  variant={isPauseOnly ? 'pause' : 'approval'}
-                />
+                <div className="max-w-full overflow-hidden">
+                  <AgentControlUI
+                    onApprove={onApprove}
+                    variant={isPauseOnly ? 'pause' : 'approval'}
+                  />
+                </div>
               )}
 
               {/* Copy / Retry Actions - Minimalist, show on hover. Only if there is content. */}

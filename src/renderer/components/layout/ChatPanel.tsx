@@ -177,6 +177,23 @@ export function ChatPanel() {
   const { mcpServers, apiTools } = useSettingsStore(); // Using existing hook
   const [playbooks, setPlaybooks] = useState<any[]>([]);
 
+  const getDisplayTitle = useCallback((title: string) => {
+    if (!title || title.trim() === '') return 'New Chat';
+
+    // Look for playbook signature even if truncated
+    if (title.toLowerCase().includes('{{playbooks.')) {
+      const idMatch = title.match(/playbooks\.([a-f\d\-]+)/i);
+      if (idMatch) {
+        const idPrefix = idMatch[1];
+        // Exact match first, then prefix match for truncated titles
+        const playbook = playbooks.find(p => p.id === idPrefix || p.id.startsWith(idPrefix));
+        return playbook ? `Playbook: ${playbook.name}` : 'Run Playbook';
+      }
+      return 'Run Playbook';
+    }
+    return title;
+  }, [playbooks]);
+
   const { session } = useAuthStore();
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeContent[]>([]);
@@ -790,10 +807,10 @@ export function ChatPanel() {
   };
 
   return (
-    <div className="relative flex flex-col h-full bg-card">
-      <div className="flex items-center justify-between h-12 px-4 border-b border-border/10 sticky top-0 z-20">
-        <div className="flex items-center gap-3">
-          <h2 className="text-sm font-semibold">{showHistory ? 'Chat History' : 'Reavion Agent'}</h2>
+    <div className="relative flex flex-col h-full bg-card min-w-0 w-full overflow-hidden">
+      <div className="flex items-center justify-between h-12 px-4 border-b border-border/10 sticky top-0 z-20 gap-2">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <h2 className="text-sm font-semibold truncate">{showHistory ? 'Chat History' : 'Reavion Agent'}</h2>
           {!showHistory && <TimerDisplay />}
         </div>
         <div className="flex items-center gap-1">
@@ -853,8 +870,8 @@ export function ChatPanel() {
       </div>
 
       {showHistory && (
-        <div className="absolute top-12 left-0 right-0 bottom-0 z-10 bg-card flex flex-col">
-          <ScrollArea className="flex-1">
+        <div className="absolute inset-0 top-12 z-10 bg-card flex flex-col">
+          <ScrollArea className="flex-1 h-full">
             <div className="p-2 space-y-1">
               {filteredConversations.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground text-sm">
@@ -870,30 +887,34 @@ export function ChatPanel() {
                         setShowHistory(false);
                       }}
                       className={cn(
-                        'w-full text-left px-3 py-2.5 rounded-lg transition-colors flex items-start gap-3',
+                        'group w-full text-left px-3 py-2.5 rounded-lg transition-colors flex items-center gap-3 min-w-0 mb-1',
                         conv.id === activeConversationId
                           ? 'bg-secondary border border-border'
                           : 'hover:bg-secondary/50 border border-transparent'
                       )}
                     >
-                      <MessageSquare className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium truncate">{conv.title}</div>
-                        <div className="text-xs text-muted-foreground">
+                      <MessageSquare className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0 flex flex-col justify-center">
+                        <div className="text-[13px] font-semibold truncate text-foreground/90 pr-2" title={getDisplayTitle(conv.title)}>
+                          {getDisplayTitle(conv.title)}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground/60 truncate pr-2">
                           {conv.messages.length} messages · {new Date(conv.updatedAt).toLocaleDateString()}
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-destructive/50 hover:text-destructive flex-shrink-0 opacity-0 group-hover:opacity-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteConversation(conv.id);
-                        }}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
+                      <div className="flex-shrink-0">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive/50 hover:text-destructive hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all rounded-md"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteConversation(conv.id);
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </button>
                   ))
               )}

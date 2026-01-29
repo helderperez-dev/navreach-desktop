@@ -244,74 +244,76 @@ export function BrowserView() {
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
-      <div className="flex items-center h-12 px-3 gap-2 border-b border-border bg-background z-20">
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoBack}>
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoForward}>
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-          {isLoading ? (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleStop}>
-              <X className="h-4 w-4" />
+      {!showLoader && (
+        <div className="flex items-center h-12 px-3 gap-2 border-b border-border bg-background z-20">
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoBack}>
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-          ) : (
-            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleReload}>
-              <RotateCw className="h-4 w-4" />
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleGoForward}>
+              <ArrowRight className="h-4 w-4" />
             </Button>
-          )}
-        </div>
-
-        <form onSubmit={handleNavigate} className="flex-1 flex items-center gap-2">
-          <Input
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="Enter URL or search..."
-            className="h-8 text-sm focus-visible:ring-border focus-visible:ring-1"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className={`h-8 w-8 ${isDebugPanelOpen ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground'}`}
-            onClick={toggleDebugPanel}
-            title="Toggle debug panel"
-          >
-            <Bug className="h-4 w-4" />
-          </Button>
-        </form>
-
-        <Button
-          variant={isInspecting ? "destructive" : "ghost"}
-          size="icon"
-          className={`h-8 w-8 mr-2 ${isInspecting ? 'animate-pulse' : ''}`}
-          onClick={toggleInspector}
-          title={isInspecting ? "Cancel Inspector" : "Inspect Element"}
-        >
-          <ScanEye className="h-4 w-4" />
-        </Button>
-
-        {activeView === 'playbooks' && (
-          <div className="flex items-center gap-1 border-l border-border pl-2">
-            {showPlaybookBrowser && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 ml-1"
-                onClick={togglePlaybookBrowserMaximized}
-                title={playbookBrowserMaximized ? "Restore Split View" : "Maximize Browser"}
-              >
-                {playbookBrowserMaximized ? (
-                  <Minimize2 className="h-4 w-4" />
-                ) : (
-                  <Maximize2 className="h-4 w-4" />
-                )}
+            {isLoading ? (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleStop}>
+                <X className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleReload}>
+                <RotateCw className="h-4 w-4" />
               </Button>
             )}
           </div>
-        )}
-      </div>
+
+          <form onSubmit={handleNavigate} className="flex-1 flex items-center gap-2">
+            <Input
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="Enter URL or search..."
+              className="h-8 text-sm focus-visible:ring-border focus-visible:ring-1"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 ${isDebugPanelOpen ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={toggleDebugPanel}
+              title="Toggle debug panel"
+            >
+              <Bug className="h-4 w-4" />
+            </Button>
+          </form>
+
+          <Button
+            variant={isInspecting ? "destructive" : "ghost"}
+            size="icon"
+            className={`h-8 w-8 mr-2 ${isInspecting ? 'animate-pulse' : ''}`}
+            onClick={toggleInspector}
+            title={isInspecting ? "Cancel Inspector" : "Inspect Element"}
+          >
+            <ScanEye className="h-4 w-4" />
+          </Button>
+
+          {activeView === 'playbooks' && (
+            <div className="flex items-center gap-1 border-l border-border pl-2">
+              {showPlaybookBrowser && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 ml-1"
+                  onClick={togglePlaybookBrowserMaximized}
+                  title={playbookBrowserMaximized ? "Restore Split View" : "Maximize Browser"}
+                >
+                  {playbookBrowserMaximized ? (
+                    <Minimize2 className="h-4 w-4" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 relative">
         <AnimatePresence>
