@@ -61,9 +61,9 @@ jobs:
       - name: Notarize (macOS)
         if: matrix.os == 'macos-latest'
         uses: lando/notarize-action@v2
-        timeout-minutes: 300
+        timeout-minutes: 350
         with:
-          product-path: "dist/Reavion-${{ steps.sync_version.outputs.VERSION }}-arm64.dmg"
+          product-path: "dist/Reavion-${{ steps.sync_version.outputs.VERSION }}-universal.dmg"
           primary-bundle-id: "com.reavion.app"
           appstore-connect-username: ${{ secrets.APPLE_ID }}
           appstore-connect-password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
