@@ -36,6 +36,25 @@ jobs:
           echo "Syncing package.json version to $VERSION"
           npm version $VERSION --allow-same-version --no-git-tag-version
 
+      - name: Prepare Keychain (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          # Create a temporary keychain
+          security create-keychain -p "" build.keychain
+          security list-keychains -s build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          
+          # Import the certificate
+          echo "${{ secrets.CSC_LINK }}" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "${{ secrets.CSC_PASSWORD }}" -T /usr/bin/codesign -T /usr/bin/productbuild
+          
+          # Crucial: Allow codesign to access the key without a prompt
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          
+          # Clean up the file
+          rm certificate.p12
+
       - name: Build and release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
