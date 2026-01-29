@@ -87,6 +87,7 @@ const mcpAPI = {
 };
 
 const windowAPI = {
+  platform: process.platform,
   minimize: () => ipcRenderer.invoke('window:minimize'),
   maximize: () => ipcRenderer.invoke('window:maximize'),
   close: () => ipcRenderer.invoke('window:close'),

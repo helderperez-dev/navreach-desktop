@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { cn } from '@/lib/utils';
 import reavionLogoWhite from '@assets/reavion-white.png';
 import reavionLogoBlack from '@assets/reavion-black.png';
 import { useAuthStore } from '@/stores/auth.store';
@@ -43,10 +44,39 @@ export function TitleBar() {
 
   const avatarUrl = user?.user_metadata?.avatar_url;
 
+  const isWindows = (window as any).api?.window?.platform === 'win32';
+  const isMac = (window as any).api?.window?.platform === 'darwin';
+
+  const WindowControls = () => (
+    <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 no-drag z-50">
+      <button
+        onClick={() => (window as any).api.window.close()}
+        className="w-3 h-3 rounded-full bg-[#FF5F56] hover:brightness-110 active:brightness-90 transition-all cursor-default"
+        title="Close"
+      />
+      <button
+        onClick={() => (window as any).api.window.minimize()}
+        className="w-3 h-3 rounded-full bg-[#FFBD2E] hover:brightness-110 active:brightness-90 transition-all cursor-default"
+        title="Minimize"
+      />
+      <button
+        onClick={() => (window as any).api.window.maximize()}
+        className="w-3 h-3 rounded-full bg-[#27C93F] hover:brightness-110 active:brightness-90 transition-all cursor-default"
+        title="Maximize"
+      />
+    </div>
+  );
+
   return (
     <div className="h-12 min-h-[48px] flex items-center bg-background border-b border-border/20 drag-region transition-colors duration-200 relative">
+      {/* Windows Custom Controls */}
+      {isWindows && <WindowControls />}
+
       {/* Left section - Window controls space on macOS */}
-      <div className="flex-1 flex items-center pl-[84px]">
+      <div className={cn(
+        "flex-1 flex items-center",
+        isMac || isWindows ? "pl-[84px]" : "pl-4"
+      )}>
         <img
           src={reavionLogoWhite}
           alt="Reavion"
