@@ -11,7 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 360
+    timeout-minutes: 1440
 
     strategy:
       matrix:
