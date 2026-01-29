@@ -11,7 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 360
 
     strategy:
       matrix:
@@ -39,20 +39,33 @@ jobs:
           npm version $VERSION --allow-same-version --no-git-tag-version
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build, Sign and Notarize
+      - name: Import Apple Certificates
+        if: matrix.os == 'macos-latest'
+        uses: apple-actions/import-codesign-certs@v2
+        with:
+          p12-file-base64: ${{ secrets.CSC_LINK }}
+          p12-password: ${{ secrets.CSC_PASSWORD }}
+
+      - name: Build and Sign
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          # macOS Singing & Notarization
+          # Signing credentials
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_PASSWORD: ${{ secrets.CSC_PASSWORD }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Logging to see exactly where it is in the codesign process
-          DEBUG: 'electron-builder'
         run: npm run build:${{ matrix.os == 'macos-latest' && 'mac' || matrix.os == 'windows-latest' && 'win' || 'linux' }} -- --publish always
+
+      - name: Notarize (macOS)
+        if: matrix.os == 'macos-latest'
+        uses: lando/notarize-action@v2
+        timeout-minutes: 300
+        with:
+          product-path: "dist/Reavion-${{ steps.sync_version.outputs.VERSION }}-arm64.dmg"
+          primary-bundle-id: "com.reavion.app"
+          appstore-connect-username: ${{ secrets.APPLE_ID }}
+          appstore-connect-password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          appstore-connect-team-id: ${{ secrets.APPLE_TEAM_ID }}
+          verbose: true
