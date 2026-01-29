@@ -44,8 +44,10 @@ export function TitleBar() {
 
   const avatarUrl = user?.user_metadata?.avatar_url;
 
-  const isWindows = (window as any).api?.window?.platform === 'win32';
-  const isMac = (window as any).api?.window?.platform === 'darwin';
+  // Platform detection - using both API and userAgent for robustness
+  const platform = (window as any).api?.window?.platform;
+  const isWindows = platform === 'win32' || /Win/.test(navigator.userAgent);
+  const isMac = platform === 'darwin' || /Mac/.test(navigator.userAgent);
 
   const WindowControls = () => (
     <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 no-drag z-50">
@@ -72,11 +74,8 @@ export function TitleBar() {
       {/* Windows Custom Controls */}
       {isWindows && <WindowControls />}
 
-      {/* Left section - Window controls space on macOS */}
-      <div className={cn(
-        "flex-1 flex items-center",
-        isMac || isWindows ? "pl-[84px]" : "pl-4"
-      )}>
+      {/* Left section - Space reserved for native macOS traffic lights or custom Windows controls */}
+      <div className="flex-1 flex items-center pl-[84px]">
         <img
           src={reavionLogoWhite}
           alt="Reavion"
