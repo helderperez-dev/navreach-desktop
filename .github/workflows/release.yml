@@ -11,6 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
 
     strategy:
       matrix:
@@ -36,29 +37,23 @@ jobs:
           echo "Syncing package.json version to $VERSION"
           npm version $VERSION --allow-same-version --no-git-tag-version
 
-      - name: Import Apple Certificates
-        if: matrix.os == 'macos-latest'
-        uses: apple-actions/import-codesign-certs@v2
+      - name: Build and Release
+        uses: samuelmeuli/action-electron-builder@v1
         with:
-          p12-file-base64: ${{ secrets.CSC_LINK }}
-          p12-password: ${{ secrets.CSC_PASSWORD }}
-
-      - name: Build and release
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          release: true
+          # macOS signing
+          mac_certs: ${{ secrets.CSC_LINK }}
+          mac_certs_password: ${{ secrets.CSC_PASSWORD }}
+          # macOS notarization
+          apple_id: ${{ secrets.APPLE_ID }}
+          apple_id_password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # App Environment Variables
+          # App Environment Variables for the build process
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          # macOS Signing & Notarization
-          # Note: We don't need CSC_LINK here because it's now in the system keychain
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Debugging
+          # Verbose logging to troubleshoot if it hangs again
           NOTARIZE_VERBOSE: 'true'
           DEBUG: 'electron-builder'
-        
-        # 'npm run build:mac' etc already include 'electron-builder' which handles publishing based on config
-        run: npm run build:${{ matrix.os == 'macos-latest' && 'mac' || matrix.os == 'windows-latest' && 'win' || 'linux' }} -- --publish always
