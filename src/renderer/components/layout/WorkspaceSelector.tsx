@@ -121,7 +121,7 @@ export function WorkspaceSelector({ isCollapsed }: { isCollapsed?: boolean }) {
     return (
         <Dialog open={showNewWorkspaceDialog} onOpenChange={setShowNewWorkspaceDialog}>
             {isCollapsed ? (
-                <Tooltip delayDuration={0}>
+                <Tooltip delayDuration={400} open={isCollapsed ? undefined : false}>
                     <TooltipTrigger asChild>
                         {menu}
                     </TooltipTrigger>

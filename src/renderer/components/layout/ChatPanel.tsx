@@ -807,10 +807,10 @@ export function ChatPanel() {
   };
 
   return (
-    <div className="relative flex flex-col h-full bg-card min-w-0 w-full overflow-hidden">
-      <div className="flex items-center justify-between h-12 px-4 border-b border-border/10 sticky top-0 z-20 gap-2">
+    <div className="relative flex flex-col h-full bg-[#030303] min-w-0 w-full overflow-hidden">
+      <div className="flex items-center justify-between h-14 px-5 border-b border-white/[0.03] sticky top-0 z-20 gap-2 bg-black/20 backdrop-blur-md">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <h2 className="text-sm font-semibold truncate">{showHistory ? 'Chat History' : 'Reavion Agent'}</h2>
+          <h2 className="text-[13px] font-medium tracking-tight text-white/90">{showHistory ? 'History' : 'Assistant'}</h2>
           {!showHistory && <TimerDisplay />}
         </div>
         <div className="flex items-center gap-1">
@@ -887,10 +887,10 @@ export function ChatPanel() {
                         setShowHistory(false);
                       }}
                       className={cn(
-                        'group w-full text-left px-3 py-2.5 rounded-lg transition-colors flex items-center gap-3 min-w-0 mb-1',
+                        'group w-full text-left px-4 py-3 rounded-2xl transition-all flex items-center gap-3 min-w-0 mb-2 border',
                         conv.id === activeConversationId
-                          ? 'bg-secondary border border-border'
-                          : 'hover:bg-secondary/50 border border-transparent'
+                          ? 'bg-white/[0.05] border-white/10 shadow-lg'
+                          : 'hover:bg-white/[0.03] border-transparent'
                       )}
                     >
                       <MessageSquare className="h-4 w-4 text-muted-foreground flex-shrink-0" />
@@ -1047,9 +1047,9 @@ export function ChatPanel() {
         )}
       </ScrollArea>
 
-      <div className="p-3 space-y-2">
+      <div className="p-4 space-y-2">
         <form onSubmit={handleSubmit}>
-          <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border transition-all overflow-hidden">
+          <div className="liquid-glass rounded-3xl border-white/10 focus-within:border-white/20 focus-within:bg-white/[0.03] transition-all overflow-hidden shadow-2xl">
             {showSuggestions && (
               <div className="absolute bottom-full left-0 right-0 mb-2 mx-3 bg-popover border border-border/50 rounded-xl shadow-2xl overflow-hidden z-20 animate-in fade-in slide-in-from-bottom-2 duration-200">
                 <div className="px-3 py-2 border-b border-border/30 bg-secondary/20">
@@ -1166,8 +1166,8 @@ export function ChatPanel() {
                     className={cn(
                       "w-8 h-8 rounded-full flex items-center justify-center transition-all",
                       input.trim()
-                        ? "bg-foreground text-background hover:bg-foreground/90"
-                        : "bg-muted text-muted-foreground cursor-not-allowed"
+                        ? "bg-white text-black hover:bg-white/90"
+                        : "bg-white/5 text-white/20 cursor-not-allowed"
                     )}
                   >
                     <ArrowUp className="h-4 w-4" />

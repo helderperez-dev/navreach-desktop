@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { LogIn, Mail, Github, Chrome, ArrowRight, Minus, Square, X, Sun, Moon, Laptop } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogIn, Mail, Github, Chrome, ArrowRight, Minus, Square, X } from 'lucide-react';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { useAuthStore } from '@/stores/auth.store';
+import { useAppStore } from '@/stores/app.store';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,6 +18,7 @@ export function AuthScreen() {
     const [mode, setMode] = useState<'login' | 'signup'>('login');
 
     const { signInWithGoogle } = useAuthStore();
+    const { theme, setTheme } = useAppStore();
 
     const handleEmailAuth = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -37,104 +39,169 @@ export function AuthScreen() {
         }
     };
 
+    const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>(
+        window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+    );
+
+    useEffect(() => {
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+        const handler = (e: MediaQueryListEvent) => setSystemTheme(e.matches ? 'dark' : 'light');
+        mediaQuery.addEventListener('change', handler);
+        return () => mediaQuery.removeEventListener('change', handler);
+    }, []);
+
+    const isActualDark = theme === 'dark' || (theme === 'system' && systemTheme === 'dark');
+
+    const toggleTheme = () => {
+        if (theme === 'light') setTheme('dark');
+        else if (theme === 'dark') setTheme('system');
+        else setTheme('light');
+    };
+
+    const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Laptop;
+
     const handleMinimize = () => (window as any).api.window.minimize();
     const handleMaximize = () => (window as any).api.window.maximize();
     const handleClose = () => (window as any).api.window.close();
     const isMac = navigator.userAgent.includes('Mac');
 
     return (
-        <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
+        <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#f9f9f9] dark:bg-[#030303] transition-colors duration-700 relative">
+            {/* Minimalist Premium Background - Spans entire window including title bar */}
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(0,0,0,0.03),transparent_80%)] dark:bg-[radial-gradient(circle_at_50%_-10%,rgba(255,255,255,0.06),transparent_80%)] pointer-events-none transition-all duration-700" />
+
+            {/* Animated Blobs for Liquid Aesthetic */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <motion.div
+                    animate={{
+                        x: [0, 100, 0],
+                        y: [0, 50, 0],
+                        scale: [1, 1.2, 1],
+                    }}
+                    transition={{
+                        duration: 20,
+                        repeat: Infinity,
+                        ease: "linear"
+                    }}
+                    className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-blue-500/5 dark:bg-blue-400/10 rounded-full blur-[120px]"
+                />
+                <motion.div
+                    animate={{
+                        x: [0, -80, 0],
+                        y: [0, 100, 0],
+                        scale: [1, 1.1, 1],
+                    }}
+                    transition={{
+                        duration: 25,
+                        repeat: Infinity,
+                        ease: "linear"
+                    }}
+                    className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] bg-purple-500/5 dark:bg-purple-400/10 rounded-full blur-[120px]"
+                />
+            </div>
+
             {/* Draggable Title Bar Area */}
-            <div className="h-12 min-h-[48px] w-full flex items-center justify-end drag-region bg-transparent border-b border-transparent transition-colors hover:border-border/40 group">
-                <div className="flex items-center px-4 gap-2 no-drag opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className="h-12 min-h-[48px] w-full flex items-center justify-end drag-region bg-transparent z-20 transition-colors group">
+                <div className="flex items-center px-4 gap-2 no-drag">
+                    <button
+                        onClick={toggleTheme}
+                        className="w-10 h-10 flex items-center justify-center rounded-xl text-black/20 hover:text-black hover:bg-black/5 dark:text-white/20 dark:hover:text-white dark:hover:bg-white/5 transition-all mr-1"
+                        title={`Theme: ${theme}`}
+                    >
+                        <ThemeIcon className="w-4 h-4" />
+                    </button>
                     {!isMac && (
-                        <>
+                        <div className="flex items-center gap-1 opacity-40 group-hover:opacity-100 transition-opacity duration-300">
                             <button
                                 onClick={handleMinimize}
-                                className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+                                className="w-8 h-8 flex items-center justify-center rounded-md text-black/60 hover:text-black hover:bg-black/5 dark:text-white/60 dark:hover:text-white dark:hover:bg-white/5 transition-all"
                             >
                                 <Minus className="w-4 h-4" />
                             </button>
                             <button
                                 onClick={handleMaximize}
-                                className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+                                className="w-8 h-8 flex items-center justify-center rounded-md text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white hover:bg-black/5 dark:hover:bg-white/5 transition-all"
                             >
                                 <Square className="w-3 h-3" />
                             </button>
                             <button
                                 onClick={handleClose}
-                                className="w-8 h-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                className="w-8 h-8 flex items-center justify-center rounded-md text-black/60 hover:text-red-500 dark:text-white/60 dark:hover:text-red-400 hover:bg-red-500/10 transition-all"
                             >
                                 <X className="w-4 h-4" />
                             </button>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
 
-            <div className="flex-1 flex flex-col items-center justify-center relative text-foreground">
-                {/* Background Orbs */}
-                <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-500/10 blur-[120px] rounded-full" />
-                <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-500/10 blur-[120px] rounded-full" />
-
+            <div className="flex-1 flex flex-col items-center justify-center relative">
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="w-full max-w-md z-10 p-8"
+                    initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                    className="w-full max-w-md z-10 p-10 bg-white/40 dark:bg-black/40 backdrop-blur-2xl border border-black/[0.05] dark:border-white/10 rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] dark:shadow-[0_48px_96px_-16px_rgba(0,0,0,0.6)] border-t-black/[0.08] dark:border-t-white/10 mx-4 relative overflow-hidden"
                 >
-                    <div className="flex flex-col items-center mb-8">
-                        <img src={reavionLogoBlack} alt="Reavion" className="h-10 w-auto mb-10 select-none dark:hidden block" draggable={false} />
-                        <img src={reavionLogo} alt="Reavion" className="h-10 w-auto mb-10 select-none hidden dark:block" draggable={false} />
+                    {/* Subtle Internal Edge Glow */}
+                    <div className="absolute inset-0 rounded-[2.5rem] border border-black/[0.01] dark:border-white/[0.02] pointer-events-none" />
 
-                        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-foreground to-foreground/60">
+                    <div className="flex flex-col items-center mb-10">
+                        <img
+                            src={isActualDark ? reavionLogo : reavionLogoBlack}
+                            alt="Reavion"
+                            className="h-8 w-auto mb-12 select-none"
+                            draggable={false}
+                        />
+
+                        <h1 className="text-3xl font-medium tracking-tight bg-clip-text text-transparent bg-gradient-to-b from-black to-black/60 dark:from-white dark:to-white/50">
                             {mode === 'login' ? 'Welcome Back' : 'Create Account'}
                         </h1>
-                        <p className="text-muted-foreground mt-2 text-center">
+                        <p className="text-black/40 dark:text-white/40 mt-3 text-center text-[15px] leading-relaxed max-w-[280px]">
                             {mode === 'login'
                                 ? 'Enter your credentials to access your workspace'
                                 : 'Join Reavion and start automating your browser'}
                         </p>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                         <Button
                             variant="outline"
-                            className="w-full h-12 bg-secondary/50 border-input hover:bg-secondary/80 text-foreground transition-all duration-300"
+                            className="w-full h-12 bg-black/[0.02] dark:bg-white/[0.05] border-black/5 dark:border-white/10 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] text-black/70 dark:text-white rounded-2xl transition-all duration-300"
                             onClick={signInWithGoogle}
                         >
-                            <Chrome className="mr-2 h-4 w-4" />
-                            Continue with Google
+                            <Chrome className="mr-3 h-4 w-4 opacity-70" />
+                            <span className="font-medium font-sans">Continue with Google</span>
                         </Button>
 
-                        <div className="relative my-8">
+                        <div className="relative my-10">
                             <div className="absolute inset-0 flex items-center">
-                                <span className="w-full border-t border-border"></span>
+                                <span className="w-full border-t border-black/[0.05] dark:border-white/[0.05]"></span>
                             </div>
-                            <div className="relative flex justify-center text-xs uppercase">
-                                <span className="bg-background px-2 text-muted-foreground font-medium tracking-wider">Or continue with</span>
+                            <div className="relative flex justify-center text-[10px] uppercase tracking-[0.2em]">
+                                <span className="bg-[#f9f9f9] dark:bg-[#080808] transition-colors duration-500 px-4 text-black/20 dark:text-white/20 font-bold">Or use email</span>
                             </div>
                         </div>
 
-                        <form onSubmit={handleEmailAuth} className="space-y-4">
+                        <form onSubmit={handleEmailAuth} className="space-y-6">
                             <div className="space-y-2">
-                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">Email Address</label>
+                                <label className="text-[10px] font-bold text-black/30 dark:text-white/30 uppercase tracking-[0.15em] ml-1">Email</label>
                                 <Input
                                     type="email"
                                     placeholder="name@example.com"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
-                                    className="bg-secondary/50 border-input text-foreground h-12 outline-none focus:border-ring hover:border-input/80 focus:bg-background focus-visible:ring-0 focus-visible:ring-offset-0 transition-[border-color,background-color] duration-300 ease-in-out"
+                                    className="bg-black/[0.02] dark:bg-white/[0.03] border-black/5 dark:border-white/5 text-black dark:text-white h-12 rounded-2xl outline-none focus:border-black/10 dark:focus:border-white/20 hover:border-black/5 dark:hover:border-white/10 focus:bg-black/[0.04] dark:focus:bg-white/[0.05] transition-all duration-300 placeholder:text-black/20 dark:placeholder:text-white/10"
                                     required
                                 />
                             </div>
                             <div className="space-y-2">
-                                <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">Password</label>
+                                <label className="text-[10px] font-bold text-black/30 dark:text-white/30 uppercase tracking-[0.15em] ml-1">Password</label>
                                 <Input
                                     type="password"
                                     placeholder="••••••••"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    className="bg-secondary/50 border-input text-foreground h-12 outline-none focus:border-ring hover:border-input/80 focus:bg-background focus-visible:ring-0 focus-visible:ring-offset-0 transition-[border-color,background-color] duration-300 ease-in-out"
+                                    className="bg-black/[0.02] dark:bg-white/[0.03] border-black/5 dark:border-white/5 text-black dark:text-white h-12 rounded-2xl outline-none focus:border-black/10 dark:focus:border-white/20 hover:border-black/5 dark:hover:border-white/10 focus:bg-black/[0.04] dark:focus:bg-white/[0.05] transition-all duration-300 placeholder:text-black/20 dark:placeholder:text-white/10"
                                     required
                                 />
                             </div>
@@ -142,23 +209,24 @@ export function AuthScreen() {
                             <Button
                                 type="submit"
                                 disabled={isLoading}
-                                className="w-full h-12 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold transition-all duration-300"
+                                className="w-full h-12 bg-black dark:bg-white text-white dark:text-black hover:bg-neutral-800 dark:hover:bg-neutral-200 rounded-2xl font-semibold shadow-2xl transition-all duration-300 active:scale-[0.98] bg-gradient-to-br from-neutral-900 to-black dark:from-white dark:to-white/90"
                             >
                                 {isLoading ? (
-                                    <CircularLoader className="h-5 w-5" />
+                                    <CircularLoader className="h-5 w-5 border-white/20 border-t-white dark:border-black/20 dark:border-t-black" />
                                 ) : (
                                     <>
                                         {mode === 'login' ? 'Sign In' : 'Sign Up'}
-                                        <ArrowRight className="ml-2 h-4 w-4" />
+                                        <ArrowRight className="ml-3 h-4 w-4" />
                                     </>
                                 )}
                             </Button>
                         </form>
 
-                        <div className="mt-6 text-center">
+                        <div className="mt-8 text-center">
                             <button
+                                type="button"
                                 onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
-                                className="text-muted-foreground hover:text-foreground transition-colors text-sm font-medium"
+                                className="text-black/30 dark:text-white/30 hover:text-black dark:hover:text-white transition-all text-sm font-medium tracking-tight"
                             >
                                 {mode === 'login'
                                     ? "Don't have an account? Sign up"
@@ -169,5 +237,6 @@ export function AuthScreen() {
                 </motion.div>
             </div>
         </div>
+
     );
 }

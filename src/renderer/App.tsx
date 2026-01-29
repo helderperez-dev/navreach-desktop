@@ -28,6 +28,19 @@ export function App() {
     loadSettings();
     setTheme(theme);
 
+    // Listen for system theme changes
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = () => {
+      if (useAppStore.getState().theme === 'system') {
+        setTheme('system');
+      }
+    };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  useEffect(() => {
     if (!supabase) {
       console.error('[App] Supabase client not initialized');
       setSession(null);

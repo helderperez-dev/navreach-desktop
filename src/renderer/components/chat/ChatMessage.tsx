@@ -276,17 +276,17 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
   const isSnapshot = toolCall.name === 'browser_snapshot';
 
   return (
-    <div className="my-1 rounded-xl border border-border/10 bg-secondary/5 overflow-hidden transition-all duration-200 hover:border-border/20">
+    <div className="my-2 rounded-2xl liquid-glass overflow-hidden group/tool">
       {/* Header - Always Visible */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors text-left hover:bg-muted/20"
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all text-left hover:bg-white/[0.03]"
       >
         <div className={cn(
-          "flex items-center justify-center w-5 h-5 rounded-lg border text-xs shadow-sm",
-          isSuccess ? "bg-emerald-500/5 border-emerald-500/10 text-emerald-500/70" :
-            isFailed ? "bg-destructive/5 border-destructive/10 text-destructive/70" :
-              "bg-primary/5 border-primary/10 text-primary/70"
+          "flex items-center justify-center w-5 h-5 rounded-lg border text-xs transition-colors",
+          isSuccess ? "bg-white/5 border-white/10 text-white/50" :
+            isFailed ? "bg-red-500/5 border-red-500/20 text-red-400/70" :
+              "bg-white/5 border-white/10 text-white/40"
         )}>
           {isSuccess ? <Check className="h-3 w-3" /> :
             isFailed ? <AlertCircle className="h-3 w-3" /> :
@@ -296,48 +296,44 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
 
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <span className={cn(
-            "font-medium text-[13px] truncate flex-shrink min-w-0",
-            isSuccess ? "text-foreground/80" :
-              isFailed ? "text-destructive" :
-                "text-primary"
+            "font-medium text-[13px] tracking-tight truncate flex-shrink min-w-0 transition-colors",
+            isSuccess ? "text-white/60 group-hover/tool:text-white/80" :
+              isFailed ? "text-red-400/80" :
+                "text-white/40 group-hover/tool:text-white/60"
           )}>
             {getToolDisplayName(toolCall.name)}
           </span>
 
-
-
           {duration && (
-            <span className="text-[10px] text-muted-foreground ml-auto font-mono opacity-70 flex-shrink-0">
+            <span className="text-[10px] text-white/20 ml-auto font-mono flex-shrink-0">
               {duration}
             </span>
           )}
         </div>
 
-        {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/50" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />}
+        <div className="p-1 rounded-md transition-colors group-hover/tool:bg-white/5">
+          {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-white/20" /> : <ChevronRight className="h-3.5 w-3.5 text-white/20" />}
+        </div>
       </button>
 
-      {/* Expanded Details - Only show if there's meaningful results or error */}
+      {/* Expanded Details */}
       {isExpanded && resultDisplay && (
-        <div className="px-3 py-3 border-t border-border/30 bg-muted/20 text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
-
-          {/* Output Result */}
-          {resultDisplay && (
-            <div>
-              <div className={cn(
-                "flex items-center gap-1.5 text-[10px] uppercase tracking-wider mb-1.5 font-bold",
-                isFailed ? "text-destructive" : "text-emerald-500/70"
-              )}>
-                {isFailed ? <AlertCircle className="h-3 w-3" /> : <Activity className="h-3 w-3" />}
-                {isFailed ? 'System Error' : 'Tool Result'}
-              </div>
-              <div className={cn(
-                "rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed",
-                isFailed ? "bg-destructive/5 border-destructive/20 text-destructive/90" : "bg-background/50 border-border/30 text-muted-foreground"
-              )}>
-                {resultDisplay}
-              </div>
+        <div className="px-4 py-3 border-t border-white/5 bg-white/[0.01] text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-300">
+          <div>
+            <div className={cn(
+              "flex items-center gap-1.5 text-[9px] uppercase tracking-[0.1em] mb-2 font-bold",
+              isFailed ? "text-red-400/40" : "text-white/20"
+            )}>
+              {isFailed ? <AlertCircle className="h-2.5 w-2.5" /> : <Activity className="h-2.5 w-2.5" />}
+              {isFailed ? 'System Error' : 'Execution Result'}
             </div>
-          )}
+            <div className={cn(
+              "rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed text-[11px]",
+              isFailed ? "bg-red-500/5 border-red-500/10 text-red-400/80" : "bg-black/20 border-white/5 text-white/40"
+            )}>
+              {resultDisplay}
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -356,22 +352,28 @@ function AgentControlUI({ onApprove, variant = 'approval' }: { onApprove: () => 
 
   return (
     <div className={cn(
-      "mt-3 mb-2 flex flex-col gap-3 p-4 rounded-xl animate-in fade-in slide-in-from-top-2 border shadow-lg backdrop-blur-sm",
-      isPause ? "bg-amber-500/5 border-amber-500/20" : "bg-blue-500/5 border-blue-500/20"
+      "mt-4 mb-2 flex flex-col gap-4 p-5 rounded-2xl animate-in fade-in slide-in-from-top-3 border backdrop-blur-xl shadow-2xl relative overflow-hidden",
+      isPause ? "bg-white/[0.02] border-white/10" : "bg-white/[0.03] border-white/20"
     )}>
+      {/* Absolute background hint */}
+      <div className={cn(
+        "absolute top-0 left-0 w-1 h-full",
+        isPause ? "bg-amber-500/40" : "bg-white/40"
+      )} />
+
       <div className="flex items-start gap-4">
         <div className={cn(
           "w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border",
-          isPause ? "bg-amber-500/10 border-amber-500/20" : "bg-blue-500/10 border-blue-500/20"
+          isPause ? "bg-amber-500/10 border-amber-500/20" : "bg-white/5 border-white/10"
         )}>
-          {isPause ? <Square className="h-5 w-5 text-amber-500" /> : <AlertCircle className="h-5 w-5 text-blue-400" />}
+          {isPause ? <Square className="h-5 w-5 text-amber-500/70" /> : <Activity className="h-5 w-5 text-white/60" />}
         </div>
         <div className="space-y-1 py-0.5">
-          <p className={cn("text-sm font-semibold tracking-tight", isPause ? "text-amber-200" : "text-blue-200")}>
-            {isPause ? 'Workflow Paused' : 'Approval Required'}
+          <p className={cn("text-[15px] font-medium tracking-tight", isPause ? "text-amber-200/90" : "text-white/90")}>
+            {isPause ? 'Workflow Paused' : 'Action Required'}
           </p>
-          <p className={cn("text-xs leading-relaxed opacity-70", isPause ? "text-amber-100/70" : "text-blue-100/70")}>
-            {isPause ? 'The playbook is waiting to continue to the next step.' : 'The agent is waiting for your confirmation to proceed.'}
+          <p className={cn("text-[13px] leading-relaxed", isPause ? "text-amber-100/40" : "text-white/40")}>
+            {isPause ? 'The playbook is waiting for a manual signal to continue.' : 'Confirm this step to allow the agent to proceed.'}
           </p>
         </div>
       </div>
@@ -380,17 +382,17 @@ function AgentControlUI({ onApprove, variant = 'approval' }: { onApprove: () => 
         <button
           onClick={handleApprove}
           className={cn(
-            "self-end mt-1 px-5 py-2 text-white text-[13px] font-semibold rounded-lg transition-all active:scale-95 flex items-center gap-2 shadow-xl border-t border-white/10",
-            isPause ? "bg-amber-600 hover:bg-amber-550 shadow-amber-900/20" : "bg-blue-600 hover:bg-blue-550 shadow-blue-900/20"
+            "self-end mt-1 px-6 py-2.5 text-white text-[13px] font-medium rounded-xl transition-all active:scale-[0.97] flex items-center gap-2 shadow-xl border border-white/10 backdrop-blur-md",
+            isPause ? "bg-amber-600/80 hover:bg-amber-600" : "bg-white/10 hover:bg-white/20"
           )}
         >
           {isPause ? <ChevronRight className="h-4 w-4" /> : <Check className="h-4 w-4" />}
-          {isPause ? 'Continue Workflow' : 'Approve & Proceed'}
+          <span className="tracking-tight">{isPause ? 'Continue Workflow' : 'Approve & Proceed'}</span>
         </button>
       ) : (
-        <div className="self-end mt-1 px-4 py-2 text-emerald-400 text-[13px] font-semibold flex items-center gap-2 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
-          <Check className="h-4 w-4" />
-          {isPause ? 'Resuming...' : 'Action Approved'}
+        <div className="self-end mt-1 px-5 py-2.5 text-white/50 text-[13px] font-medium flex items-center gap-2 bg-white/5 rounded-xl border border-white/10 backdrop-blur-sm">
+          <Check className="h-4 w-4 opacity-50" />
+          <span className="tracking-tight">{isPause ? 'Resuming...' : 'Step Confirmed'}</span>
         </div>
       )}
     </div>
@@ -475,7 +477,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
         <div className={cn('flex-1 min-w-0 space-y-1 overflow-hidden', isUser && 'flex flex-col items-end')}>
 
           {isUser ? (
-            <div className="max-w-[85%] bg-secondary/40 hover:bg-secondary/60 text-foreground/90 px-5 py-3 rounded-2xl rounded-tr-[4px] text-[13px] leading-relaxed border border-border/5 mx-0 text-left break-words transition-colors">
+            <div className="max-w-[85%] bg-white/[0.03] backdrop-blur-lg hover:bg-white/[0.06] text-white/90 px-5 py-3 rounded-2xl rounded-tr-[4px] text-[13px] leading-relaxed border border-white/10 mx-0 text-left break-words transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
               <div className="whitespace-pre-wrap break-words">
                 <ProcessedText text={message.content} variables={variables} />
               </div>
@@ -548,18 +550,18 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                   if (!cleanContent) return null;
 
                   return (
-                    <div key={idx} className="prose prose-sm max-w-full w-full text-foreground leading-relaxed text-left dark:prose-invert break-words min-w-0 overflow-hidden">
+                    <div key={idx} className="prose prose-sm max-w-full w-full text-white/70 leading-relaxed text-left dark:prose-invert break-words min-w-0 overflow-hidden font-light tracking-wide">
                       <ReactMarkdown
                         components={{
-                          p: ({ children }) => <p className="mb-3 last:mb-0 transform-gpu">{withTags(children)}</p>,
-                          ul: ({ children }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ul>,
-                          ol: ({ children }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-muted-foreground">{withTags(children)}</ol>,
+                          p: ({ children }) => <p className="mb-4 last:mb-0 transform-gpu">{withTags(children)}</p>,
+                          ul: ({ children }) => <ul className="list-disc pl-5 mb-4 space-y-2 text-white/40">{withTags(children)}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-5 mb-4 space-y-2 text-white/40">{withTags(children)}</ol>,
                           li: ({ children }) => <li className="pl-1">{withTags(children)}</li>,
-                          strong: ({ children }) => <strong className="font-semibold text-foreground">{withTags(children)}</strong>,
-                          code: ({ children }) => <code className="bg-muted px-1.5 py-0.5 rounded text-[13px] font-mono text-primary border border-border break-all">{withTags(children)}</code>,
-                          pre: ({ children }) => <pre className="bg-muted p-3 rounded-lg border border-border overflow-x-auto my-3 text-xs font-mono shadow-inner max-w-full">{children}</pre>,
-                          a: ({ href, children }) => <a href={href} className="text-primary hover:text-primary/80 hover:underline decoration-primary/30 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
-                          blockquote: ({ children }) => <blockquote className="border-l-2 border-primary/50 pl-4 py-1 my-3 italic text-muted-foreground">{withTags(children)}</blockquote>,
+                          strong: ({ children }) => <strong className="font-semibold text-white/90">{withTags(children)}</strong>,
+                          code: ({ children }) => <code className="bg-white/5 px-1.5 py-0.5 rounded text-[12px] font-mono text-white/80 border border-white/5 break-all">{withTags(children)}</code>,
+                          pre: ({ children }) => <pre className="bg-black/40 p-4 rounded-2xl border border-white/5 overflow-x-auto my-4 text-[11px] font-mono shadow-2xl max-w-full backdrop-blur-md">{children}</pre>,
+                          a: ({ href, children }) => <a href={href} className="text-white/80 hover:text-white underline decoration-white/20 underline-offset-4 transition-colors" target="_blank" rel="noopener noreferrer">{withTags(children)}</a>,
+                          blockquote: ({ children }) => <blockquote className="border-l-2 border-white/10 pl-4 py-1 my-4 italic text-white/40">{withTags(children)}</blockquote>,
                         }}
                       >
                         {cleanContent}
@@ -616,17 +618,17 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
   const isFailed = block.status === 'failed';
 
   return (
-    <div className="my-1 rounded border border-border bg-card/50 overflow-hidden">
+    <div className="my-2 rounded-2xl liquid-glass overflow-hidden group/tool">
       {/* Tool Header - Click to toggle details */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="w-full flex items-center gap-3 px-3 py-2 text-sm transition-colors text-left hover:bg-muted/50"
+        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-all text-left hover:bg-white/[0.03]"
       >
         <div className={cn(
-          "flex items-center justify-center w-5 h-5 rounded border text-[10px]",
-          isSuccess ? "bg-emerald-500/5 border-emerald-500/10 text-emerald-500" :
-            isFailed ? "bg-red-500/5 border-red-500/10 text-red-500" :
-              "bg-blue-500/5 border-blue-500/10 text-blue-500"
+          "flex items-center justify-center w-5 h-5 rounded-lg border text-[10px] transition-colors",
+          isSuccess ? "bg-white/5 border-white/10 text-white/50" :
+            isFailed ? "bg-red-500/5 border-red-500/20 text-red-500/70" :
+              "bg-white/5 border-white/10 text-white/40"
         )}>
           {isSuccess ? <Check className="h-3 w-3" /> :
             isFailed ? <AlertCircle className="h-3 w-3" /> :
@@ -636,34 +638,38 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
 
         <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
           <span className={cn(
-            "font-medium text-[13px] truncate",
-            isSuccess ? "text-foreground/80" :
-              isFailed ? "text-destructive" :
-                "text-foreground/80"
+            "font-medium text-[13px] tracking-tight truncate transition-colors",
+            isSuccess ? "text-white/60 group-hover/tool:text-white/80" :
+              isFailed ? "text-red-400/80" :
+                "text-white/40 group-hover/tool:text-white/60"
           )}>
             {block.title || block.content}
           </span>
           {block.duration && (
-            <span className="text-[10px] text-muted-foreground ml-auto font-mono">
+            <span className="text-[10px] text-white/20 ml-auto font-mono">
               {block.duration}s
             </span>
           )}
+        </div>
+
+        <div className="p-1 rounded-md transition-colors group-hover/tool:bg-white/5">
+          {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-white/20" /> : <ChevronRight className="h-3.5 w-3.5 text-white/20" />}
         </div>
       </button>
 
       {/* Tool Details (Result only, no params) */}
       {isExpanded && block.result && block.result.trim() && (
-        <div className="px-3 py-2 border-t border-border bg-muted/30 text-xs font-mono space-y-2">
+        <div className="px-4 py-3 border-t border-white/5 bg-white/[0.01] text-xs font-mono space-y-2 animate-in fade-in slide-in-from-top-1 duration-300">
           <div>
             <div className={cn(
-              "text-[10px] uppercase tracking-wider mb-1",
-              isFailed ? "text-destructive/50" : "text-emerald-500/50"
+              "text-[9px] uppercase tracking-[0.1em] mb-2 font-bold",
+              isFailed ? "text-red-400/40" : "text-white/20"
             )}>
-              {isFailed ? 'Error' : 'Output'}
+              {isFailed ? 'Error Block' : 'Result Output'}
             </div>
             <div className={cn(
-              "whitespace-pre-wrap break-all pl-2 border-l",
-              isFailed ? "text-destructive/80 border-destructive/20" : "text-muted-foreground border-border"
+              "whitespace-pre-wrap break-all pl-3 border-l text-[11px]",
+              isFailed ? "text-red-400/80 border-red-500/20" : "text-white/40 border-white/10"
             )}>
               <ProcessedText text={block.result.trim()} variables={variables} />
             </div>

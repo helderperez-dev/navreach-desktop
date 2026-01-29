@@ -38,7 +38,7 @@ export const useAppStore = create<AppState>()(
       sidebarCollapsed: false,
       chatPanelCollapsed: false,
       chatPanelWidth: 400,
-      theme: 'dark',
+      theme: 'system',
       activeView: 'browser',
       hasStarted: false,
       showPlaybookBrowser: false,
@@ -58,10 +58,14 @@ export const useAppStore = create<AppState>()(
       toggleQueueSidebar: () => set((state) => ({ queueSidebarCollapsed: !state.queueSidebarCollapsed })),
       setTheme: (theme) => {
         const root = document.documentElement;
-        if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+        if (isDark) {
           root.classList.add('dark');
+          root.style.colorScheme = 'dark';
         } else {
           root.classList.remove('dark');
+          root.style.colorScheme = 'light';
         }
         set({ theme });
       },

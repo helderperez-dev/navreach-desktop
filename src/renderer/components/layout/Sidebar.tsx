@@ -50,7 +50,7 @@ export function Sidebar() {
   }, [fetchTasks, subscribeToChanges, unsubscribe]);
 
   return (
-    <TooltipProvider delayDuration={0}>
+    <TooltipProvider delayDuration={400}>
       <motion.aside
         initial={false}
         animate={{ width: sidebarCollapsed ? 56 : 200 }}
@@ -59,7 +59,7 @@ export function Sidebar() {
       >
         <nav className={cn("flex-1 pt-3 pb-1 space-y-1", sidebarCollapsed ? "px-2" : "px-3")}>
           {navItems.map((item) => (
-            <Tooltip key={item.id}>
+            <Tooltip key={item.id} open={sidebarCollapsed ? undefined : false}>
               <TooltipTrigger asChild>
                 <Button
                   variant={activeView === item.view ? 'secondary' : 'ghost'}
@@ -94,7 +94,7 @@ export function Sidebar() {
           ))}
 
           {chatPanelCollapsed && activeView === 'browser' && (
-            <Tooltip>
+            <Tooltip open={sidebarCollapsed ? undefined : false}>
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
@@ -126,7 +126,7 @@ export function Sidebar() {
             </Tooltip>
           )}
 
-          <Tooltip>
+          <Tooltip open={sidebarCollapsed ? undefined : false}>
             <TooltipTrigger asChild>
               <Button
                 variant={!queueSidebarCollapsed ? 'secondary' : 'ghost'}
@@ -244,7 +244,7 @@ export function Sidebar() {
             <WorkspaceSelector isCollapsed={sidebarCollapsed} />
           </div>
 
-          <Tooltip>
+          <Tooltip open={sidebarCollapsed ? undefined : false}>
             <TooltipTrigger asChild>
               <Button
                 variant={activeView === 'settings' ? 'secondary' : 'ghost'}
@@ -267,7 +267,7 @@ export function Sidebar() {
             )}
           </Tooltip>
 
-          <Tooltip>
+          <Tooltip open={sidebarCollapsed ? undefined : false}>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"

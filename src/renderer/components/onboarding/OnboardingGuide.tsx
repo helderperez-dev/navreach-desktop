@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ChevronRight, ChevronLeft, Zap, Target, Workflow, MessageSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -94,81 +94,55 @@ export function OnboardingGuide() {
     const step = steps[currentStep];
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-[12px]">
             <motion.div
-                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                initial={{ opacity: 0, scale: 0.98, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                className="w-full max-w-lg h-[540px] bg-[#0A0C10] border border-blue-500/20 rounded-2xl shadow-[0_0_50px_-12px_rgba(59,130,246,0.5)] overflow-hidden relative flex flex-col"
+                className="w-full max-w-lg h-[540px] bg-white/[0.03] backdrop-blur-[32px] border border-white/10 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5),inset_0_1px_1px_rgba(255,255,255,0.05)] overflow-hidden relative flex flex-col"
             >
-                {/* Space Horizon Shimmer Background */}
-                <div className="absolute inset-0 pointer-events-none">
-                    <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent" />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(59,130,246,0.1),transparent_70%)]" />
-                </div>
-
                 <button
                     onClick={handleComplete}
                     disabled={isSaving}
-                    className="absolute top-4 right-4 p-1 rounded-full hover:bg-white/5 text-muted-foreground transition-colors disabled:opacity-50 z-10"
+                    className="absolute top-5 right-5 w-9 h-9 flex items-center justify-center rounded-xl bg-white/[0.02] border border-white/0 hover:border-white/10 hover:bg-white/5 text-white/30 hover:text-white transition-all duration-300 disabled:opacity-50 z-20 group"
+                    title="Dismiss"
                 >
-                    <X className="h-5 w-5" />
+                    <X className="h-4 w-4 opacity-50 group-hover:opacity-100 transition-opacity" />
                 </button>
 
-                <div className="p-8 flex flex-col items-center text-center flex-1">
+                <div className="p-8 flex flex-col items-center text-center flex-1 z-10">
                     <div className="flex-1 flex flex-col items-center justify-center w-full">
                         <AnimatePresence mode="wait">
                             <motion.div
                                 key={currentStep}
-                                initial={{ opacity: 0, scale: 0.8 }}
+                                initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                transition={{ duration: 0.3, ease: "easeOut" }}
-                                className="mb-8 relative"
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
+                                className="mb-10"
                             >
-                                {/* Animated Glow/Shimmer Container */}
-                                <motion.div
-                                    animate={{
-                                        boxShadow: ["0 0 20px rgba(59,130,246,0.2)", "0 0 40px rgba(59,130,246,0.4)", "0 0 20px rgba(59,130,246,0.2)"],
-                                    }}
-                                    transition={{ duration: 4, repeat: Infinity }}
-                                    className="p-8 rounded-[2.5rem] bg-[#0F172A] border border-blue-500/10 relative overflow-hidden group"
-                                >
-                                    {/* Horizon Shimmer Effect */}
-                                    <motion.div
-                                        animate={{ x: [-150, 150] }}
-                                        transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                                        className="absolute inset-0 bg-gradient-to-r from-transparent via-blue-400/10 to-transparent skew-x-12"
-                                    />
-
-                                    {/* Icon with Floating Animation */}
-                                    <motion.div
-                                        animate={{ y: [-2, 2, -2] }}
-                                        transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                                        className="relative z-10"
-                                    >
-                                        {step.icon}
-                                    </motion.div>
-                                </motion.div>
-
-                                {/* Background "Horizon" Light */}
-                                <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-24 h-4 bg-blue-500/20 blur-xl rounded-full" />
+                                {/* Pure Liquid Glass Container for Icon */}
+                                <div className="p-10 rounded-[2.5rem] bg-white/[0.02] border border-white/10 relative shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]">
+                                    <div className="relative z-10">
+                                        {React.cloneElement(step.icon as React.ReactElement, { className: "h-14 w-14 text-white/90 drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" })}
+                                    </div>
+                                </div>
                             </motion.div>
                         </AnimatePresence>
 
-                        <div className="min-h-[140px] flex flex-col items-center">
+                        <div className="min-h-[160px] flex flex-col items-center">
                             <AnimatePresence mode="wait">
                                 <motion.div
                                     key={currentStep}
-                                    initial={{ opacity: 0, x: 20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    exit={{ opacity: 0, x: -20 }}
-                                    transition={{ duration: 0.3 }}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -10 }}
+                                    transition={{ duration: 0.4, ease: [0.23, 1, 0.32, 1] }}
                                     className="space-y-4"
                                 >
-                                    <h2 className="text-2xl font-bold bg-gradient-to-b from-white to-white/70 bg-clip-text text-transparent">
+                                    <h2 className="text-3xl font-medium tracking-tight bg-gradient-to-b from-white to-white/60 bg-clip-text text-transparent">
                                         {step.title}
                                     </h2>
-                                    <p className="text-blue-100/60 leading-relaxed max-w-[320px]">
+                                    <p className="text-white/40 leading-relaxed max-w-[340px] text-[15px]">
                                         {step.description}
                                     </p>
                                 </motion.div>
@@ -177,12 +151,16 @@ export function OnboardingGuide() {
                     </div>
 
                     <div className="w-full mt-auto">
-                        <div className="flex gap-1.5 justify-center mb-10">
+                        <div className="flex gap-2 justify-center mb-12">
                             {steps.map((_, i) => (
-                                <div
+                                <motion.div
                                     key={i}
-                                    className={`h-1.5 rounded-full transition-all duration-500 ${i === currentStep ? 'w-8 bg-blue-500' : 'w-1.5 bg-blue-500/20'
-                                        }`}
+                                    initial={false}
+                                    animate={{
+                                        width: i === currentStep ? 24 : 6,
+                                        backgroundColor: i === currentStep ? "rgba(255, 255, 255, 0.8)" : "rgba(255, 255, 255, 0.1)"
+                                    }}
+                                    className="h-1.5 rounded-full"
                                 />
                             ))}
                         </div>
@@ -193,7 +171,7 @@ export function OnboardingGuide() {
                                     variant="ghost"
                                     onClick={handleBack}
                                     disabled={isSaving}
-                                    className="text-blue-100/40 hover:text-blue-100 hover:bg-white/5"
+                                    className="text-white/30 hover:text-white hover:bg-white/5 rounded-xl px-6"
                                 >
                                     <ChevronLeft className="mr-2 h-4 w-4" />
                                     Back
@@ -203,7 +181,7 @@ export function OnboardingGuide() {
                             <Button
                                 onClick={handleNext}
                                 disabled={isSaving}
-                                className="min-w-[120px] bg-blue-600 hover:bg-blue-500 shadow-[0_0_20px_rgba(37,99,235,0.3)] transition-all duration-300"
+                                className="min-w-[140px] h-11 bg-white/[0.08] hover:bg-white/[0.12] text-white border border-white/10 rounded-xl shadow-[0_10px_30px_rgba(0,0,0,0.3)] backdrop-blur-md transition-all duration-300"
                             >
                                 {currentStep === steps.length - 1 ? (
                                     isSaving ? <CircularLoader className="h-4 w-4 border-white/20 border-t-white" /> : 'Get Started'
@@ -215,6 +193,7 @@ export function OnboardingGuide() {
                 </div>
             </motion.div>
         </div>
+
     );
 }
 

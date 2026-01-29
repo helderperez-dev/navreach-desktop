@@ -208,7 +208,7 @@ export function TargetTable({
         filteredAndSortedTargets.every(t => selectedTargets.has(t.id));
     const showSelectionPrompt = viewMode === 'list' && allVisibleSelected && !isAllSelectedGlobally && totalCountInList > targets.length;
 
-    // Column Resizing State (Percentages)
+    // Consolidated Column Resizing State (Percentages)
     const [columnWidths, setColumnWidths] = useState<Record<string, number>>({
         name: 35,
         email: 15,
@@ -240,28 +240,69 @@ export function TargetTable({
         observer.current.observe(node);
     }, [isLoading, isFetchingMore, hasMore, loadMoreTargets]);
 
-    const [metadataWidths, setMetadataWidths] = useState<Record<string, number>>({});
-
-    const handleResize = (id: string, newPixelWidth: number, isMetadata: boolean = false) => {
+    const handleResize = (id: string, newPixelWidth: number) => {
         if (!tableRef.current) return;
         const tableWidth = tableRef.current.offsetWidth;
         const newPercent = (newPixelWidth / tableWidth) * 100;
 
-        if (isMetadata) {
-            setMetadataWidths(prev => ({ ...prev, [id]: Math.max(5, newPercent) }));
-        } else {
-            setColumnWidths(prev => ({ ...prev, [id]: Math.max(5, newPercent) }));
-        }
+        setColumnWidths(prev => {
+            const currentPercent = prev[id] || 10;
+            let delta = newPercent - currentPercent;
+
+            const displayOrder = ['name', 'email', 'type', 'url', 'tags', 'created', ...metadataKeys];
+            const activeCols = displayOrder.filter(key =>
+                visibleColumns[key] && (
+                    ['name', 'email', 'type', 'url', 'tags', 'created'].includes(key) ||
+                    metadataKeys.includes(key)
+                )
+            );
+
+            const currentIndex = activeCols.indexOf(id);
+            if (currentIndex === -1) return prev;
+
+            const nextCols = activeCols.slice(currentIndex + 1);
+            const prevCols = activeCols.slice(0, currentIndex).reverse();
+
+            // We'll try to adjust neighbors to the right first, then left if needed
+            const adjustmentTargets = nextCols.length > 0 ? nextCols : prevCols;
+
+            if (adjustmentTargets.length === 0) return prev;
+
+            const updatedWidths = { ...prev };
+            let remainingDelta = delta;
+
+            // Simple distribution: try to take from/add to immediate neighbors until they hit limits
+            for (const targetId of adjustmentTargets) {
+                const targetWidth = prev[targetId] || 10;
+                const canAbsorb = remainingDelta > 0
+                    ? targetWidth - 5 // can shrink down to 5%
+                    : 100 - targetWidth; // can grow (hypothetically, but we usually shrink others)
+
+                const absorption = remainingDelta > 0
+                    ? Math.min(remainingDelta, canAbsorb)
+                    : Math.max(remainingDelta, -canAbsorb);
+
+                updatedWidths[targetId] = targetWidth - absorption;
+                remainingDelta -= absorption;
+
+                if (Math.abs(remainingDelta) < 0.01) break;
+            }
+
+            // Apply what we could actually absorb to the primary column
+            updatedWidths[id] = currentPercent + (delta - remainingDelta);
+
+            return updatedWidths;
+        });
     };
 
-    const startResizing = (id: string, startX: number, startWidthPercent: number, isMetadata: boolean = false) => {
+    const startResizing = (id: string, startX: number, startWidthPercent: number) => {
         if (!tableRef.current) return;
         const tableWidth = tableRef.current.offsetWidth;
         const startPixelWidth = (startWidthPercent / 100) * tableWidth;
 
         const onMouseMove = (e: MouseEvent) => {
             const newPixelWidth = startPixelWidth + (e.clientX - startX);
-            handleResize(id, newPixelWidth, isMetadata);
+            handleResize(id, newPixelWidth);
         };
         const onMouseUp = () => {
             document.removeEventListener('mousemove', onMouseMove);
@@ -621,14 +662,14 @@ export function TargetTable({
                                     <th
                                         key={key}
                                         className="px-6 py-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground relative group transition-colors hover:text-foreground bg-background"
-                                        style={{ width: `${columnWidths[key] || metadataWidths[key] || 10}%` }}
+                                        style={{ width: `${columnWidths[key] || 10}%` }}
                                     >
                                         <div className="truncate w-full">
                                             {key.replace(/_/g, ' ')}
                                         </div>
                                         <div
                                             className="absolute right-0 top-0 h-full w-[2px] cursor-col-resize bg-transparent group-hover:bg-border/50 transition-colors z-10"
-                                            onMouseDown={(e) => startResizing(key, e.clientX, columnWidths[key] || metadataWidths[key] || 10, true)}
+                                            onMouseDown={(e) => startResizing(key, e.clientX, columnWidths[key] || 10)}
                                         />
                                     </th>
                                 )
