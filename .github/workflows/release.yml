@@ -51,6 +51,9 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Debugging - IMPORTANT to see where it hangs
+          NOTARIZE_VERBOSE: 'true'
+          DEBUG: 'electron-builder'
         
         # 'npm run build:mac' etc already include 'electron-builder' which handles publishing based on config
         run: npm run build:${{ matrix.os == 'macos-latest' && 'mac' || matrix.os == 'windows-latest' && 'win' || 'linux' }} -- --publish always

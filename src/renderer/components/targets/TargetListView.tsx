@@ -35,7 +35,12 @@ import { CircularLoader } from '@/components/ui/CircularLoader';
 
 
 export function TargetListView() {
-    const { targets, fetchLists, selectedListId, fetchTargets, isLoading, viewMode, lists, subscribeToChanges, unsubscribe, recentLogs, fetchRecentLogs, searchQuery, setSearchQuery } = useTargetsStore();
+    const {
+        targets, fetchLists, selectedListId, fetchTargets, fetchSegments,
+        isLoading, viewMode, lists, segments, selectedSegmentId,
+        subscribeToChanges, unsubscribe, recentLogs, fetchRecentLogs,
+        searchQuery, setSearchQuery
+    } = useTargetsStore();
     const { currentWorkspace } = useWorkspaceStore();
     const { session } = useAuthStore();
     const { toggleTargetSidebar } = useAppStore();
@@ -84,18 +89,22 @@ export function TargetListView() {
     }, [isTargetFormOpen, selectedTargetForHistory]);
 
     const selectedList = lists.find(l => l.id === selectedListId);
+    const selectedSegment = segments.find(s => s.id === selectedSegmentId);
     const viewTitle = viewMode === 'all'
         ? 'All Contacts'
         : viewMode === 'engaged'
             ? 'Engaged Contacts'
-            : (selectedList?.name || 'Targets');
+            : viewMode === 'segment'
+                ? (selectedSegment?.name || 'Segment')
+                : (selectedList?.name || 'Targets');
 
     // Initial fetch on mount to ensure fresh data
     useEffect(() => {
         if (currentWorkspace?.id) {
             fetchLists();
+            fetchSegments();
         }
-    }, [currentWorkspace?.id, fetchLists]);
+    }, [currentWorkspace?.id, fetchLists, fetchSegments]);
 
     // Initial fetch of recent activity logs
     useEffect(() => {

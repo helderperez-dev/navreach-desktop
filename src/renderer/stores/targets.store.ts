@@ -2,7 +2,9 @@ import { create } from 'zustand';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { useSubscriptionStore } from '@/stores/subscription.store';
 import { TargetList, Target } from '@/types/targets';
+import { TargetSegment, CreateSegmentInput, FilterCondition } from '@/types/segments';
 import { targetService } from '@/lib/targets.service';
+import { segmentService } from '@/lib/segments.service';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
@@ -11,23 +13,32 @@ import { RealtimeChannel } from '@supabase/supabase-js';
 interface TargetsState {
     lists: TargetList[];
     selectedListId: string | null;
+    segments: TargetSegment[];
+    selectedSegmentId: string | null;
     targets: Target[];
+    allMetadataKeys: string[];
     isLoading: boolean;
     error: string | null;
     recentLogs: any[];
 
-    viewMode: 'list' | 'all' | 'engaged';
-    setViewMode: (mode: 'list' | 'all' | 'engaged') => void;
+    viewMode: 'list' | 'all' | 'engaged' | 'segment';
+    setViewMode: (mode: 'list' | 'all' | 'engaged' | 'segment') => void;
     lastSelectedListId: string | null;
 
     fetchLists: (silent?: boolean) => Promise<void>;
+    fetchSegments: (silent?: boolean) => Promise<void>;
     setSelectedListId: (id: string | null) => void;
+    setSelectedSegmentId: (id: string | null) => void;
     fetchTargets: (listId?: string, silent?: boolean) => Promise<void>;
     fetchRecentLogs: () => Promise<void>;
 
     addList: (name: string, description?: string) => Promise<void>;
     updateList: (id: string, updates: Partial<TargetList>) => Promise<void>;
     deleteList: (id: string) => Promise<void>;
+
+    addSegment: (input: CreateSegmentInput) => Promise<void>;
+    updateSegment: (id: string, updates: Partial<CreateSegmentInput>) => Promise<void>;
+    deleteSegment: (id: string) => Promise<void>;
 
     addTarget: (target: any) => Promise<void>;
     updateTarget: (id: string, updates: Partial<Target>) => Promise<void>;
@@ -59,13 +70,16 @@ interface TargetsState {
 }
 
 export const useTargetsStore = create<TargetsState>((set, get) => ({
+    viewMode: 'list',
     lists: [],
     selectedListId: null,
+    segments: [],
+    selectedSegmentId: null,
     targets: [],
+    allMetadataKeys: [],
     isLoading: false,
     error: null,
     recentLogs: [],
-    viewMode: 'list',
     realtimeChannel: null as RealtimeChannel | null,
 
     // Pagination defaults
@@ -94,7 +108,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
 
     setViewMode: (mode) => {
         const currentMode = get().viewMode;
-        if (currentMode === mode && mode === 'list') return; // No change needed
+        if (currentMode === mode && (mode === 'list' || mode === 'segment')) return; // No change needed
 
         set({ viewMode: mode, page: 0, hasMore: true, targets: [] }); // Reset pagination and targets on view change
 
@@ -104,6 +118,8 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         } else if (mode === 'list' && !get().selectedListId && get().lists.length > 0) {
             // only select first list if we don't have one selected yet
             get().setSelectedListId(get().lists[0].id);
+        } else if (mode === 'segment' && !get().selectedSegmentId && get().segments.length > 0) {
+            get().setSelectedSegmentId(get().segments[0].id);
         }
     },
 
@@ -152,6 +168,50 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         }
     },
 
+    fetchSegments: async (silent = false) => {
+        if (!silent) set({ isLoading: true });
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        if (!workspaceId) {
+            set({ isLoading: false });
+            return;
+        }
+
+        const { data, error } = await segmentService.getSegments(workspaceId);
+
+        if (error) {
+            set({ error: error.message, isLoading: false });
+            toast.error(`Failed to fetch segments: ${error.message}`);
+        } else {
+            const fetchedSegments = data || [];
+            const currentSelectedId = get().selectedSegmentId;
+            const isSelectedValid = fetchedSegments.some(s => s.id === currentSelectedId);
+
+            if (!isSelectedValid) {
+                const nextSelectedId = fetchedSegments.length > 0 ? fetchedSegments[0].id : null;
+                set({
+                    segments: fetchedSegments,
+                    selectedSegmentId: nextSelectedId,
+                    isLoading: false
+                });
+                if (nextSelectedId && get().viewMode === 'segment') {
+                    get().fetchTargets();
+                }
+            } else {
+                set({ segments: fetchedSegments, isLoading: false });
+                if (currentSelectedId && get().viewMode === 'segment') {
+                    get().fetchTargets(undefined, true);
+                }
+            }
+        }
+    },
+
+    setSelectedSegmentId: (id) => {
+        set({ selectedSegmentId: id });
+        if (id && get().viewMode === 'segment') {
+            get().fetchTargets();
+        }
+    },
+
     setSelectedListId: (id) => {
         set({ selectedListId: id });
         if (id) {
@@ -177,7 +237,16 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         let dbData: any[] = []; // Hoist declaration
 
         try {
-            if (viewMode === 'all') {
+            if (viewMode === 'segment') {
+                const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+                const segment = get().segments.find(s => s.id === get().selectedSegmentId);
+                if (workspaceId && segment) {
+                    const result = await segmentService.getTargetsByFilters(workspaceId, segment.filters, offset, limit);
+                    newData = result.data || [];
+                    error = result.error;
+                    if (newData.length >= limit) hasMoreToLoad = true;
+                }
+            } else if (viewMode === 'all') {
                 const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
                 if (workspaceId) {
                     const result = await targetService.getAllWorkspaceTargets(workspaceId, offset, limit, get().searchQuery);
@@ -335,8 +404,17 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                         }
                     });
 
+                    // Update metadata keys
+                    const newKeys = new Set(get().allMetadataKeys);
+                    newData.forEach(t => {
+                        if (t.metadata) {
+                            Object.keys(t.metadata).forEach(key => newKeys.add(key));
+                        }
+                    });
+
                     return {
                         targets: updatedTargets,
+                        allMetadataKeys: Array.from(newKeys).sort(),
                         page: nextPage,
                         hasMore: hasMoreToLoad,
                         isFetchingMore: false
@@ -492,6 +570,16 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 data = targetsData;
                 error = targetsError;
             }
+        } else if (get().viewMode === 'segment') {
+            const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+            const segment = get().segments.find(s => s.id === get().selectedSegmentId);
+            if (!workspaceId || !segment) {
+                set({ targets: [], isLoading: false });
+                return;
+            }
+            const result = await segmentService.getTargetsByFilters(workspaceId, segment.filters, 0, limit);
+            data = result.data;
+            error = result.error;
         } else {
             // If explicit listId provided, use it. Otherwise use selectedListId from store
             const idToUse = listId || get().selectedListId;
@@ -506,12 +594,23 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             set({ error: error.message, isLoading: false });
             toast.error(`Failed to fetch targets: ${error.message}`);
         } else {
+            const fetchedTargets = data || [];
+
+            // Extract metadata keys
+            const newKeys = new Set(get().allMetadataKeys);
+            fetchedTargets.forEach(t => {
+                if (t.metadata) {
+                    Object.keys(t.metadata).forEach(key => newKeys.add(key));
+                }
+            });
+
             set({
-                targets: data || [],
+                targets: fetchedTargets,
+                allMetadataKeys: Array.from(newKeys).sort(),
                 isLoading: false,
                 // Check if we have more to load based on raw counts check if available, 
                 // otherwise fallback to data length (safe for non-engaged views)
-                hasMore: typeof hasMoreToLoad !== 'undefined' ? hasMoreToLoad : (data || []).length >= limit
+                hasMore: typeof hasMoreToLoad !== 'undefined' ? hasMoreToLoad : fetchedTargets.length >= limit
             });
         }
     },
@@ -589,6 +688,63 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 set({ targets: [] });
             }
             toast.success('List deleted successfully');
+        }
+    },
+
+    addSegment: async (input: CreateSegmentInput) => {
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        const userId = useAuthStore.getState().user?.id;
+        if (!workspaceId || !userId) return;
+
+        set({ isLoading: true });
+        const { data, error } = await segmentService.createSegment(workspaceId, userId, input);
+        if (error) {
+            toast.error(`Failed to create segment: ${error.message}`);
+        } else if (data) {
+            set({
+                segments: [data, ...get().segments],
+                selectedSegmentId: data.id,
+                viewMode: 'segment'
+            });
+            toast.success('Segment created successfully');
+            get().fetchTargets();
+        }
+        set({ isLoading: false });
+    },
+
+    updateSegment: async (id: string, updates: Partial<CreateSegmentInput>) => {
+        set({ isLoading: true });
+        const { data, error } = await segmentService.updateSegment(id, updates);
+        if (error) {
+            toast.error(`Failed to update segment: ${error.message}`);
+        } else if (data) {
+            set({
+                segments: get().segments.map(s => s.id === id ? data : s)
+            });
+            toast.success('Segment updated');
+            if (get().selectedSegmentId === id && get().viewMode === 'segment') {
+                get().fetchTargets();
+            }
+        }
+        set({ isLoading: false });
+    },
+
+    deleteSegment: async (id: string) => {
+        const { error } = await segmentService.deleteSegment(id);
+        if (error) {
+            toast.error(`Failed to delete segment: ${error.message}`);
+        } else {
+            const remainingSegments = get().segments.filter(s => s.id !== id);
+            const nextSelectedId = remainingSegments.length > 0 ? remainingSegments[0].id : null;
+            set({
+                segments: remainingSegments,
+                selectedSegmentId: nextSelectedId
+            });
+            if (get().viewMode === 'segment') {
+                if (nextSelectedId) get().fetchTargets();
+                else set({ targets: [] });
+            }
+            toast.success('Segment deleted successfully');
         }
     },
 
