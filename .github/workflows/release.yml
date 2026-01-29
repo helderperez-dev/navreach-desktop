@@ -60,9 +60,10 @@ jobs:
 
       - name: Notarize (macOS)
         if: matrix.os == 'macos-latest'
-        uses: apple-actions/notarize-app@v1
+        uses: lando/notarize-action@v2
         with:
-          app-path: dist/Reavion-${{ steps.sync_version.outputs.VERSION }}.dmg
+          product-path: "dist/Reavion-${{ steps.sync_version.outputs.VERSION }}-arm64.dmg"
+          app-bundle-id: "com.reavion.app"
           apple-id: ${{ secrets.APPLE_ID }}
-          apple-id-password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          password: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           team-id: ${{ secrets.APPLE_TEAM_ID }}
