@@ -18,9 +18,15 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
 
     steps:
-      - name: Check out repository
+      # ─────────────────────────────────────────────
+      # Checkout
+      # ─────────────────────────────────────────────
+      - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ─────────────────────────────────────────────
+      # Node
+      # ─────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -30,17 +36,20 @@ jobs:
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
+      # ─────────────────────────────────────────────
+      # Version from tag
+      # ─────────────────────────────────────────────
       - name: Sync version from tag
         id: sync_version
         shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           echo "Syncing version to $VERSION"
-          npm version $VERSION --allow-same-version --no-git-tag-version
+          npm version "$VERSION" --allow-same-version --no-git-tag-version
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
       # ─────────────────────────────────────────────
-      # macOS: import signing certificates
+      # macOS signing certs
       # ─────────────────────────────────────────────
       - name: Import Apple certificates
         if: matrix.os == 'macos-latest'
@@ -50,22 +59,20 @@ jobs:
           p12-password: ${{ secrets.CSC_PASSWORD }}
 
       # ─────────────────────────────────────────────
-      # Build per platform
+      # Build
       # ─────────────────────────────────────────────
       - name: Build & Sign
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-          # App env
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
-          # macOS signing
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_PASSWORD: ${{ secrets.CSC_PASSWORD }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_PASSWORD }}
-        shell: bash
         run: |
           if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
             npm run build:mac -- --publish always
@@ -76,7 +83,7 @@ jobs:
           fi
 
       # ─────────────────────────────────────────────
-      # macOS: Notarize .app FIRST (critical)
+      # macOS: Notarize APP (critical)
       # ─────────────────────────────────────────────
       - name: Notarize & Staple .app (macOS)
         if: matrix.os == 'macos-latest'
@@ -88,7 +95,7 @@ jobs:
         run: |
           set -e
 
-          APP_PATH="dist/mac/Reavion.app"
+          APP_PATH="dist/mac-universal/Reavion.app"
           echo "🚀 Submitting notarization for APP: $APP_PATH"
 
           RESPONSE=$(xcrun notarytool submit "$APP_PATH" \
@@ -134,7 +141,7 @@ jobs:
           xcrun stapler staple "$APP_PATH"
 
       # ─────────────────────────────────────────────
-      # macOS: Notarize DMG (optional but polished)
+      # macOS: Notarize DMG (polish)
       # ─────────────────────────────────────────────
       - name: Notarize & Staple DMG (macOS)
         if: matrix.os == 'macos-latest'
