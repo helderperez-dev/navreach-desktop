@@ -18,10 +18,10 @@ jobs:
         os: [macos-latest, windows-latest, ubuntu-latest]
 
     steps:
-      - name: Check out Git repository
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -35,20 +35,28 @@ jobs:
         shell: bash
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          echo "Syncing package.json version to $VERSION"
+          echo "Syncing version to $VERSION"
           npm version $VERSION --allow-same-version --no-git-tag-version
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Import Apple Certificates
+      # ─────────────────────────────────────────────
+      # macOS: import signing certificates
+      # ─────────────────────────────────────────────
+      - name: Import Apple certificates
         if: matrix.os == 'macos-latest'
         uses: apple-actions/import-codesign-certs@v2
         with:
           p12-file-base64: ${{ secrets.CSC_LINK }}
           p12-password: ${{ secrets.CSC_PASSWORD }}
 
-      - name: Build and Sign
+      # ─────────────────────────────────────────────
+      # Build per platform
+      # ─────────────────────────────────────────────
+      - name: Build & Sign
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # App env
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
@@ -57,6 +65,7 @@ jobs:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_PASSWORD: ${{ secrets.CSC_PASSWORD }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_PASSWORD }}
+        shell: bash
         run: |
           if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
             npm run build:mac -- --publish always
@@ -66,37 +75,38 @@ jobs:
             npm run build:linux -- --publish always
           fi
 
-      - name: Notarize and Staple (macOS)
+      # ─────────────────────────────────────────────
+      # macOS: Notarize .app FIRST (critical)
+      # ─────────────────────────────────────────────
+      - name: Notarize & Staple .app (macOS)
         if: matrix.os == 'macos-latest'
+        shell: bash
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          VERSION: ${{ steps.sync_version.outputs.VERSION }}
-        shell: bash
         run: |
           set -e
 
-          PRODUCT_PATH="dist/Reavion-${VERSION}-universal.dmg"
-          echo "🚀 Submitting notarization for $PRODUCT_PATH"
+          APP_PATH="dist/mac/Reavion.app"
+          echo "🚀 Submitting notarization for APP: $APP_PATH"
 
-          RESPONSE=$(xcrun notarytool submit "$PRODUCT_PATH" \
+          RESPONSE=$(xcrun notarytool submit "$APP_PATH" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
             --team-id "$TEAM_ID" \
             --output-format json)
 
           echo "$RESPONSE"
-
           SUBMISSION_ID=$(echo "$RESPONSE" | jq -r '.id')
 
           if [[ -z "$SUBMISSION_ID" || "$SUBMISSION_ID" == "null" ]]; then
-            echo "❌ Failed to get notarization submission ID"
+            echo "❌ Failed to get submission ID for app notarization"
             exit 1
           fi
 
-          echo "🆔 Submission ID: $SUBMISSION_ID"
-          echo "⏳ Waiting for notarization result..."
+          echo "🆔 App submission ID: $SUBMISSION_ID"
+          echo "⏳ Waiting for app notarization..."
 
           for i in {1..40}; do
             STATUS=$(xcrun notarytool info "$SUBMISSION_ID" \
@@ -105,22 +115,81 @@ jobs:
               --team-id "$TEAM_ID" \
               --output-format json | jq -r '.status')
 
-            echo "Attempt $i → Status: $STATUS"
+            echo "Attempt $i → App status: $STATUS"
 
             if [[ "$STATUS" == "Accepted" ]]; then
-              echo "✅ Notarization accepted"
+              echo "✅ App notarization accepted"
               break
             fi
 
             if [[ "$STATUS" == "Invalid" ]]; then
-              echo "❌ Notarization failed"
+              echo "❌ App notarization failed"
               exit 1
             fi
 
             sleep 30
           done
 
-          echo "📎 Stapling notarization ticket..."
-          xcrun stapler staple "$PRODUCT_PATH"
+          echo "📎 Stapling app..."
+          xcrun stapler staple "$APP_PATH"
 
-          echo "🎉 Notarization & stapling complete"
+      # ─────────────────────────────────────────────
+      # macOS: Notarize DMG (optional but polished)
+      # ─────────────────────────────────────────────
+      - name: Notarize & Staple DMG (macOS)
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          VERSION: ${{ steps.sync_version.outputs.VERSION }}
+        run: |
+          set -e
+
+          DMG_PATH="dist/Reavion-${VERSION}-universal.dmg"
+          echo "🚀 Submitting notarization for DMG: $DMG_PATH"
+
+          RESPONSE=$(xcrun notarytool submit "$DMG_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$TEAM_ID" \
+            --output-format json)
+
+          echo "$RESPONSE"
+          SUBMISSION_ID=$(echo "$RESPONSE" | jq -r '.id')
+
+          if [[ -z "$SUBMISSION_ID" || "$SUBMISSION_ID" == "null" ]]; then
+            echo "❌ Failed to get submission ID for DMG notarization"
+            exit 1
+          fi
+
+          echo "🆔 DMG submission ID: $SUBMISSION_ID"
+          echo "⏳ Waiting for DMG notarization..."
+
+          for i in {1..30}; do
+            STATUS=$(xcrun notarytool info "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$TEAM_ID" \
+              --output-format json | jq -r '.status')
+
+            echo "Attempt $i → DMG status: $STATUS"
+
+            if [[ "$STATUS" == "Accepted" ]]; then
+              echo "✅ DMG notarization accepted"
+              break
+            fi
+
+            if [[ "$STATUS" == "Invalid" ]]; then
+              echo "❌ DMG notarization failed"
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+          echo "📎 Stapling DMG..."
+          xcrun stapler staple "$DMG_PATH"
+
+          echo "🎉 macOS release fully notarized"
