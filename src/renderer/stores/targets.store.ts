@@ -67,6 +67,7 @@ interface TargetsState {
     // Many-to-Many assignments
     saveTargetAssignments: (targetData: any, listIds: string[]) => Promise<Target | null>;
     bulkSaveTargetAssignments: (targetsData: any[], listIds: string[]) => Promise<Target[]>;
+    getFilterSuggestions: (field: string, metadataKey?: string) => Promise<string[]>;
 }
 
 export const useTargetsStore = create<TargetsState>((set, get) => ({
@@ -241,7 +242,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
                 const segment = get().segments.find(s => s.id === get().selectedSegmentId);
                 if (workspaceId && segment) {
-                    const result = await segmentService.getTargetsByFilters(workspaceId, segment.filters, offset, limit);
+                    const result = await segmentService.getTargetsByFilters(workspaceId, segment.filters, segment.match_type, offset, limit);
                     newData = result.data || [];
                     error = result.error;
                     if (newData.length >= limit) hasMoreToLoad = true;
@@ -577,7 +578,7 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
                 set({ targets: [], isLoading: false });
                 return;
             }
-            const result = await segmentService.getTargetsByFilters(workspaceId, segment.filters, 0, limit);
+            const result = await segmentService.getTargetsByFilters(workspaceId, segment.filters, segment.match_type, 0, limit);
             data = result.data;
             error = result.error;
         } else {
@@ -1159,5 +1160,12 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
             searchQuery: '',
             searchTimeout: null
         });
+    },
+
+    getFilterSuggestions: async (field, metadataKey) => {
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+        if (!workspaceId) return [];
+        const { data } = await targetService.getFieldUniqueValues(workspaceId, field, metadataKey);
+        return data || [];
     }
 }));

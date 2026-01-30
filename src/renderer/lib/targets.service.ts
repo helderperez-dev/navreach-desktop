@@ -264,5 +264,36 @@ export const targetService = {
             .from('target_assignments')
             .upsert(assignments, { onConflict: 'target_id, list_id', ignoreDuplicates: true });
         return { error };
+    },
+
+    async getFieldUniqueValues(workspaceId: string, field: string, metadataKey?: string, limit = 100) {
+        let targetField = field;
+        if (field === 'metadata' && metadataKey) {
+            targetField = `metadata->>${metadataKey}`;
+        }
+
+        // We fetch a sample of values to provide suggestions
+        const { data, error } = await supabase
+            .from('targets')
+            .select(targetField)
+            .eq('workspace_id', workspaceId)
+            .not(targetField, 'is', null)
+            .neq(targetField, '')
+            .limit(1000); // Sample 1000 records
+
+        if (error) return { data: [], error };
+
+        // Process to get unique values
+        const uniqueValues = new Set<string>();
+        data.forEach((row: any) => {
+            const val = field === 'metadata' && metadataKey ? row[metadataKey] : row[field];
+            if (val && typeof val === 'string') {
+                uniqueValues.add(val);
+            } else if (val && typeof val !== 'object') {
+                uniqueValues.add(String(val));
+            }
+        });
+
+        return { data: Array.from(uniqueValues).sort().slice(0, limit), error: null };
     }
 };

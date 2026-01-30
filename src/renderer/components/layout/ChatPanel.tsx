@@ -173,7 +173,7 @@ export function ChatPanel() {
   const { addLog } = useDebugStore();
   const activeConversation = getActiveConversation();
 
-  const { lists, fetchLists } = useTargetsStore();
+  const { lists, fetchLists, segments, fetchSegments } = useTargetsStore();
   const { mcpServers, apiTools } = useSettingsStore(); // Using existing hook
   const [playbooks, setPlaybooks] = useState<any[]>([]);
 
@@ -231,6 +231,7 @@ export function ChatPanel() {
 
       refreshData();
       fetchLists();
+      fetchSegments();
 
       const fetchKnowledge = async () => {
         try {
@@ -312,8 +313,19 @@ export function ChatPanel() {
 
 
 
+    if (segments.length > 0) {
+      groups.push({
+        nodeName: 'Segments',
+        variables: segments.map(s => ({
+          label: s.name,
+          value: `{{segments.${s.id}}}`,
+          example: s.description || 'Custom segmentation filter'
+        }))
+      });
+    }
+
     return groups;
-  }, [playbooks, lists, mcpServers, apiTools, knowledgeBases, knowledgeItems]);
+  }, [playbooks, lists, segments, mcpServers, apiTools, knowledgeBases, knowledgeItems]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -715,6 +727,7 @@ export function ChatPanel() {
         refreshToken: refreshToken,
         playbooks: latestPlaybooks,
         targetLists: lists,
+        segments: segments,
         speed,
         isPlaybookRun: isIsolated,
         workspaceId: currentWorkspace?.id,

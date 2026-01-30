@@ -73,7 +73,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     infiniteMode,
   } = useChatStore();
   const { modelProviders, mcpServers, apiTools } = useSettingsStore();
-  const { lists, fetchLists } = useTargetsStore();
+  const { lists, fetchLists, segments, fetchSegments } = useTargetsStore();
   const { currentWorkspace } = useWorkspaceStore();
   const { session } = useAuthStore();
   const [playbooks, setPlaybooks] = useState<any[]>([]);
@@ -91,6 +91,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     playbookService.getPlaybooks(currentWorkspace?.id).then(setPlaybooks);
     if (session) {
       fetchLists();
+      fetchSegments();
 
       // Fetch Knowledge
       const fetchKnowledge = async () => {
@@ -171,8 +172,19 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
       });
     }
 
+    if (segments.length > 0) {
+      groups.push({
+        nodeName: 'Segments',
+        variables: segments.map(s => ({
+          label: s.name,
+          value: `{{segments.${s.id}}}`,
+          example: s.description || 'Custom segmentation filter'
+        }))
+      });
+    }
+
     return groups;
-  }, [playbooks, lists, mcpServers, apiTools, knowledgeBases, knowledgeItems]);
+  }, [playbooks, lists, segments, mcpServers, apiTools, knowledgeBases, knowledgeItems]);
 
   const debouncedInput = useDebounce(input, 1000);
   const [suggestions, setSuggestions] = useState<Suggestion[]>(STATIC_STARTERS);
@@ -299,6 +311,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
         refreshToken: refreshToken,
         playbooks: playbooks,
         targetLists: lists,
+        segments: segments,
       });
 
       if (!result.success && result.error) {

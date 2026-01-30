@@ -30,6 +30,7 @@ export interface TargetSegment {
     name: string;
     description: string | null;
     filters: FilterCondition[];
+    match_type: 'all' | 'any';
     created_at: string;
     updated_at: string;
     target_count?: number;
@@ -39,4 +40,5 @@ export interface CreateSegmentInput {
     name: string;
     description?: string;
     filters: FilterCondition[];
+    match_type: 'all' | 'any';
 }

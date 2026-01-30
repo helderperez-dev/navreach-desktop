@@ -37,7 +37,7 @@ export interface PlaybookExecutionDefaults {
 
 export type PlaybookNodeType =
     | 'start' | 'end' | 'condition' | 'loop' | 'wait' // Control
-    | 'use_target_list' | 'generate_targets' | 'filter_targets' | 'capture_leads' // Target
+    | 'use_target_list' | 'use_segment' | 'generate_targets' | 'filter_targets' | 'capture_leads' // Target
     | 'navigate' | 'analyze' | 'extract' | 'scroll' | 'click' | 'type' // Browser
     | 'x_advanced_search' | 'x_scout' | 'x_engage' | 'x_scan_posts' | 'x_post' | 'x_profile' | 'x_dm' | 'x_switch_tab' | 'x_analyze_notifications'; // X tools
 

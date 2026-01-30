@@ -90,7 +90,17 @@ export const NODE_DEFINITIONS: Record<PlaybookNodeType, NodeTypeDefinition> = {
         label: 'Use List',
         category: NODE_CATEGORIES.TARGET,
         icon: List,
-        description: 'Load targets from database',
+        description: 'Load targets from database list',
+        color: 'bg-secondary text-secondary-foreground',
+        inputs: 1,
+        outputs: 1
+    },
+    use_segment: {
+        type: 'use_segment',
+        label: 'Use Segment',
+        category: NODE_CATEGORIES.TARGET,
+        icon: Filter,
+        description: 'Load targets from segmentation filter',
         color: 'bg-secondary text-secondary-foreground',
         inputs: 1,
         outputs: 1

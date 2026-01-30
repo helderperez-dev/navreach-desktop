@@ -113,6 +113,7 @@ interface ChatRequest {
     refreshToken?: string;
     playbooks?: any[];
     targetLists?: any[];
+    segments?: any[];
     agentRunLimit?: number | null;
     speed?: 'slow' | 'normal' | 'fast';
     isPlaybookRun?: boolean;
@@ -427,6 +428,11 @@ You must transform plain-text user requests into precise queries using these str
     3.  Is the page not loaded? -> \`wait\` or \`browser_dom_snapshot\` to verify.
 *   **ERROR**: "Timeout" -> **FIX**: The page might be heavy. Wait longer or stop loading. Check if the *content* you need is valid despite the timeout.
 
+**TARGETS & SEGMENTS PROTOCOL (DIRECT ACCESS)**
+1. **Direct Data Access**: You can fetch targets from any list or segment directly using the \`db_get_targets\` tool. 
+2. **Variable Resolution (Contextual)**: If the user mentions a segment or list (e.g., {{segments.ID}} or {{lists.ID}}), IMMEDIATELY call \`db_get_targets\` with the corresponding ID. 
+3. **NO PLAYBOOK BIAS**: Do NOT attempt to load or run a playbook just because a segment is mentioned. Use segments as direct data sources for engagement tasks. Only run playbooks if explicitly requested (e.g., "Run playbook X" or {{playbooks.ID}}).
+
 **PLAYBOOK EXECUTION RULES (STRICT)**
 If running a Playbook ({{playbooks.ID}}):
 1.  **Follow the Graph**: Move Node -> Edge -> Node.
@@ -468,6 +474,8 @@ If running a Playbook ({{playbooks.ID}}):
     *   **wait** -> Call \`wait\` (ensure duration matches).
     *   **extract** -> Call \`browser_get_page_content\` or \`browser_dom_snapshot\`.
     *   **analyze** -> Perform a step-by-step analysis of the current page state.
+    *   **use_target_list** -> Call \`db_get_targets(list_id: "...")\`.
+    *   **use_segment** -> Call \`db_get_targets(segment_id: "...")\`.
 
 **KNOWLEDGE & SELF-LEARNING (MEMORY)**
 You have a "Long-Term Memory" stored in the Supabase database. You MUST use the \`supabase\` MCP server (\`execute_sql\`) to manage this.
@@ -931,6 +939,7 @@ CRITICAL:
                 refreshToken,
                 playbooks = [],
                 targetLists = [],
+                segments = [],
                 speed,
                 isPlaybookRun = false,
                 workspaceSettings
@@ -1041,7 +1050,8 @@ CRITICAL:
 
             console.log('[AI Service] Context received:', {
                 playbooksCount: playbooks?.length,
-                targetListsCount: targetLists?.length
+                targetListsCount: targetLists?.length,
+                segmentsCount: segments?.length
             });
 
             // Track current speed for this session
@@ -1066,7 +1076,7 @@ CRITICAL:
             };
 
             const requestBrowserTools = createBrowserTools({ getSpeed, workspaceId: request.workspaceId, getAccessToken });
-            const requestTargetTools = createTargetTools({ targetLists, supabaseClient: scopedSupabase, workspaceId: request.workspaceId, taskQueueService });
+            const requestTargetTools = createTargetTools({ targetLists, segments, supabaseClient: scopedSupabase, workspaceId: request.workspaceId, taskQueueService });
             let requestPlaybookTools = createPlaybookTools({
                 playbooks,
                 supabaseClient: scopedSupabase,

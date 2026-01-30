@@ -30,7 +30,7 @@ interface NodeConfigPanelProps {
 }
 
 export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose, onDelete }: NodeConfigPanelProps) {
-    const { lists, fetchLists } = useTargetsStore();
+    const { lists, fetchLists, segments, fetchSegments } = useTargetsStore();
     const { mcpServers, apiTools, loadSettings } = useSettingsStore();
     const [samples, setSamples] = React.useState<Record<string, any>>({});
     const [playbooks, setPlaybooks] = React.useState<any[]>([]);
@@ -40,6 +40,9 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
         playbookService.getPlaybooks().then(setPlaybooks);
         if (lists.length === 0) {
             fetchLists();
+        }
+        if (segments.length === 0) {
+            fetchSegments();
         }
     }, []);
 
@@ -197,6 +200,17 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
             });
         }
 
+        if (segments.length > 0) {
+            groups.push({
+                nodeName: 'Segments',
+                variables: segments.map(s => ({
+                    label: s.name,
+                    value: `{{segments.${s.id}}}`,
+                    example: s.description || 'Custom segmentation filter'
+                }))
+            });
+        }
+
         groups.push({
             nodeName: 'Agent',
             variables: [
@@ -209,7 +223,7 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
         });
 
         return groups;
-    }, [playbooks, lists, mcpServers, apiTools]);
+    }, [playbooks, lists, segments, mcpServers, apiTools]);
 
     const renderConfigFields = () => {
         const upstreamGroups = getUpstreamVariables();
@@ -493,6 +507,56 @@ export function NodeConfigPanel({ selectedNode, nodes, edges, onUpdate, onClose,
                                     {lists.map(list => (
                                         <SelectItem key={list.id} value={list.id}>
                                             {list.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        <Field label="Mode">
+                            <Select
+                                value={config.mode || 'all'}
+                                onValueChange={(v) => handleConfigChange('mode', v)}
+                            >
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All Items</SelectItem>
+                                    <SelectItem value="limit">Limit</SelectItem>
+                                    <SelectItem value="random">Random</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </Field>
+                        {config.mode === 'limit' && (
+                            <Field label="Limit">
+                                <Input
+                                    type="number"
+                                    value={config.limit || 10}
+                                    onChange={(e) => handleConfigChange('limit', parseInt(e.target.value))}
+                                />
+                            </Field>
+                        )}
+                    </div>
+                );
+            case 'use_segment':
+                return (
+                    <div className="space-y-4">
+                        <Field label="Segment ID">
+                            <Select
+                                value={config.segment_id || ''}
+                                onValueChange={(v) => handleConfigChange('segment_id', v)}
+                            >
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select a segment" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="agent_decide">
+                                        <div className="flex items-center gap-2">
+                                            <Sparkles className="h-3 w-3 text-primary" />
+                                            <span>Agent Decides</span>
+                                        </div>
+                                    </SelectItem>
+                                    {segments.map(seg => (
+                                        <SelectItem key={seg.id} value={seg.id}>
+                                            {seg.name}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>

@@ -5,6 +5,7 @@ import { taskQueueService } from './task-queue.service';
 
 export interface TargetToolsContext {
     targetLists?: any[];
+    segments?: any[];
     supabaseClient?: any;
     workspaceId?: string;
     taskQueueService?: any;
@@ -14,17 +15,17 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
     const supabaseClient = context?.supabaseClient || supabase;
     const currentWorkspaceId = context?.workspaceId;
     const activeTaskQueueService = context?.taskQueueService || taskQueueService;
-    // Authorized Supabase client
 
     const getTargetsTool = new DynamicStructuredTool({
         name: 'db_get_targets',
-        description: 'Fetch targets from a specific target list. use the offset to paginate and get more targets.',
+        description: 'Fetch targets from a specific target list or segment. use the offset to paginate and get more targets.',
         schema: z.object({
             list_id: z.string().nullable().describe('Filter by specific target list ID, or empty string for all.').default(null),
+            segment_id: z.string().nullable().describe('Filter by specific segment ID.').default(null),
             limit: z.number().nullable().describe('Number of targets to fetch. Use 20 as default.').default(null),
             offset: z.number().nullable().describe('Number of targets to skip. Use 0 as default.').default(null),
         }),
-        func: async ({ list_id, limit, offset }) => {
+        func: async ({ list_id, segment_id, limit, offset }) => {
             try {
                 const finalLimit = limit || 20;
                 const finalOffset = offset || 0;
@@ -33,8 +34,6 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 let listName = null;
 
                 if (list_id && list_id.trim() !== '') {
-                    // Strategy 1: Fetch via assignments (Junction Table)
-                    // This is the most reliable way to get targets in a specific list
                     const { data: assignments, count: total, error } = await supabaseClient
                         .from('target_assignments')
                         .select('target:targets!target_assignments_target_id_fkey(*)', { count: 'exact' })
@@ -43,12 +42,9 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                         .range(finalOffset, finalOffset + finalLimit - 1);
 
                     if (error) throw error;
-
-                    // Unwraps the target object from the assignment
                     data = (assignments || []).map((a: any) => a.target).filter(Boolean);
                     count = total || 0;
 
-                    // Fetch list name for friendly display
                     const { data: listData } = await supabaseClient
                         .from('target_lists')
                         .select('name')
@@ -59,15 +55,94 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                         listName = listData.name;
                     }
 
-                } else {
-                    // Strategy 2: Fetch all targets in workspace
-                    // Direct query on targets table is simpler and avoids ambiguous joins
-                    let query = supabaseClient.from('targets').select('*', { count: 'exact' });
+                } else if (segment_id && segment_id.trim() !== '') {
+                    const { data: segment, error: segError } = await supabaseClient
+                        .from('target_segments')
+                        .select('*')
+                        .eq('id', segment_id)
+                        .maybeSingle();
 
-                    if (currentWorkspaceId) {
-                        // Targets table has workspace_id, so we can filter directly
-                        query = query.eq('workspace_id', currentWorkspaceId);
+                    if (segError) throw segError;
+                    if (!segment) throw new Error('Segment not found');
+                    listName = `Segment: ${segment.name}`;
+
+                    const filters = segment.filters || [];
+                    const match_type = segment.match_type || 'all';
+
+                    let query = supabaseClient.from('targets').select('*', { count: 'exact' });
+                    if (currentWorkspaceId) query = query.eq('workspace_id', currentWorkspaceId);
+
+                    if (filters.length > 0) {
+                        if (match_type === 'any') {
+                            const orConditions: string[] = [];
+                            filters.forEach((filter: any) => {
+                                const { field, operator, value, metadataKey } = filter;
+                                let targetField = field;
+                                if (field === 'metadata' && metadataKey) {
+                                    targetField = `metadata->>${metadataKey}`;
+                                }
+
+                                switch (operator) {
+                                    case 'equals': orConditions.push(`${targetField}.eq.${value}`); break;
+                                    case 'not_equals': orConditions.push(`${targetField}.neq.${value}`); break;
+                                    case 'contains': orConditions.push(`${targetField}.ilike.*${value}*`); break;
+                                    case 'starts_with': orConditions.push(`${targetField}.ilike.${value}*`); break;
+                                    case 'ends_with': orConditions.push(`${targetField}.ilike.*${value}`); break;
+                                    case 'is_empty':
+                                        orConditions.push(`${targetField}.is.null`);
+                                        orConditions.push(`${targetField}.eq.""`);
+                                        break;
+                                    case 'is_not_empty':
+                                        orConditions.push(`${targetField}.not.is.null`);
+                                        orConditions.push(`${targetField}.neq.""`);
+                                        break;
+                                    case 'gt': orConditions.push(`${targetField}.gt.${value}`); break;
+                                    case 'gte': orConditions.push(`${targetField}.gte.${value}`); break;
+                                    case 'lt': orConditions.push(`${targetField}.lt.${value}`); break;
+                                    case 'lte': orConditions.push(`${targetField}.lte.${value}`); break;
+                                }
+                            });
+                            if (orConditions.length > 0) {
+                                query = query.or(orConditions.join(','));
+                            }
+                        } else {
+                            filters.forEach((filter: any) => {
+                                const { field, operator, value, metadataKey } = filter;
+                                let targetField = field;
+                                if (field === 'metadata' && metadataKey) {
+                                    targetField = `metadata->>${metadataKey}`;
+                                }
+
+                                switch (operator) {
+                                    case 'equals': query = query.eq(targetField, value); break;
+                                    case 'not_equals': query = query.neq(targetField, value); break;
+                                    case 'contains': query = query.ilike(targetField, `%${value}%`); break;
+                                    case 'not_contains': query = query.not('ilike', targetField, `%${value}%`); break;
+                                    case 'starts_with': query = query.ilike(targetField, `${value}%`); break;
+                                    case 'ends_with': query = query.ilike(targetField, `%${value}`); break;
+                                    case 'is_empty': query = query.or(`${targetField}.is.null,${targetField}.eq.""`); break;
+                                    case 'is_not_empty': query = query.not(`${targetField}`, 'is', null).neq(targetField, ''); break;
+                                    case 'gt': query = query.gt(targetField, value); break;
+                                    case 'gte': query = query.gte(targetField, value); break;
+                                    case 'lt': query = query.lt(targetField, value); break;
+                                    case 'lte': query = query.lte(targetField, value); break;
+                                    case 'in': if (Array.isArray(value)) query = query.in(targetField, value); break;
+                                }
+                            });
+                        }
                     }
+
+                    const { data: targets, count: total, error } = await query
+                        .order('created_at', { ascending: false })
+                        .range(finalOffset, finalOffset + finalLimit - 1);
+
+                    if (error) throw error;
+                    data = targets || [];
+                    count = total || 0;
+
+                } else {
+                    let query = supabaseClient.from('targets').select('*', { count: 'exact' });
+                    if (currentWorkspaceId) query = query.eq('workspace_id', currentWorkspaceId);
 
                     const { data: targets, count: total, error } = await query
                         .order('created_at', { ascending: false })
@@ -102,26 +177,44 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
         }),
         func: async () => {
             try {
-                // Check context first
                 if (context?.targetLists && context.targetLists.length > 0) {
                     return JSON.stringify({ success: true, lists: context.targetLists });
                 }
 
-                let query = supabaseClient
-                    .from('target_lists')
-                    .select('*');
+                let query = supabaseClient.from('target_lists').select('*');
+                if (currentWorkspaceId) query = query.eq('workspace_id', currentWorkspaceId);
 
-                if (currentWorkspaceId) {
-                    query = query.eq('workspace_id', currentWorkspaceId);
-                }
-
-                const { data, error } = await query
-                    .order('created_at', { ascending: false });
-
+                const { data, error } = await query.order('created_at', { ascending: false });
                 if (error) throw error;
                 return JSON.stringify({ success: true, lists: data });
             } catch (error: any) {
                 console.error('db_get_target_lists error:', error);
+                const errorMsg = error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+                return JSON.stringify({ success: false, error: errorMsg });
+            }
+        },
+    });
+
+    const getSegmentsTool = new DynamicStructuredTool({
+        name: 'db_get_segments',
+        description: 'Fetch all available segmentation filters. Use this to discover which segments exist.',
+        schema: z.object({
+            refresh: z.boolean().describe('Whether to refresh. Always pass true.')
+        }),
+        func: async () => {
+            try {
+                if (context?.segments && context.segments.length > 0) {
+                    return JSON.stringify({ success: true, segments: context.segments });
+                }
+
+                let query = supabaseClient.from('target_segments').select('*');
+                if (currentWorkspaceId) query = query.eq('workspace_id', currentWorkspaceId);
+
+                const { data, error } = await query.order('created_at', { ascending: false });
+                if (error) throw error;
+                return JSON.stringify({ success: true, segments: data });
+            } catch (error: any) {
+                console.error('db_get_segments error:', error);
                 const errorMsg = error?.message || (typeof error === 'object' ? JSON.stringify(error) : String(error));
                 return JSON.stringify({ success: false, error: errorMsg });
             }
@@ -141,8 +234,6 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 if (!user) throw new Error('Not authenticated');
 
                 let finalWorkspaceId = currentWorkspaceId;
-
-                // Fallback: If no workspace ID found in context, try to find the user's default workspace
                 if (!finalWorkspaceId) {
                     const { data: member } = await supabaseClient
                         .from('workspace_members')
@@ -152,9 +243,7 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                         .limit(1)
                         .maybeSingle();
 
-                    if (member) {
-                        finalWorkspaceId = member.workspace_id;
-                    }
+                    if (member) finalWorkspaceId = member.workspace_id;
                 }
 
                 if (finalWorkspaceId) {
@@ -235,13 +324,11 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
 
                 if (error) throw error;
 
-                // Handle assignment if list_id is provided
                 if (list_id && list_id.trim().length > 10) {
                     await supabaseClient
                         .from('target_assignments')
                         .upsert([{ target_id: data.id, list_id: list_id }], { onConflict: 'target_id, list_id' });
 
-                    // Auto-queue for profile analysis if enabled for workspace
                     try {
                         if (finalWorkspaceId) {
                             const { data: ws } = await supabaseClient.from('workspaces').select('auto_profile_analysis').eq('id', finalWorkspaceId).single();
@@ -285,23 +372,16 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 const metadata = typeof metadata_json === 'string'
                     ? JSON.parse(metadata_json || '{}')
                     : (metadata_json || {});
-                // First get existing metadata to merge
+
                 if (metadata && Object.keys(metadata).length > 0) {
                     const { data: existing } = await supabaseClient.from('targets').select('metadata').eq('id', id).single();
                     updates.metadata = { ...(existing?.metadata || {}), ...metadata };
                 }
 
-                let updateQuery = supabaseClient
+                const { data, error } = await supabaseClient
                     .from('targets')
                     .update(updates)
-                    .eq('id', id);
-
-                // Removed workspace_id check as the column doesn't exist on targets
-                // if (currentWorkspaceId) {
-                //     updateQuery = updateQuery.eq('workspace_id', currentWorkspaceId);
-                // }
-
-                const { data, error } = await updateQuery
+                    .eq('id', id)
                     .select()
                     .single();
 
@@ -332,7 +412,6 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                 const { data: { user } } = await supabaseClient.auth.getUser();
                 if (!user) throw new Error('Not authenticated');
 
-                // 1. Resolve workspace_id for the list to ensure correct scoping
                 const { data: listData } = await supabaseClient
                     .from('target_lists')
                     .select('workspace_id')
@@ -348,22 +427,18 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                     type: l.type,
                     metadata: l.metadata,
                     user_id: user.id
-                    // Note: We don't include list_id here because we'll handle assignments explicitly
-                    // to support targets existing in multiple lists.
                 }));
 
-                // 2. Perform Upsert to handle "unique_target_url_per_workspace"
                 const { data: upsertedTargets, error: upsertError } = await supabaseClient
                     .from('targets')
                     .upsert(dataToUpsert, {
                         onConflict: 'url, workspace_id',
-                        ignoreDuplicates: false // Updates metadata if user exists
+                        ignoreDuplicates: false
                     })
                     .select('id, url, name, type');
 
                 if (upsertError) throw upsertError;
 
-                // 3. Ensure assignments in the junction table
                 if (upsertedTargets && upsertedTargets.length > 0) {
                     const assignments = upsertedTargets.map((t: any) => ({
                         target_id: t.id,
@@ -374,12 +449,9 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
                         .from('target_assignments')
                         .upsert(assignments, { onConflict: 'target_id, list_id' });
 
-                    if (assignError) {
-                        console.error('Assignment error after bulk capture:', assignError);
-                    }
+                    if (assignError) console.error('Assignment error after bulk capture:', assignError);
                 }
 
-                // 4. Auto-queue for profile analysis if enabled for workspace
                 try {
                     if (finalWorkspaceId) {
                         const { data: ws } = await supabaseClient.from('workspaces').select('auto_profile_analysis').eq('id', finalWorkspaceId).single();
@@ -412,5 +484,13 @@ export function createTargetTools(context?: TargetToolsContext): DynamicStructur
         }
     });
 
-    return [getTargetsTool, getTargetListsTool, createTargetListTool, createTargetTool, updateTargetMetadataTool, captureLeadsBulkTool];
+    return [
+        getTargetsTool,
+        getTargetListsTool,
+        getSegmentsTool,
+        createTargetListTool,
+        createTargetTool,
+        updateTargetMetadataTool,
+        captureLeadsBulkTool
+    ];
 }

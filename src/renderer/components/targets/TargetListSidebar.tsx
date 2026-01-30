@@ -34,7 +34,7 @@ export function TargetListSidebar() {
     const [activeTab, setActiveTab] = useState<'lists' | 'segments'>('lists');
 
     // Resize logic
-    const [width, setWidth] = useState(256);
+    const [width, setWidth] = useState(400);
     const [isResizingActive, setIsResizingActive] = useState(false);
 
     const isResizing = useRef(false);
@@ -60,7 +60,7 @@ export function TargetListSidebar() {
     const handleMouseMove = useCallback((e: MouseEvent) => {
         if (!isResizing.current) return;
         requestAnimationFrame(() => {
-            const newWidth = Math.min(Math.max(200, e.clientX), 450);
+            const newWidth = Math.min(Math.max(160, e.clientX), 450);
             setWidth(newWidth);
         });
     }, []);

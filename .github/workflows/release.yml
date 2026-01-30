@@ -11,7 +11,7 @@ permissions:
 jobs:
   release:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 1440
+    timeout-minutes: 60
 
     strategy:
       matrix:
@@ -52,11 +52,19 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          # Signing credentials
+
+          # macOS signing
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_PASSWORD: ${{ secrets.CSC_PASSWORD }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_PASSWORD }}
-        run: npm run build:${{ matrix.os == 'macos-latest' && 'mac' || matrix.os == 'windows-latest' && 'win' || 'linux' }} -- --publish always
+        run: |
+          if [[ "${{ matrix.os }}" == "macos-latest" ]]; then
+            npm run build:mac -- --publish always
+          elif [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            npm run build:win -- --publish always
+          else
+            npm run build:linux -- --publish always
+          fi
 
       - name: Notarize and Staple (macOS)
         if: matrix.os == 'macos-latest'
@@ -65,19 +73,54 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           VERSION: ${{ steps.sync_version.outputs.VERSION }}
+        shell: bash
         run: |
+          set -e
+
           PRODUCT_PATH="dist/Reavion-${VERSION}-universal.dmg"
-          echo "Notarizing $PRODUCT_PATH..."
-          
-          # Submit to Apple Notary Service and wait for result
-          xcrun notarytool submit "$PRODUCT_PATH" \
+          echo "🚀 Submitting notarization for $PRODUCT_PATH"
+
+          RESPONSE=$(xcrun notarytool submit "$PRODUCT_PATH" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
             --team-id "$TEAM_ID" \
-            --wait
-            
-          # Staple the notarization ticket to the DMG
-          echo "Stapling notarization ticket..."
+            --output-format json)
+
+          echo "$RESPONSE"
+
+          SUBMISSION_ID=$(echo "$RESPONSE" | jq -r '.id')
+
+          if [[ -z "$SUBMISSION_ID" || "$SUBMISSION_ID" == "null" ]]; then
+            echo "❌ Failed to get notarization submission ID"
+            exit 1
+          fi
+
+          echo "🆔 Submission ID: $SUBMISSION_ID"
+          echo "⏳ Waiting for notarization result..."
+
+          for i in {1..40}; do
+            STATUS=$(xcrun notarytool info "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_PASSWORD" \
+              --team-id "$TEAM_ID" \
+              --output-format json | jq -r '.status')
+
+            echo "Attempt $i → Status: $STATUS"
+
+            if [[ "$STATUS" == "Accepted" ]]; then
+              echo "✅ Notarization accepted"
+              break
+            fi
+
+            if [[ "$STATUS" == "Invalid" ]]; then
+              echo "❌ Notarization failed"
+              exit 1
+            fi
+
+            sleep 30
+          done
+
+          echo "📎 Stapling notarization ticket..."
           xcrun stapler staple "$PRODUCT_PATH"
-          
-          echo "Notarization and Stapling complete!"
+
+          echo "🎉 Notarization & stapling complete"

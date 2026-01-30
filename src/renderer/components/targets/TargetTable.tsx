@@ -275,7 +275,7 @@ export function TargetTable({
             for (const targetId of adjustmentTargets) {
                 const targetWidth = prev[targetId] || 10;
                 const canAbsorb = remainingDelta > 0
-                    ? targetWidth - 5 // can shrink down to 5%
+                    ? targetWidth - 3 // can shrink down to 3%
                     : 100 - targetWidth; // can grow (hypothetically, but we usually shrink others)
 
                 const absorption = remainingDelta > 0

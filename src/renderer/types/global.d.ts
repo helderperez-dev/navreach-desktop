@@ -83,6 +83,7 @@ declare global {
           refreshToken?: string;
           playbooks?: any[];
           targetLists?: any[];
+          segments?: any[];
           agentRunLimit?: number | null;
           isPlaybookRun?: boolean;
           speed?: 'slow' | 'normal' | 'fast';
@@ -103,6 +104,7 @@ declare global {
           accessToken?: string;
           playbooks?: any[];
           targetLists?: any[];
+          segments?: any[];
         }) => Promise<{ success: boolean; response?: string; error?: string }>;
         stop: () => Promise<void>;
         onStreamChunk: (callback: (data: { content: string; done: boolean; toolCall?: any; toolResult?: any }) => void) => () => void;
