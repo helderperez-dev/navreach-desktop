@@ -1020,6 +1020,60 @@ const SCRIPT_HELPERS = `
     return null;
   };
 
+  window.typeHumanly = async (text) => {
+      const chars = text.split('');
+      const activeElement = document.activeElement;
+      
+      for (const char of chars) {
+          // Standard delay: 50ms - 150ms
+          // Occasional hesitation: 300ms
+          const isSpace = char === ' ';
+          const isPunctuation = ['.', ',', '!', '?'].includes(char);
+          
+          let delay = 30 + Math.random() * 80; // Fast typer base
+          if (isSpace) delay += 30; // Pause slightly on spaces
+          if (isPunctuation) delay += 100; // Pause more on punctuation
+          
+          if (Math.random() < 0.05) delay += 200; // Occasional "thinking" pause
+          
+          await window.wait(delay * (window.__REAVION_SPEED_MULTIPLIER__ || 1));
+          
+          // Dispatch events to simulate real keystrokes
+          const keyOptions = {
+              key: char,
+              code: 'Key' + char.toUpperCase(), // Simplified, not perfect but usually enough
+              charCode: char.charCodeAt(0),
+              keyCode: char.charCodeAt(0),
+              which: char.charCodeAt(0),
+              bubbles: true,
+              cancelable: true,
+              view: window
+          };
+          
+          if (activeElement) {
+              activeElement.dispatchEvent(new KeyboardEvent('keydown', keyOptions));
+              activeElement.dispatchEvent(new KeyboardEvent('keypress', keyOptions));
+              
+              // Insert char (simulating value update if not handled by event)
+              // NOTE: In Electron we rely on contents.insertText usually, but here we are inside the page context.
+              // For input/textarea we can append value. For contentEditable we use execCommand or range.
+              if (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA') {
+                  const start = activeElement.selectionStart;
+                  const end = activeElement.selectionEnd;
+                  const val = activeElement.value;
+                  activeElement.value = val.substring(0, start) + char + val.substring(end);
+                  activeElement.selectionStart = activeElement.selectionEnd = start + 1;
+              } else if (activeElement.isContentEditable) {
+                   document.execCommand('insertText', false, char);
+              }
+              
+              activeElement.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: char }));
+              activeElement.dispatchEvent(new KeyboardEvent('keyup', keyOptions));
+          }
+      }
+      return true;
+  };
+
   window.__REAVION_HELPERS_LOADED__ = true;
 `;
 
@@ -1090,7 +1144,14 @@ async function ensureSpeedMultiplier(getSpeed: () => 'slow' | 'normal' | 'fast')
   }
 }
 
-export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal' | 'fast', workspaceId?: string, scrollWait?: number, getAccessToken?: () => string | undefined }): DynamicStructuredTool[] {
+export function createBrowserTools(options?: {
+  getSpeed?: () => 'slow' | 'normal' | 'fast',
+  workspaceId?: string,
+  scrollWait?: number,
+  getAccessToken?: () => string | undefined,
+  currentModelSupportsVision?: boolean,
+  visionCapability?: (query: string, screenshotBase64: string) => Promise<{ x: number, y: number } | null>
+}): DynamicStructuredTool[] {
   const getSpeed = options?.getSpeed || (() => 'normal');
 
   const navigateTool = new DynamicStructuredTool({
@@ -1175,12 +1236,43 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
           throw err;
         });
 
-        if (!scriptResult.success) {
-          sendDebugLog('warning', `browser_click: Element search failed: ${scriptResult.error}`, { selector, index });
-          return JSON.stringify(scriptResult);
-        }
+        let x = scriptResult.x;
+        let y = scriptResult.y;
 
-        const { x, y } = scriptResult;
+        if (!scriptResult.success) {
+          let foundVisually = false;
+          // Vision Fallback
+          if (options?.visionCapability && options?.currentModelSupportsVision) {
+            try {
+              sendDebugLog('info', 'Selector failed. Attempting Vision Fallback...', { selector });
+              // Use internal screenshot capture
+              const image = await contents.capturePage();
+              // Resize if too massive? Electron capturePage returns native size. 
+              // Models usually handle up to 2048x2048 fine.
+              const base64 = image.toDataURL();
+
+              const coords = await options.visionCapability(selector, base64);
+              if (coords) {
+                x = coords.x;
+                y = coords.y;
+                foundVisually = true;
+                sendDebugLog('info', 'Vision Match Found', coords);
+
+                // Show visual feedback for the vision click
+                try {
+                  contents.executeJavaScript(`if (typeof window.showVisualClick === 'function') window.showVisualClick(${x}, ${y});`).catch(() => { });
+                } catch (e) { }
+              }
+            } catch (visErr) {
+              console.error('Vision fallback error', visErr);
+            }
+          }
+
+          if (!foundVisually) {
+            sendDebugLog('warning', `browser_click: Element search failed: ${scriptResult.error}`, { selector, index });
+            return JSON.stringify(scriptResult);
+          }
+        }
         const roundedX = Math.round(x);
         const roundedY = Math.round(y);
 
@@ -1260,8 +1352,15 @@ export function createBrowserTools(options?: { getSpeed?: () => 'slow' | 'normal
         contents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
         await new Promise(r => setTimeout(r, 100));
 
-        // 4. Native insert (Paste-like insertion)
-        contents.insertText(text);
+        // 4. Human-like Typing
+        try {
+          // Escape backslashes in text for JSON stringify safety in script injection
+          const safeText = JSON.stringify(text);
+          await contents.executeJavaScript(`window.typeHumanly(${safeText})`);
+        } catch (typeErr) {
+          sendDebugLog('warning', 'TypeHumanly failed, falling back to insertText', { error: String(typeErr) });
+          contents.insertText(text);
+        }
 
         // 5. Ensure site registers the input (Crucial for React/Lexical editors)
         try {

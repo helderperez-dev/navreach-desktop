@@ -1267,7 +1267,42 @@ CRITICAL:
                 return activeTokens.get(window.id)?.accessToken || accessToken;
             };
 
-            const requestBrowserTools = createBrowserTools({ getSpeed, workspaceId: request.workspaceId, getAccessToken });
+            const requestBrowserTools = createBrowserTools({
+                getSpeed,
+                workspaceId: request.workspaceId,
+                getAccessToken,
+                currentModelSupportsVision: effectiveModel.id.toLowerCase().includes('gpt-4') || effectiveModel.id.toLowerCase().includes('claude-3') || effectiveModel.id.toLowerCase().includes('gemini') || effectiveModel.id.toLowerCase().includes('vision') || effectiveModel.id.toLowerCase().includes('llava'),
+                visionCapability: async (query: string, screenshotBase64: string) => {
+                    try {
+                        // Use a fresh non-streaming instance for vision task
+                        // We disable reasoning to save tokens and speed up coordinate retrieval
+                        const visionModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false, disableReasoning: true });
+
+                        const msg = new HumanMessage({
+                            content: [
+                                { type: 'text', text: query + " Return ONLY a JSON object with keys 'x' and 'y', e.g. {\"x\": 100, \"y\": 200}. Do not include any other text." },
+                                { type: 'image_url', image_url: { url: screenshotBase64 } }
+                            ]
+                        });
+
+                        const res = await visionModel.invoke([msg]);
+                        const text = typeof res.content === 'string' ? res.content : JSON.stringify(res.content);
+
+                        // Parse potential JSON
+                        const jsonMatch = text.match(/\{[\s\S]*?\}/);
+                        if (jsonMatch) {
+                            const coords = JSON.parse(jsonMatch[0]);
+                            if (typeof coords.x === 'number' && typeof coords.y === 'number') {
+                                return { x: coords.x, y: coords.y };
+                            }
+                        }
+                        return null;
+                    } catch (e) {
+                        console.error('Vision Capability Error:', e);
+                        return null;
+                    }
+                }
+            });
             const requestTargetTools = createTargetTools({ targetLists, segments, supabaseClient: scopedSupabase, workspaceId: request.workspaceId, taskQueueService });
             let requestPlaybookTools = createPlaybookTools({
                 playbooks,
