@@ -32,7 +32,7 @@ export interface Conversation {
 export interface ModelProvider {
   id: string;
   name: string;
-  type: 'openai' | 'anthropic' | 'openrouter' | 'custom';
+  type: 'openai' | 'anthropic' | 'openrouter' | 'custom' | 'local' | 'ollama';
   apiKey: string;
   baseUrl?: string;
   models: ModelConfig[];
@@ -46,6 +46,7 @@ export interface ModelConfig {
   contextWindow: number;
   maxOutputTokens?: number;
   enabled?: boolean;
+  path?: string;
 }
 
 export interface MCPServer {

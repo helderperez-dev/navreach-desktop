@@ -100,7 +100,8 @@ const windowAPI = {
     const handler = (_event: unknown, isFullScreen: boolean) => callback(isFullScreen);
     ipcRenderer.on('window:fullscreen-change', handler);
     return () => ipcRenderer.removeListener('window:fullscreen-change', handler);
-  }
+  },
+  openFile: (options: { title?: string; filters?: { name: string; extensions: string[] }[] }) => ipcRenderer.invoke('dialog:open-file', options) as Promise<string | null>,
 };
 
 const aiAPI = {
@@ -205,7 +206,16 @@ console.log('Tasks API initialized with methods:', Object.keys(tasksAPI));
 export type BrowserAPI = typeof browserAPI;
 export type SettingsAPI = typeof settingsAPI;
 export type MCPAPI = typeof mcpAPI;
-export type WindowAPI = typeof windowAPI;
+
+export interface WindowAPI {
+  platform: string;
+  minimize: () => Promise<void>;
+  maximize: () => Promise<void>;
+  close: () => Promise<void>;
+  onMenuAction: (callback: (action: string) => void) => () => void;
+  onFullScreenChange: (callback: (isFullScreen: boolean) => void) => () => void;
+  openFile: (options: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
+}
 
 contextBridge.exposeInMainWorld('api', {
   browser: browserAPI,

@@ -69,6 +69,7 @@ declare global {
         minimize: () => void;
         maximize: () => void;
         close: () => void;
+        openFile: (options: { title?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string | null>;
       };
       ai: {
         chat: (request: {

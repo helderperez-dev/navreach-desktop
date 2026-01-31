@@ -11,8 +11,12 @@ import { AppSettings, ModelProvider, ModelConfig } from '../../shared/types';
 const store = new Store<AppSettings>({
     name: 'settings',
 });
+// Cache for local model weights only (shared within this module)
+let cachedLlamaInstance: any = null;
+let cachedLlamaModel: any = null;
+let cachedLlamaModelPath: string | null = null;
 
-function createSimpleChatModel(provider: ModelProvider, model?: ModelConfig) {
+async function createSimpleChatModel(provider: ModelProvider, model?: ModelConfig) {
     const baseConfig = {
         modelName: model?.id || 'gpt-4o',
         temperature: 0.7,
@@ -20,6 +24,57 @@ function createSimpleChatModel(provider: ModelProvider, model?: ModelConfig) {
     };
 
     switch (provider.type) {
+        case 'local':
+            const localModelPath = model?.path || model?.id || '';
+            try {
+                const { getLlama } = await import('node-llama-cpp');
+                const { ChatLlamaCpp } = await import('@langchain/community/chat_models/llama_cpp');
+
+                if (!cachedLlamaInstance) {
+                    cachedLlamaInstance = await getLlama();
+                }
+
+                if (cachedLlamaModelPath !== localModelPath || !cachedLlamaModel) {
+                    cachedLlamaModel = await cachedLlamaInstance.loadModel({ modelPath: localModelPath });
+                    cachedLlamaModelPath = localModelPath;
+                }
+
+                let localContext;
+                const contextSizes = [8192, 4096, 2048, 1024];
+                let success = false;
+
+                for (const size of contextSizes) {
+                    try {
+                        localContext = await cachedLlamaModel.createContext({
+                            contextSize: size,
+                            sequences: 1,
+                            batchSize: size > 4096 ? 512 : 256
+                        });
+                        success = true;
+                        break;
+                    } catch (e: any) {
+                        console.warn(`[Utility Tools] Failed to create ${size} context:`, e.message);
+                    }
+                }
+
+                if (!success || !localContext) {
+                    throw new Error("Could not initialize local model context even with minimum settings.");
+                }
+
+                const chatInstance = new ChatLlamaCpp({
+                    modelPath: localModelPath,
+                    temperature: 0.7,
+                    maxTokens: 2048,
+                });
+
+                (chatInstance as any)._model = cachedLlamaModel;
+                (chatInstance as any)._context = localContext;
+
+                return chatInstance;
+            } catch (err) {
+                console.error('[Utility Tools] Local model init failed:', err);
+                throw err;
+            }
         case 'openai':
             return new ChatOpenAI({
                 ...baseConfig,
@@ -42,6 +97,13 @@ function createSimpleChatModel(provider: ModelProvider, model?: ModelConfig) {
                         'X-Title': 'Reavion Desktop',
                     },
                 },
+            });
+        case 'ollama':
+            const { ChatOllama } = await import('@langchain/ollama');
+            return new ChatOllama({
+                baseUrl: provider.baseUrl || 'http://localhost:11434',
+                model: model?.id || 'llama3',
+                temperature: 0.7,
             });
         default:
             return new ChatOpenAI(baseConfig);
@@ -108,7 +170,7 @@ export function createUtilityTools(context?: UtilityToolsContext): DynamicStruct
                         return JSON.stringify({ success: false, error: 'No enabled AI model provider found to perform humanization.' });
                     }
 
-                    const chat = createSimpleChatModel(selectedProvider, selectedModel);
+                    const chat = await createSimpleChatModel(selectedProvider, selectedModel);
 
                     const systemPrompt = `You are an expert ghostwriter and editor. Your ONLY goal is to rewrite the input text to be 100% human-like and undetectable by AI detectors.
             

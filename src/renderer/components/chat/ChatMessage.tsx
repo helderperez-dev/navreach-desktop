@@ -64,6 +64,7 @@ const toolAliases: Record<string, string> = {
   'agent_pause': 'Agent Paused',
   'x_scan_posts': 'Scanning X (Twitter) Posts',
   'browser_move_to_element': 'Focusing on Element',
+  'report_playbook_node_status': 'Updating Playbook Step',
   'unknown_tool': 'Running Action'
 };
 
@@ -276,7 +277,7 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
   const isSnapshot = toolCall.name === 'browser_snapshot';
 
   return (
-    <div className="my-2 rounded-2xl liquid-glass overflow-hidden group/tool">
+    <div className="my-2 rounded-2xl liquid-glass bg-white/5 overflow-hidden group/tool">
       {/* Header - Always Visible */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
@@ -452,7 +453,8 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const hasStructuredTools = message.toolCalls && message.toolCalls.length > 0;
+  const toolCallsRef = message.toolCalls || (message as any).tool_calls;
+  const hasStructuredTools = toolCallsRef && toolCallsRef.length > 0;
   // Always parse content to support Thinking blocks and clean text, even if tools are present.
   const blocks = (!isUser) ? parseMessageContent(message.content) : [];
 
@@ -495,13 +497,11 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
 
               {/* 2. Structured Tool Executions (Consolidated) */}
               {hasStructuredTools && (
-                <div className="space-y-1.5 my-1">
-                  {message.toolCalls!
-                    .filter(tc => tc.name !== 'report_playbook_node_status')
-                    .map((toolCall) => {
-                      const result = message.toolResults?.find((r) => r.toolCallId === toolCall.id);
-                      return <StructuredToolCard key={toolCall.id} toolCall={toolCall} toolResult={result} />;
-                    })}
+                <div className="space-y-1.5 my-1 min-h-[40px]">
+                  {(message.toolCalls || (message as any).tool_calls || []).map((toolCall: any) => {
+                    const result = message.toolResults?.find((r) => r.toolCallId === toolCall.id);
+                    return <StructuredToolCard key={toolCall.id} toolCall={toolCall} toolResult={result} />;
+                  })}
                 </div>
               )}
 

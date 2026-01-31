@@ -1,4 +1,5 @@
-import { app, BrowserWindow, shell, ipcMain, nativeImage } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, nativeImage, dialog } from 'electron';
+import { loadElectronLlm } from '@electron/llm';
 
 // SILENCE NOISY LANGCHAIN WARNINGS
 process.env.LANGCHAIN_ADAPTER_MIGRATION_WARNING = 'false';
@@ -162,6 +163,11 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.reavion.app');
 
+    // Initialize Electron LLM
+    loadElectronLlm({
+      getModelPath: (modelAlias) => modelAlias,
+    });
+
     // Auto-updater
     autoUpdater.checkForUpdatesAndNotify();
 
@@ -194,7 +200,18 @@ if (!gotTheLock) {
     });
 
     ipcMain.handle('window:close', () => {
-      app.quit();
+      mainWindow?.close();
+    });
+
+    ipcMain.handle('dialog:open-file', async (_event, options: { title?: string; filters?: { name: string; extensions: string[] }[] }) => {
+      if (!mainWindow) return null;
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: options.title || 'Select File',
+        properties: ['openFile'],
+        filters: options.filters || [],
+      });
+      if (result.canceled) return null;
+      return result.filePaths[0];
     });
 
     createWindow();

@@ -7,6 +7,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
+        external: [/^@node-llama-cpp\/.*$/, 'node-llama-cpp'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
         },

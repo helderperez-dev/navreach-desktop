@@ -70,6 +70,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set((state) => ({ modelProviders: [...state.modelProviders, savedProvider || provider] }));
     } else {
       console.error('Failed to add model provider:', error);
+      throw new Error(error || 'Failed to add model provider');
     }
   },
 
@@ -82,6 +83,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       }));
     } else {
       console.error('Failed to update model provider:', error);
+      throw new Error(error || 'Failed to update model provider');
     }
   },
 

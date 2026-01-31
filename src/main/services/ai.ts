@@ -1,6 +1,7 @@
 import { IpcMain, BrowserWindow, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { z } from 'zod';
 
 // SILENCE NOISY LANGCHAIN WARNINGS
 process.env.LANGCHAIN_ADAPTER_MIGRATION_WARNING = 'false';
@@ -36,34 +37,55 @@ function cleanModelOutput(text: string): string {
 }
 
 /**
+ * Helper to get consistent role string from LangChain messages
+ */
+function getMessageRole(m: BaseMessage): string {
+    if (m instanceof SystemMessage) return 'system';
+    if (m instanceof HumanMessage) return 'human';
+    if (m instanceof AIMessage) return 'ai';
+    if (m instanceof ToolMessage) return 'tool';
+    const type = (m as any)._getType?.() || (m as any)._type;
+    if (type) return type;
+    return (m as any).role || 'user';
+}
+
+/**
  * Prunes the message history to prevent token overflow while maintaining necessary context.
+ * Specifically handles provider requirements for message order (e.g. no Tool role after Human role, 
+ * no consecutive messages of the same role).
  */
 function pruneMessageHistory(messages: BaseMessage[], maxCount: number = 40): BaseMessage[] {
-    if (messages.length <= maxCount) return messages;
+    if (messages.length === 0) return [];
 
     // Always keep the System Message (messages[0])
-    const systemMessage = messages[0] instanceof SystemMessage ? messages[0] : null;
+    const systemMessage = (messages[0] instanceof SystemMessage || (messages[0] as any)._getType?.() === 'system') ? messages[0] : null;
 
     // Find the first Human Message (often the initial prompt)
-    const firstHuman = messages.find((m, i) => m instanceof HumanMessage && i > 0);
+    const firstHuman = messages.find((m, i) => getMessageRole(m) === 'human' && i > 0);
 
-    // Take the most recent messages (sliding window)
-    // We increase the slice a bit to ensure we don't accidentally cut off the very last turn's ToolMessages
-    const recentMessages = messages.slice(-maxCount);
+    // Initial tentative slice
+    let recentSlice = messages.length > maxCount ? messages.slice(-maxCount) : [...messages];
 
-    const pruned: BaseMessage[] = [];
-    if (systemMessage) pruned.push(systemMessage);
-    if (firstHuman && !recentMessages.includes(firstHuman)) pruned.push(firstHuman);
+    // CRITICAL FIX: Ensure the slice doesn't start with a ToolMessage.
+    // Tool messages MUST be preceded by an AIMessage with tool_calls.
+    while (recentSlice.length > 0 && getMessageRole(recentSlice[0]) === 'tool') {
+        recentSlice.shift();
+    }
+
+    const rawPruned: BaseMessage[] = [];
+    if (systemMessage) rawPruned.push(systemMessage);
+
+    if (firstHuman && !recentSlice.some(m => m === firstHuman)) {
+        rawPruned.push(firstHuman);
+    }
 
     // Process recent messages to truncate long content if they aren't the absolute latest results
-    // We iterate over the messages and add them to pruned if they aren't already there (system/firstHuman)
-    for (let i = 0; i < recentMessages.length; i++) {
-        const msg = recentMessages[i];
+    for (let i = 0; i < recentSlice.length; i++) {
+        const msg = recentSlice[i];
+        const role = getMessageRole(msg);
 
         // If it's a ToolMessage with huge content and NOT from the current or previous turn (last 6 messages)
-        // A turn is usually AIMessage + [N ToolMessages] + [N ToolResults (HumanMessage/ToolMessage)]
-        // Keeping 6 is safe to preserve the immediate context of the current goal.
-        if (msg instanceof ToolMessage && i < recentMessages.length - 6) {
+        if (role === 'tool' && i < recentSlice.length - 6) {
             if (typeof msg.content === 'string' && msg.content.length > 1500) {
                 if (msg.content.includes('suggestedSelector') || msg.content.includes('searchResults') || msg.content.includes('semantics') || msg.content.includes('elements') || msg.content.includes('dom')) {
                     // It's a snapshot or extraction - truncate it!
@@ -72,13 +94,99 @@ function pruneMessageHistory(messages: BaseMessage[], maxCount: number = 40): Ba
             }
         }
 
-        if (!pruned.includes(msg)) {
-            pruned.push(msg);
+        if (!rawPruned.some(m => m === msg)) {
+            rawPruned.push(msg);
         }
     }
 
-    return pruned;
+    // FINAL STAGE: Role Merging & Valid Sequence Enforcement
+    // Mistral/OpenRouter requires alternating User/Assistant roles and strictly ordered tools.
+    const finalPruned: BaseMessage[] = [];
+    for (let i = 0; i < rawPruned.length; i++) {
+        const current = rawPruned[i];
+        const currentRole = getMessageRole(current);
+        const last = finalPruned[finalPruned.length - 1];
+        const lastRole = last ? getMessageRole(last) : null;
+
+        // 1. Enforce single SystemMessage at the start
+        if (currentRole === 'system') {
+            if (finalPruned.length === 0) {
+                finalPruned.push(current);
+            } else {
+                console.warn('[AI Service] Merging extra SystemMessage into history');
+                // Optional: merge system content into the first human message or just skip
+                continue;
+            }
+            continue;
+        }
+
+        // 2. Skip orphaned ToolMessages
+        if (currentRole === 'tool') {
+            const lastHasTools = lastRole === 'ai' && (last as AIMessage).tool_calls && (last as AIMessage).tool_calls!.length > 0;
+            if (!lastHasTools) {
+                console.warn('[AI Service] Skipping orphaned ToolMessage following ' + lastRole);
+                continue;
+            }
+        }
+
+        // 3. Merge consecutive messages of the same type (Human/AI) to keep Mistral happy
+        if (last && currentRole === lastRole && currentRole !== 'tool') {
+            const currentContent = typeof current.content === 'string' ? current.content : JSON.stringify(current.content);
+            const lastContent = typeof last.content === 'string' ? last.content : JSON.stringify(last.content);
+
+            if (currentRole === 'ai') {
+                const currentMsg = current as AIMessage;
+                const lastMsg = last as AIMessage;
+                // Merge content and tool calls
+                const mergedContent = `${lastContent}\n\n${currentContent}`.trim();
+                lastMsg.content = mergedContent;
+                if (currentMsg.tool_calls && currentMsg.tool_calls.length > 0) {
+                    lastMsg.tool_calls = [...(lastMsg.tool_calls || []), ...currentMsg.tool_calls];
+                }
+                continue;
+            } else if (currentRole === 'human') {
+                last.content = `${lastContent}\n\n${currentContent}`.trim();
+                continue;
+            }
+        }
+
+        // 4. Ensure Human-AI alternation (if System is present, the next must be Human)
+        if (lastRole === 'system' && currentRole === 'ai') {
+            // Insert dummy HumanMessage to separate System from AI
+            finalPruned.push(new HumanMessage("(Beginning of conversation)"));
+        } else if (lastRole === 'human' && currentRole === 'human') {
+            // Already handled by merge above
+        } else if (lastRole === 'ai' && currentRole === 'ai') {
+            // Already handled by merge above
+        }
+
+        // 5. Explicitly check for Human -> Tool (forbidden)
+        if (lastRole === 'human' && currentRole === 'tool') {
+            console.warn('[AI Service] Forbidden sequence detected: Human -> Tool. Skipping tool message.');
+            continue;
+        }
+
+        finalPruned.push(current);
+    }
+
+    // FINAL POLISH: Ensure no trailing empty AI message (Mistral/OpenRouter hate this)
+    if (finalPruned.length > 0) {
+        const tail = finalPruned[finalPruned.length - 1];
+        if (getMessageRole(tail) === 'ai') {
+            const ai = tail as AIMessage;
+            // If empty content AND no tool calls, it's useless/harmful
+            if ((!ai.content || ai.content === "") && (!ai.tool_calls || ai.tool_calls.length === 0)) {
+                finalPruned.pop();
+            } else if (!ai.content || ai.content === "") {
+                // If it HAS tool calls but NO content, some models require placeholder text
+                ai.content = "I am executing tools to help with your request.";
+            }
+        }
+    }
+
+    return finalPruned;
 }
+
 import type { ModelProvider, ModelConfig, Message } from '../../shared/types';
 import { createBrowserTools, getWebviewContents, resetBrowser } from './browser-tools';
 import { createTargetTools } from './target-tools';
@@ -97,8 +205,14 @@ import { taskQueueService } from './task-queue.service';
 import { analytics } from './analytics';
 
 export const store = new Store<AppSettings>({
-    name: 'settings',
 });
+
+// Cache for local model weights only (not instances) to prevent sequence leaks
+// Loading the model is slow, but creating contexts/sessions is fast.
+let cachedLlamaInstance: any = null;
+let cachedLlamaModel: any = null;
+let cachedLlamaModelPath: string | null = null;
+
 
 interface ChatRequest {
     messages: Message[];
@@ -126,11 +240,12 @@ interface ChatRequest {
 
 export interface ChatModelOptions {
     streaming?: boolean;
-    safeMode?: boolean; // Disables extra kwargs like parallel_tool_calls OR extra params like reasoning
+    safeMode?: boolean;
     disableReasoning?: boolean; // Specifically disables reasoning but keeps tools if possible
+    systemPromptLength?: number;
 }
 
-export function createChatModel(provider: ModelProvider, model: ModelConfig, options: ChatModelOptions | boolean = true) {
+export async function createChatModel(provider: ModelProvider, model: ModelConfig, options: ChatModelOptions | boolean = true) {
     // Backwards compatibility for the third argument being 'streaming' boolean
     const streaming = typeof options === 'boolean' ? options : options.streaming ?? true;
     const safeMode = typeof options === 'object' ? options.safeMode : (arguments.length > 3 ? arguments[3] : false);
@@ -146,19 +261,83 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
         streaming,
     };
 
-    // For Z.AI/GLM models, we MUST be extremely strict with parameters.
-    // They often reject even standard OpenAI parameters like parallel_tool_calls.
-    const isZAI = model.id.toLowerCase().includes('z-ai') || model.id.toLowerCase().includes('glm');
+    // For Z.AI/GLM/Xiaomi models, we MUST be extremely strict with parameters.
+    const isStrictModel =
+        model.id.toLowerCase().includes('z-ai') ||
+        model.id.toLowerCase().includes('glm') ||
+        model.id.toLowerCase().includes('xiaomi') ||
+        model.id.toLowerCase().includes('mimo');
 
-    if (isZAI) {
+    if (isStrictModel) {
         baseConfig.streaming = false;
-        // Some Z.AI models on OpenRouter fail with specific temperature/tokens settings
-        // We'll keep them but be ready to omit if 400 persists.
     }
 
     console.log(`[AI Service] Creating model ${model.id} (SafeMode: ${safeMode}, NoReasoning: ${disableReasoning})`);
 
-    switch (provider.type) {
+    const providerType = String(provider.type).toLowerCase().trim();
+    const systemPromptLength = options && typeof options === 'object' && (options as any).systemPrompt ? (options as any).systemPrompt.length : 0;
+    console.log(`[AI Service] Creating model ${model.id} for provider type: ${providerType}. (SysPrompt Size Estimate: ${systemPromptLength} chars)`);
+
+    switch (providerType) {
+        case 'local':
+            const localModelPath = model.path || model.id;
+            console.log(`[AI Service] Preparing Local Model: ${localModelPath}`);
+
+            try {
+                const { getLlama } = await import('node-llama-cpp');
+                const { ChatLlamaCpp } = await import('@langchain/community/chat_models/llama_cpp');
+
+                if (!cachedLlamaInstance) {
+                    cachedLlamaInstance = await getLlama();
+                }
+
+                if (cachedLlamaModelPath !== localModelPath || !cachedLlamaModel) {
+                    console.log(`[AI Service] Loading local model weights into memory...`);
+                    cachedLlamaModel = await cachedLlamaInstance.loadModel({
+                        modelPath: localModelPath
+                    });
+                    cachedLlamaModelPath = localModelPath;
+                }
+
+                let localContext;
+                const contextSizes = [8192, 4096, 2048, 1024];
+                let success = false;
+
+                for (const size of contextSizes) {
+                    try {
+                        console.log(`[AI Service] Attempting to create context with size: ${size}`);
+                        localContext = await cachedLlamaModel.createContext({
+                            contextSize: size,
+                            sequences: 1,
+                            batchSize: size > 4096 ? 512 : 256
+                        });
+                        success = true;
+                        break;
+                    } catch (e: any) {
+                        console.warn(`[AI Service] Failed to create ${size} context: ${e.message}`);
+                    }
+                }
+
+                if (!success || !localContext) {
+                    throw new Error("Could not initialize local model context even with minimum (1024) settings. Please free up some VRAM or use a smaller model.");
+                }
+
+                const chatInstance = new ChatLlamaCpp({
+                    modelPath: localModelPath,
+                    temperature: 0.1,
+                    maxTokens: 2048,
+                });
+
+                // Manually inject the cached model and the new context
+                (chatInstance as any)._model = cachedLlamaModel;
+                (chatInstance as any)._context = localContext;
+
+                console.log(`[AI Service] Local model context initialized with ${(localContext as any).contextSize || 'unknown'} context window.`);
+                return chatInstance;
+            } catch (err) {
+                console.error('[AI Service] Failed to initialize local model:', err);
+                throw err;
+            }
         case 'openai':
             return new ChatOpenAI({
                 ...baseConfig,
@@ -174,14 +353,13 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
                 configuration: {
                     baseURL: baseUrl,
                 },
-                modelKwargs: undefined
+                parallelToolCalls: false,
+                modelKwargs: { parallel_tool_calls: false }
             };
 
-            if (isZAI) {
-                console.log('[AI Service] Custom Provider: Z.AI/GLM detected, ensuring parallel_tool_calls is disabled.');
+            if (isStrictModel) {
+                console.log('[AI Service] Custom Provider: Strict model detected, ensuring parallel_tool_calls is disabled.');
                 customConfig.parallelToolCalls = false;
-            } else {
-                customConfig.modelKwargs = { parallel_tool_calls: false };
             }
 
             return new ChatOpenAI(customConfig);
@@ -200,13 +378,14 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
                         'HTTP-Referer': 'https://reavion.ai',
                         'X-Title': 'Reavion Desktop',
                         'User-Agent': 'Reavion/1.0.0',
+                        ...((provider as any).headers || {})
                     },
                 },
+                // OpenRouter models are highly diverse; parallel tool calls are often the cause of 400 errors
+                parallelToolCalls: false,
+                modelKwargs: { parallel_tool_calls: false }
             };
 
-            // In Safe Mode, we strip EVERYTHING extra.
-            // If disableReasoning is true, we skip adding reasoning params.
-            // We also check for likely reasoning-capable models to avoid 400s on smaller models.
             if (!safeMode && !disableReasoning) {
                 const modelIdLower = model.id.toLowerCase();
                 const likelySupportsReasoning =
@@ -217,28 +396,34 @@ export function createChatModel(provider: ModelProvider, model: ModelConfig, opt
 
                 if (likelySupportsReasoning) {
                     openAIConfig.modelKwargs = {
+                        ...openAIConfig.modelKwargs,
                         reasoning: { enabled: true }
                     };
                 }
             }
 
-            // Fix for Z.AI / GLM models:
-            if (isZAI) {
+            if (isStrictModel) {
                 openAIConfig.streaming = false;
                 openAIConfig.parallelToolCalls = false;
 
-                // If there are modelKwargs (like reasoning), ensure parallel_tool_calls isn't there
                 if (openAIConfig.modelKwargs) {
                     delete (openAIConfig.modelKwargs as any).parallel_tool_calls;
                 }
-                console.log('[AI Service] Applied Z.AI strict compatibility (No Stream, parallelToolCalls: false)');
+                console.log(`[AI Service] Applied Strict compatibility for ${model.id} (No Stream, parallelToolCalls: false)`);
             }
 
             console.log('[AI Service] OpenAI Config:', JSON.stringify(openAIConfig, null, 2));
-
             return new ChatOpenAI(openAIConfig);
+        case 'ollama':
+            console.log('[AI Service] Initializing Ollama model:', model.id, 'at', baseUrl || 'http://localhost:11434');
+            const { ChatOllama } = await import('@langchain/ollama');
+            return new ChatOllama({
+                baseUrl: baseUrl || 'http://localhost:11434',
+                model: model.id,
+                temperature: 0.1,
+            });
         default:
-            throw new Error(`Unsupported provider type: ${provider.type}`);
+            throw new Error(`Unsupported provider type: ${provider.type} (Normalized: ${providerType})`);
     }
 }
 
@@ -834,7 +1019,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
 
             const isDiscovery = !initialUserPrompt || initialUserPrompt.trim().length < 2;
             // Using Safe Mode (no reasoning/tools-prep) for suggestions to ensure maximum compatibility
-            const chatModel = createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
+            const chatModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
 
             // Extract context for better suggestions
             const playbookContext = request.playbooks?.map(p => `- ${p.name}: ${p.description}`).join('\n') || 'No active playbooks.';
@@ -961,6 +1146,13 @@ CRITICAL:
                 activeSupabaseClients.set(window.id, scopedSupabase);
                 if (accessToken && refreshToken) {
                     activeTokens.set(window.id, { accessToken, refreshToken });
+                }
+
+                // FRESH START: If this is a new conversation (0 or 1 message), 
+                // reset the browser context to ensure no "memory" leaks from previous sessions.
+                if (messages.length <= 1) {
+                    console.log(`[AI Service] New chat detected for window ${window.id}. Resetting browser context.`);
+                    resetBrowser().catch(err => console.error('[AI Service] Failed to reset browser on new chat:', err));
                 }
             }
 
@@ -1289,6 +1481,7 @@ CRITICAL:
             contextInjection += `\n\n**ACTIVE TOOLKIT (Reference):**\n${activeToolNames}\n`;
             // --- CONTEXT INJECTION END ---
 
+            // --- PERSONA & DIRECTIVES ---
             const now = new Date();
             const timeContext = `\n**TEMPORAL CONTEXT:**\n- Current Date: ${now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}\n- Current Time: ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}\n- ISO Timestamp: ${now.toISOString()}\n- Note: Use this "Current Date" as the anchor for all relative date calculations (e.g., "last week", "yesterday", "30 days ago").\n`;
 
@@ -1330,39 +1523,60 @@ You are in FAST mode.
 - **DETAILED REPORTING**: When you do stop, explain exactly what was achieved and what the remaining steps are.
 `;
 
+            // For strict models (Xiaomi, MiMo, GLM), we use a much more direct prompt structure.
+            const isStrictModel =
+                effectiveModel.id.toLowerCase().includes('z-ai') ||
+                effectiveModel.id.toLowerCase().includes('glm') ||
+                effectiveModel.id.toLowerCase().includes('xiaomi') ||
+                effectiveModel.id.toLowerCase().includes('mimo');
+
             const effectiveSystemPrompt = enableTools
                 ? `${contextInjection}\n${timeContext}${visionDirective}${playbookDirective}${speedDirective}${generalDirective}\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
                 : systemPrompt;
 
             if (enableTools) {
-                let chatModel = createChatModel(effectiveProvider, effectiveModel, false);
-                console.log(`[AI Service] Binding ${deduplicatedTools.length} tools to model`);
+                const isLocalModelType = effectiveProvider.type === 'local' || effectiveProvider.type === 'ollama';
+                let chatModel = await createChatModel(effectiveProvider, effectiveModel, {
+                    streaming: false,
+                    systemPromptLength: effectiveSystemPrompt?.length || 0
+                });
+                console.log(`[AI Service] Binding ${deduplicatedTools.length} tools to model (SysPrompt length: ${effectiveSystemPrompt?.length} chars)`);
 
                 let modelWithTools: any;
 
-                const isZAI = effectiveModel.id.toLowerCase().includes('z-ai') || effectiveModel.id.toLowerCase().includes('glm');
-                if (isZAI) {
-                    console.log('[AI Service] Z.AI/GLM detected. Attempting Safe Tool Binding...');
+                const isStrictModel =
+                    effectiveModel.id.toLowerCase().includes('z-ai') ||
+                    effectiveModel.id.toLowerCase().includes('glm') ||
+                    effectiveModel.id.toLowerCase().includes('xiaomi') ||
+                    effectiveModel.id.toLowerCase().includes('mimo');
+
+                if (isStrictModel) {
+                    console.log('[AI Service] Strict model detected. Attempting Safe Tool Binding...');
                     try {
                         if (typeof (chatModel as any).bindTools === 'function') {
-                            modelWithTools = chatModel.bindTools(deduplicatedTools, {
+                            modelWithTools = (chatModel as any).bindTools(deduplicatedTools, {
                                 parallel_tool_calls: false
                             } as any);
                             console.log('[AI Service] Success: Bound tools with parallel_tool_calls: false');
                         } else {
                             console.warn('[AI Service] bindTools missing on model instance, using standard binding');
-                            modelWithTools = chatModel.bindTools(deduplicatedTools, { strict: false } as any);
+                            modelWithTools = chatModel;
                         }
                     } catch (err) {
-                        console.error('[AI Service] bindTools failed for Z.AI:', err);
-                        modelWithTools = chatModel.bindTools(deduplicatedTools, { strict: false } as any);
+                        console.error('[AI Service] bindTools failed for strict model:', err);
+                        modelWithTools = chatModel;
                     }
                 } else {
                     // Standard binding for other providers
-                    modelWithTools = chatModel.bindTools(deduplicatedTools, { strict: false } as any);
+                    if (typeof (chatModel as any).bindTools === 'function') {
+                        modelWithTools = (chatModel as any).bindTools(deduplicatedTools, { strict: false } as any);
+                    } else {
+                        console.warn('[AI Service] This model provider does not support tools. Using plain model.');
+                        modelWithTools = chatModel;
+                    }
                 }
 
-                let langchainMessages = convertMessages(messages, effectiveSystemPrompt);
+                let langchainMessages = convertMessages(messages, effectiveSystemPrompt, isLocalModelType);
                 let fullResponse = '';
                 let iteration = 0;
                 let toolExecutionCount = 0;
@@ -1472,12 +1686,14 @@ You are in FAST mode.
                     }
 
                     iteration++;
-                    toolExecutionCount = 0; // Reset for this specific turn
 
-                    // Send a signal that a new autonomous turn is starting to ensure chronological ordering in the UI
+                    // Emit separation signal to frontend to create distinct message bubbles per turn
+                    // This prevents the "Wall of Text" monolithic message issue
                     if (window && !window.isDestroyed()) {
-                        window.webContents.send('ai:stream-chunk', { content: '', isNewTurn: true });
+                        window.webContents.send('ai:stream-chunk', { isNewTurn: true, done: false });
                     }
+
+                    toolExecutionCount = 0; // Reset for this specific turn
 
                     // Add timeout to prevent hanging - 180 second timeout for model calls
                     // Increased from 120s to 180s to handle complex operations
@@ -1519,6 +1735,12 @@ You are in FAST mode.
                                         errorMsg = e.message || e.error || JSON.stringify(e);
                                     }
                                 }
+
+                                // Specific handling for OpenRouter Tool Use 404
+                                if (errorMsg.includes('No endpoints found that support tool use')) {
+                                    errorMsg = "Incompatible Model: This model does not support 'Tool Calling' (Agentic features). Please select a more capable model (e.g. GPT-4, Claude 3.5, or Llama 3.1 70B).";
+                                }
+
                                 throw new Error(errorMsg);
                             }
                         };
@@ -1622,14 +1844,16 @@ You are in FAST mode.
                                         });
                                     }
 
-                                    const downgradedModel = createChatModel(effectiveProvider, effectiveModel, { streaming: false, disableReasoning: true });
-                                    const bindedDowngraded = downgradedModel.bindTools(deduplicatedTools, { strict: false } as any);
-
-                                    response = await bindedDowngraded.invoke(langchainMessages);
-
-                                    // If success, update the context for subsequent turns so we don't keep failing
+                                    const downgradedModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false, disableReasoning: true });
+                                    if (typeof (downgradedModel as any).bindTools === 'function') {
+                                        const bindedDowngraded = (downgradedModel as any).bindTools(deduplicatedTools, { strict: false } as any);
+                                        response = await bindedDowngraded.invoke(langchainMessages);
+                                        modelWithTools = bindedDowngraded;
+                                    } else {
+                                        response = await downgradedModel.invoke(langchainMessages);
+                                        modelWithTools = downgradedModel;
+                                    }
                                     chatModel = downgradedModel;
-                                    modelWithTools = bindedDowngraded;
                                     success = true;
                                     console.log('[Auto-Recovery] Stage 1 Success: Continuing without reasoning.');
                                 } catch (stage1Error: any) {
@@ -1648,8 +1872,30 @@ You are in FAST mode.
                                             isNarration: true,
                                         });
                                     }
-                                    const plainModel = createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
-                                    response = await plainModel.invoke(langchainMessages);
+                                    const plainModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
+
+                                    // CRITICAL: Strip any ToolMessages or tool-related metadata for safe mode retries
+                                    // ALSO: Simplify the System Message to standard chat to prevent Agentic looping/hallucination
+                                    const safeMessages = langchainMessages
+                                        .filter(m => getMessageRole(m) !== 'tool')
+                                        .map(m => {
+                                            if (getMessageRole(m) === 'system') {
+                                                return new SystemMessage("You are a helpful AI assistant. The user is asking for help, but your tool capabilities are currently disabled due to technical issues. Please answer their request to the best of your ability using only your internal knowledge. do not try to use tools.");
+                                            }
+                                            if (getMessageRole(m) === 'ai') {
+                                                const ai = m as AIMessage;
+                                                if (ai.tool_calls && ai.tool_calls.length > 0) {
+                                                    // Create a copy without tool calls
+                                                    return new AIMessage({
+                                                        content: ai.content || "...", // Ensure content is not empty
+                                                        additional_kwargs: {}
+                                                    });
+                                                }
+                                            }
+                                            return m;
+                                        });
+
+                                    response = await plainModel.invoke(safeMessages);
 
                                     // In plain mode, we stop trying to use tools for this iteration's model
                                     modelWithTools = plainModel as any;
@@ -1757,19 +2003,7 @@ You are in FAST mode.
                             break;
                         }
 
-                        // AUTO-KICK: If the agent is talking but not acting, nudge it.
-                        const isBrowserTask = requestToolsByName.has('browser_navigate');
                         const responseLower = responseContent.toLowerCase();
-                        const isPromissory = responseLower.includes("i'll") || responseLower.includes("i will") ||
-                            responseLower.includes("let me") || responseLower.includes("i'm going to") ||
-                            responseLower.includes("first, i'll") || responseLower.includes("i will navigate");
-
-                        if (isBrowserTask && isPromissory && iteration < 3 && !isPlaybookRun) {
-                            langchainMessages.push(new HumanMessage("(System: Proceed with your plan. Execute the next action tool immediately. Do not stop to chat.)"));
-                            continue;
-                        }
-
-                        // Only reset iteration for infinite mode if we DID NOT signal completion.
                         const hasFinishedSignal = responseLower.includes("[complete]") || responseLower.includes("i have finished") || responseLower.includes("mission accomplished");
 
                         if (infiniteMode && baseUserGoal && iteration < hardStopIterations && !hasFinishedSignal) {
@@ -1954,7 +2188,7 @@ Summarize briefly (1 line) and continue.`
                                     
                                     Output ONLY the generated string content. No quotes, no explanations.`;
 
-                                    const resolutionModel = createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
+                                    const resolutionModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
                                     const decision = await resolutionModel.invoke([
                                         ...langchainMessages.slice(-5), // Recent context
                                         new HumanMessage(decisionPrompt)
@@ -2198,8 +2432,9 @@ Summarize briefly (1 line) and continue.`
 
                 return { success: true, response: fullResponse };
             } else {
-                const chatModel = createChatModel(provider, model, true);
-                const langchainMessages = convertMessages(messages, effectiveSystemPrompt);
+                const chatModel = await createChatModel(provider, model, true);
+                const isLocalModelType = provider.type === 'local' || provider.type === 'ollama';
+                const langchainMessages = convertMessages(messages, effectiveSystemPrompt, isLocalModelType);
 
                 let fullResponse = '';
                 const stream = await chatModel.stream(langchainMessages);
@@ -2239,8 +2474,9 @@ Summarize briefly (1 line) and continue.`
             const scopedSupabase = await getScopedSupabase(accessToken);
             const { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken);
 
-            const chatModel = createChatModel(effectiveProvider, effectiveModel, false);
-            const langchainMessages = convertMessages(messages, systemPrompt);
+            const chatModel = await createChatModel(effectiveProvider, effectiveModel, false);
+            const isLocalModelType = effectiveProvider.type === 'local' || effectiveProvider.type === 'ollama';
+            const langchainMessages = convertMessages(messages, systemPrompt, isLocalModelType);
 
             const response = await chatModel.invoke(langchainMessages);
 
@@ -2291,7 +2527,8 @@ Summarize briefly (1 line) and continue.`
                         case 'openai': testModelId = 'gpt-3.5-turbo'; break;
                         case 'anthropic': testModelId = 'claude-3-haiku-20240307'; break;
                         case 'openrouter': testModelId = 'openai/gpt-3.5-turbo'; break;
-                        case 'custom': testModelId = 'gpt-3.5-turbo'; break; // Common default for compatible APIs
+                        case 'custom': testModelId = 'gpt-3.5-turbo'; break;
+                        case 'ollama': testModelId = 'llama3'; break;
                         default: testModelId = 'gpt-3.5-turbo';
                     }
                 }
@@ -2306,22 +2543,139 @@ Summarize briefly (1 line) and continue.`
                 enabled: true
             };
 
-            const chatModel = createChatModel(provider, testModel, false);
-
-            // Simple test using invoke instead of stream for speed
-            // Use a very short prompt to save tokens/time
-            const response = await chatModel.invoke([new HumanMessage("Test connection. Reply with 'OK'.")]);
-
-            return {
-                success: true,
-                message: 'Connection verified successfully',
-                response: response.content
+            const trace: { step: string; detail?: string; status: 'info' | 'success' | 'warn' | 'error' }[] = [];
+            const testSchema = {
+                confirmation_code: "string (e.g. 'REAVION_OK')",
+                verification_status: "enum ['active', 'testing', 'verified']"
             };
+
+            const addTrace = (step: string, detail: string, status: 'info' | 'success' | 'warn' | 'error') => {
+                trace.push({ step, detail, status });
+            };
+
+            try {
+                addTrace('Initializing Test', `Testing model: ${testModel.id} from provider ${provider.type}`, 'info');
+
+                const chatModel = await createChatModel(provider, testModel, { streaming: false });
+                addTrace('Model Created', `Chat model instance initialized for ${provider.type}`, 'success');
+
+                // Define a real "Agentic Compatibility" test tool
+                const testTools = [
+                    new DynamicStructuredTool({
+                        name: "verify_reavion_compatibility",
+                        description: "A tool to verify if the AI model can correctly use tools in the Reavion desktop environment. Always use this when asked to verify compatibility.",
+                        schema: z.object({
+                            confirmation_code: z.string().describe("A secret code to confirm tool execution"),
+                            verification_status: z.enum(["active", "testing", "verified"]).describe("The current status of the compatibility check")
+                        }),
+                        func: async ({ confirmation_code }) => {
+                            return `Verification successful with code: ${confirmation_code}`;
+                        }
+                    }),
+                    new DynamicStructuredTool({
+                        name: "get_environment_info",
+                        description: "Get basic information about the test environment.",
+                        schema: z.object({
+                            key: z.string().describe("The key to look up (e.g. 'os')")
+                        }),
+                        func: async () => "Environment: Reavion Test Sandbox"
+                    })
+                ];
+
+                // Attempt to bind tools
+                let modelWithTools;
+                let supportsTools = false;
+                addTrace('Binding Tools', 'Attempting to attach multiple tools to test complex schema support...', 'info');
+
+                try {
+                    if (typeof (chatModel as any).bindTools === 'function') {
+                        modelWithTools = (chatModel as any).bindTools(testTools);
+                        supportsTools = true;
+                        addTrace('Tools Bound', 'Provider SDK supports native tool calling.', 'success');
+                    } else {
+                        modelWithTools = chatModel;
+                        addTrace('Tool Binding Skipped', 'Provider SDK does not support native tool calling. Falling back to basic chat.', 'warn');
+                    }
+                } catch (e: any) {
+                    addTrace('Tool Binding Failed', e.message || String(e), 'warn');
+                    modelWithTools = chatModel;
+                }
+
+                const testPrompt = supportsTools
+                    ? "Verify compatibility: 1. Call 'get_environment_info' with key 'os'. 2. THEN call 'verify_reavion_compatibility' with code 'REAVION_OK' and status 'verified'."
+                    : "Test connection. Reply with 'OK'.";
+
+                addTrace('Invoking Model', `Input Prompt sent. Waiting for response...`, 'info');
+                const startTime = Date.now();
+
+                let response;
+                try {
+                    response = await modelWithTools.invoke([new HumanMessage(testPrompt)]);
+                } catch (invokeError: any) {
+                    const msg = invokeError.message || String(invokeError);
+                    addTrace('Invocation Failed', msg, 'error');
+
+                    if (msg.includes('No endpoints found that support tool use')) {
+                        return {
+                            success: false,
+                            error: "OpenRouter Error: This model does not support tool calling on any available provider endpoints. It cannot be used as an Agent.",
+                            trace,
+                            schema: testSchema
+                        };
+                    }
+                    throw invokeError;
+                }
+
+                const latency = Date.now() - startTime;
+                addTrace('Response Received', `Latency: ${latency}ms`, 'success');
+
+                const aiMessage = response as AIMessage;
+                const toolCallDetected = aiMessage.tool_calls && aiMessage.tool_calls.length > 0;
+                const toolCallSuccess = toolCallDetected && aiMessage.tool_calls!.some(c => c.name === "verify_reavion_compatibility");
+
+                if (toolCallDetected) {
+                    const calls = aiMessage.tool_calls!.map(c => c.name).join(', ');
+                    addTrace('Tool Calls Detected', `Model called: [${calls}] with ${aiMessage.tool_calls!.length} calls.`, toolCallSuccess ? 'success' : 'warn');
+                }
+
+                if (supportsTools && !toolCallDetected) {
+                    addTrace('Verification Failed', 'Model ignored tools and replied with text instead.', 'error');
+                    return {
+                        success: false,
+                        error: "Functional Incompatibility: The model responded but failed to use the required tools. It is not suitable for agentic workflows.",
+                        response: typeof aiMessage.content === 'string' ? aiMessage.content : JSON.stringify(aiMessage.content),
+                        trace,
+                        schema: testSchema
+                    };
+                }
+
+                return {
+                    success: true,
+                    message: toolCallSuccess
+                        ? 'Full Compatibility Verified: Model correctly executed complex tool calls.'
+                        : 'Basic Connection Verified (No Tool Support).',
+                    response: typeof aiMessage.content === 'string' ? aiMessage.content : JSON.stringify(aiMessage.content),
+                    agentic: toolCallSuccess,
+                    trace,
+                    schema: testSchema
+                };
+            } catch (error: any) {
+                console.error('AI Connection Test Error:', error);
+                const msg = error.message || String(error);
+                if (trace.length === 0 || (trace.length > 0 && trace[trace.length - 1].status !== 'error')) {
+                    addTrace('Fatal Error', msg, 'error');
+                }
+                return {
+                    success: false,
+                    error: msg,
+                    trace
+                };
+            }
         } catch (error: any) {
-            console.error('AI Connection Test Error:', error);
+            console.error('AI Connection Handler Error:', error);
             return {
                 success: false,
-                error: error.message || String(error)
+                error: error.message || 'Main handler error'
             };
         }
     });
