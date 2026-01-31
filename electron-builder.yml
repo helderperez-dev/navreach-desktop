@@ -1,5 +1,9 @@
 appId: com.reavion.app
 productName: Reavion
+protocols:
+  - name: Reavion
+    schemes:
+      - reavion
 directories:
   output: dist
   buildResources: build

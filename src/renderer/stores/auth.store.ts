@@ -48,12 +48,16 @@ export const useAuthStore = create<AuthState>((set) => ({
         set({ session: null, user: null, profile: null });
     },
     signInWithGoogle: async () => {
-        const { error } = await supabase.auth.signInWithOAuth({
+        const { data, error } = await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-                redirectTo: 'reavion://auth-callback', // We need to handle this in main process
+                redirectTo: 'reavion://auth-callback',
+                skipBrowserRedirect: true,
             },
         });
         if (error) throw error;
+        if (data?.url) {
+            await window.api.browser.openExternal(data.url);
+        }
     },
 }));

@@ -45,29 +45,42 @@ initOTLPLogging();
 
 // Force app name for dev and production
 app.name = 'Reavion';
+app.setName('Reavion');
 
 let mainWindow: BrowserWindow | null = null;
 
 // Register protocol
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('reavion', process.execPath, [join(__dirname, '../../')]);
-  }
-} else {
-  app.setAsDefaultProtocolClient('reavion');
-}
-
+const protocol = 'reavion';
 let pendingAuthHash: string | null = null;
 
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(protocol, process.execPath, [join(__dirname, '../../')]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(protocol);
+}
+
 function handleAuthRedirect(url: string): void {
-  const hash = url.split('#')[1];
+  console.log('[Main] Handling auth redirect URL:', url);
+  // Supabase URL can contain the tokens after # or ?
+  const hash = url.includes('#') ? url.split('#')[1] : url.split('?')[1];
+
   if (hash) {
-    if (mainWindow) {
+    if (mainWindow && mainWindow.webContents) {
+      console.log('[Main] Sending auth callback to renderer');
       mainWindow.webContents.send('supabase:auth-callback', hash);
     } else {
+      console.log('[Main] No main window or webContents yet, storing pending auth hash');
       pendingAuthHash = hash;
     }
   }
+}
+
+// Handle protocol URL on Windows/Linux (Initial instance)
+const initialProtocolUrl = process.argv.find((arg) => arg.startsWith(`${protocol}://`));
+if (initialProtocolUrl) {
+  handleAuthRedirect(initialProtocolUrl);
 }
 
 function createWindow(): void {

@@ -422,9 +422,14 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
   // Platform Knowledge Handlers
   ipcMain.handle('settings:get-platform-knowledge', async (_event, accessToken?: string) => {
     const scopedSupabase = await getScopedSupabase(accessToken);
+    const userId = getUserIdFromToken(accessToken || '');
+
+    if (!userId) return [];
+
     const { data, error } = await scopedSupabase
       .from('platform_knowledge')
       .select('*')
+      .eq('user_id', userId)
       .order('domain', { ascending: true });
 
     if (error) {
@@ -456,11 +461,15 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('settings:update-platform-knowledge', async (_event, record: any, accessToken?: string) => {
     const scopedSupabase = await getScopedSupabase(accessToken);
+    const userId = getUserIdFromToken(accessToken || '');
+    if (!userId) return { success: false, error: 'Not authenticated' };
+
     const { id, ...updates } = record;
     const { data, error } = await scopedSupabase
       .from('platform_knowledge')
       .update(updates)
       .eq('id', id)
+      .eq('user_id', userId)
       .select()
       .single();
 
@@ -473,10 +482,14 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('settings:delete-platform-knowledge', async (_event, id: string, accessToken?: string) => {
     const scopedSupabase = await getScopedSupabase(accessToken);
+    const userId = getUserIdFromToken(accessToken || '');
+    if (!userId) return { success: false, error: 'Not authenticated' };
+
     const { error } = await scopedSupabase
       .from('platform_knowledge')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', userId);
 
     if (error) {
       console.error('Error deleting platform knowledge:', error);
@@ -525,7 +538,15 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
   // Dynamic Knowledge Base Handlers
   ipcMain.handle('settings:get-knowledge-bases', async (_event, accessToken?: string) => {
     const scopedSupabase = await getScopedSupabase(accessToken);
-    const { data, error } = await scopedSupabase.from('knowledge_bases').select('*').order('name');
+    const userId = getUserIdFromToken(accessToken || '');
+
+    if (!userId) return [];
+
+    const { data, error } = await scopedSupabase
+      .from('knowledge_bases')
+      .select('*')
+      .eq('user_id', userId)
+      .order('name');
     return error ? [] : data;
   });
 
@@ -553,9 +574,38 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
     return error ? { success: false, error: error.message } : { success: true, data };
   });
 
+  ipcMain.handle('settings:update-knowledge-base', async (_event, id: string, name: string, description?: string, accessToken?: string) => {
+    const scopedSupabase = await getScopedSupabase(accessToken);
+    const userId = getUserIdFromToken(accessToken || '');
+
+    if (!userId) return { success: false, error: 'Not authenticated' };
+
+    const { data, error } = await scopedSupabase
+      .from('knowledge_bases')
+      .update({
+        name,
+        description,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    return error ? { success: false, error: error.message } : { success: true, data };
+  });
+
   ipcMain.handle('settings:delete-knowledge-base', async (_event, id: string, accessToken?: string) => {
     const scopedSupabase = await getScopedSupabase(accessToken);
-    const { error } = await scopedSupabase.from('knowledge_bases').delete().eq('id', id);
+    const userId = getUserIdFromToken(accessToken || '');
+
+    if (!userId) return { success: false, error: 'Not authenticated' };
+
+    const { error } = await scopedSupabase
+      .from('knowledge_bases')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
     return { success: !error, error: error?.message };
   });
 

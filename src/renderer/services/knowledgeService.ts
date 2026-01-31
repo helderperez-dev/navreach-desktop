@@ -4,7 +4,15 @@ import type { PlatformKnowledge, KnowledgeBase, KnowledgeContent } from '@shared
 export const knowledgeService = {
     // Knowledge Bases
     async getKnowledgeBases(): Promise<KnowledgeBase[]> {
-        const { data, error } = await supabase.from('knowledge_bases').select('*').order('name');
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return [];
+
+        const { data, error } = await supabase
+            .from('knowledge_bases') // Ensure this matches user's data
+            .select('*')
+            .eq('user_id', user.id)
+            .order('name');
+
         if (error) throw error;
         return data || [];
     },
@@ -27,8 +35,35 @@ export const knowledgeService = {
         return data;
     },
 
+    async updateKnowledgeBase(id: string, name: string, description?: string): Promise<KnowledgeBase> {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const { data, error } = await supabase
+            .from('knowledge_bases')
+            .update({
+                name,
+                description,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .eq('user_id', user.id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
+    },
+
     async deleteKnowledgeBase(id: string): Promise<void> {
-        const { error } = await supabase.from('knowledge_bases').delete().eq('id', id);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const { error } = await supabase
+            .from('knowledge_bases')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id); // Ensure ownership
         if (error) throw error;
     },
 
@@ -41,6 +76,22 @@ export const knowledgeService = {
             .order('created_at');
         if (error) throw error;
         return data || [];
+    },
+
+    async updateKBContent(id: string, content: string, title?: string): Promise<KnowledgeContent> {
+        const { data, error } = await supabase
+            .from('knowledge_content')
+            .update({
+                content,
+                title,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        return data;
     },
 
     async addKBContent(kbId: string, content: string, title?: string): Promise<KnowledgeContent> {
@@ -60,10 +111,15 @@ export const knowledgeService = {
 
     // Platform Knowledge (Elements)
     async getPlatformKnowledge(): Promise<PlatformKnowledge[]> {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return [];
+
         const { data, error } = await supabase
             .from('platform_knowledge')
             .select('*')
+            .eq('user_id', user.id)
             .order('domain');
+
         if (error) throw error;
         return data || [];
     },
@@ -89,6 +145,8 @@ export const knowledgeService = {
 
     async updatePlatformKnowledge(record: Partial<PlatformKnowledge>): Promise<PlatformKnowledge> {
         if (!record.id) throw new Error('ID required for update');
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
 
         const { data, error } = await supabase
             .from('platform_knowledge')
@@ -97,6 +155,7 @@ export const knowledgeService = {
                 updated_at: new Date().toISOString()
             })
             .eq('id', record.id)
+            .eq('user_id', user.id) // Ensure ownership
             .select()
             .single();
         if (error) throw error;
@@ -104,7 +163,14 @@ export const knowledgeService = {
     },
 
     async deletePlatformKnowledge(id: string): Promise<void> {
-        const { error } = await supabase.from('platform_knowledge').delete().eq('id', id);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const { error } = await supabase
+            .from('platform_knowledge')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', user.id);
         if (error) throw error;
     }
 };

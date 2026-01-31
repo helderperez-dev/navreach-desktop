@@ -2,7 +2,11 @@
   "compilerOptions": {
     "composite": true,
     "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
@@ -12,8 +16,12 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/renderer/*"],
-      "@shared/*": ["src/shared/*"]
+      "@/*": [
+        "src/renderer/*"
+      ],
+      "@shared/*": [
+        "src/shared/*"
+      ]
     }
   },
   "include": [

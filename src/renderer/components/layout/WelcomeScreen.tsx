@@ -17,6 +17,8 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import type { Conversation, KnowledgeBase, KnowledgeContent } from '@shared/types';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { knowledgeService } from '@/services/knowledgeService';
+import reavionLogo from '@assets/reavion-white-welcome.png';
+import reavionLogoBlack from '@assets/reavion-black-welcome.png';
 
 
 
@@ -58,7 +60,19 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
   const [showHistory, setShowHistory] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { setHasStarted } = useAppStore();
+  const { setHasStarted, theme } = useAppStore();
+  const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>(
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  );
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handler = (e: MediaQueryListEvent) => setSystemTheme(e.matches ? 'dark' : 'light');
+    mediaQuery.addEventListener('change', handler);
+    return () => mediaQuery.removeEventListener('change', handler);
+  }, []);
+
+  const isActualDark = theme === 'dark' || (theme === 'system' && systemTheme === 'dark');
   const {
     conversations,
     setActiveConversation,
@@ -434,6 +448,20 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
 
       <div className="flex flex-col items-center w-full max-w-2xl px-6">
 
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+          className="mb-12"
+        >
+          <img
+            src={isActualDark ? reavionLogo : reavionLogoBlack}
+            alt="Reavion"
+            className="h-8 w-auto select-none opacity-80"
+            draggable={false}
+          />
+        </motion.div>
 
         <motion.div
           className="w-full"

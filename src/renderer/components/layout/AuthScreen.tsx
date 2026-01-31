@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { LogIn, Mail, Github, Chrome, ArrowRight, Minus, Square, X, Sun, Moon, Laptop } from 'lucide-react';
+import { LogIn, Mail, Github, Chrome, ArrowRight, Minus, Square, X, Sun, Moon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { useAuthStore } from '@/stores/auth.store';
@@ -53,12 +53,10 @@ export function AuthScreen() {
     const isActualDark = theme === 'dark' || (theme === 'system' && systemTheme === 'dark');
 
     const toggleTheme = () => {
-        if (theme === 'light') setTheme('dark');
-        else if (theme === 'dark') setTheme('system');
-        else setTheme('light');
+        setTheme(isActualDark ? 'light' : 'dark');
     };
 
-    const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Laptop;
+    const ThemeIcon = isActualDark ? Moon : Sun;
 
     const handleMinimize = () => (window as any).api.window.minimize();
     const handleMaximize = () => (window as any).api.window.maximize();
@@ -66,39 +64,11 @@ export function AuthScreen() {
     const isMac = navigator.userAgent.includes('Mac');
 
     return (
-        <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#f9f9f9] dark:bg-[#030303] transition-colors duration-700 relative">
-            {/* Minimalist Premium Background - Spans entire window including title bar */}
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(0,0,0,0.03),transparent_80%)] dark:bg-[radial-gradient(circle_at_50%_-10%,rgba(255,255,255,0.06),transparent_80%)] pointer-events-none transition-all duration-700" />
+        <div className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-black transition-colors duration-700 relative">
+            {/* Simple High Definition Gradient Background */}
+            <div className="absolute inset-0 bg-gradient-to-b from-neutral-50 to-white dark:from-neutral-900/50 dark:to-black pointer-events-none transition-colors duration-700" />
 
-            {/* Animated Blobs for Liquid Aesthetic */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <motion.div
-                    animate={{
-                        x: [0, 100, 0],
-                        y: [0, 50, 0],
-                        scale: [1, 1.2, 1],
-                    }}
-                    transition={{
-                        duration: 20,
-                        repeat: Infinity,
-                        ease: "linear"
-                    }}
-                    className="absolute -top-[20%] -left-[10%] w-[60%] h-[60%] bg-blue-500/5 dark:bg-blue-400/10 rounded-full blur-[120px]"
-                />
-                <motion.div
-                    animate={{
-                        x: [0, -80, 0],
-                        y: [0, 100, 0],
-                        scale: [1, 1.1, 1],
-                    }}
-                    transition={{
-                        duration: 25,
-                        repeat: Infinity,
-                        ease: "linear"
-                    }}
-                    className="absolute -bottom-[20%] -right-[10%] w-[60%] h-[60%] bg-purple-500/5 dark:bg-purple-400/10 rounded-full blur-[120px]"
-                />
-            </div>
+
 
             {/* Draggable Title Bar Area */}
             <div className="h-12 min-h-[48px] w-full flex items-center justify-end drag-region bg-transparent z-20 transition-colors group">
@@ -136,11 +106,8 @@ export function AuthScreen() {
             </div>
 
             <div className="flex-1 flex flex-col items-center justify-center relative">
-                <motion.div
-                    initial={{ opacity: 0, y: 20, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                    className="w-full max-w-md z-10 p-10 bg-white/40 dark:bg-black/40 backdrop-blur-2xl border border-black/[0.05] dark:border-white/10 rounded-[2.5rem] shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] dark:shadow-[0_48px_96px_-16px_rgba(0,0,0,0.6)] border-t-black/[0.08] dark:border-t-white/10 mx-4 relative overflow-hidden"
+                <div
+                    className="w-full max-w-md z-10 p-10 bg-white/40 dark:bg-black/40 backdrop-blur-2xl border border-black/[0.05] dark:border-white/10 rounded-[2.5rem]  border-t-black/[0.08] dark:border-t-white/10 mx-4 relative overflow-hidden"
                 >
                     {/* Subtle Internal Edge Glow */}
                     <div className="absolute inset-0 rounded-[2.5rem] border border-black/[0.01] dark:border-white/[0.02] pointer-events-none" />
@@ -234,7 +201,7 @@ export function AuthScreen() {
                             </button>
                         </div>
                     </div>
-                </motion.div>
+                </div>
             </div>
         </div>
 

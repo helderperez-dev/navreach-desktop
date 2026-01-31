@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Pencil, Trash2, Check, X, BrainCircuit, Globe, Code, User, FileText, Target, Plus, Database, ChevronRight, Folder } from 'lucide-react';
+import { Pencil, Trash2, Check, X, BrainCircuit, Globe, Code, User, FileText, Target, Plus, Database, ChevronRight, Folder, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -8,6 +8,9 @@ import type { PlatformKnowledge, KnowledgeBase, KnowledgeContent } from '@shared
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger, SheetDescription, SheetFooter } from '@/components/ui/sheet';
+import { SidePanel, SidePanelHeader, SidePanelTitle, SidePanelDescription, SidePanelFooter } from '@/components/ui/SidePanel';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { useAuthStore } from '@/stores/auth.store';
 
@@ -34,9 +37,21 @@ export function KnowledgeSettings() {
     const [kbContent, setKbContent] = useState<KnowledgeContent[]>([]);
     const [isAddingKb, setIsAddingKb] = useState(false);
     const [newKbName, setNewKbName] = useState('');
+    const [isEditingKb, setIsEditingKb] = useState(false); // New state for editing dialog
+    const [editingKbId, setEditingKbId] = useState<string | null>(null); // New state for tracking KB being edited
+    const [editKbName, setEditKbName] = useState(''); // New state for edited name
+
     const [isAddingContent, setIsAddingContent] = useState(false);
     const [newContent, setNewContent] = useState('');
     const [newContentTitle, setNewContentTitle] = useState('');
+
+    const [isContentLoading, setIsContentLoading] = useState(false);
+
+    // Content Editing State
+    const [isEditingContent, setIsEditingContent] = useState(false);
+    const [editingContentId, setEditingContentId] = useState<string | null>(null);
+    const [editContentTitle, setEditContentTitle] = useState('');
+    const [editContentText, setEditContentText] = useState('');
 
     const loadAllData = async () => {
         try {
@@ -67,11 +82,14 @@ export function KnowledgeSettings() {
 
     const loadKbContent = async (kbId: string) => {
         try {
+            setIsContentLoading(true);
             const data = await knowledgeService.getKBContent(kbId);
             setKbContent(data || []);
         } catch (error) {
             console.error(error);
             toast.error('Failed to load content');
+        } finally {
+            setIsContentLoading(false);
         }
     };
 
@@ -136,6 +154,29 @@ export function KnowledgeSettings() {
         }
     };
 
+    const handleStartEditKb = (kb: KnowledgeBase, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setEditingKbId(kb.id);
+        setEditKbName(kb.name);
+        setIsEditingKb(true);
+    };
+
+    const handleUpdateKb = async () => {
+        if (!editingKbId || !editKbName) return;
+        try {
+            const data = await knowledgeService.updateKnowledgeBase(editingKbId, editKbName);
+            setKbs(prev => prev.map(k => k.id === editingKbId ? data : k));
+            if (selectedKb?.id === editingKbId) setSelectedKb(data);
+
+            setIsEditingKb(false);
+            setEditingKbId(null);
+            setEditKbName('');
+            toast.success('Knowledge base updated');
+        } catch (error) {
+            toast.error('Failed to update knowledge base');
+        }
+    };
+
     const handleAddContent = async () => {
         if (!selectedKb || !newContent) return;
         try {
@@ -147,6 +188,28 @@ export function KnowledgeSettings() {
             toast.success('Content added');
         } catch (error) {
             toast.error('Failed to add content');
+        }
+    };
+
+    const handleStartEditContent = (item: KnowledgeContent) => {
+        setEditingContentId(item.id);
+        setEditContentTitle(item.title || '');
+        setEditContentText(item.content);
+        setIsEditingContent(true);
+    };
+
+    const handleUpdateContent = async () => {
+        if (!editingContentId || !editContentText) return;
+        try {
+            const data = await knowledgeService.updateKBContent(editingContentId, editContentText, editContentTitle);
+            setKbContent(prev => prev.map(c => c.id === editingContentId ? data : c));
+            setIsEditingContent(false);
+            setEditingContentId(null);
+            setEditContentTitle('');
+            setEditContentText('');
+            toast.success('Content updated');
+        } catch (error) {
+            toast.error('Failed to update content');
         }
     };
 
@@ -193,20 +256,33 @@ export function KnowledgeSettings() {
                             <div className="flex-1 space-y-4 overflow-y-auto">
                                 <div className="flex justify-between items-center">
                                     <h3 className="text-sm font-medium text-muted-foreground">Custom Knowledge Bases</h3>
-                                    <Dialog open={isAddingKb} onOpenChange={setIsAddingKb}>
-                                        <DialogTrigger asChild>
-                                            <Button size="sm" variant="outline" className="gap-2">
-                                                <Plus className="h-4 w-4" /> New Base
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent>
-                                            <DialogHeader><DialogTitle>Create Knowledge Base</DialogTitle></DialogHeader>
-                                            <div className="space-y-4 pt-2">
-                                                <Input placeholder="Name (e.g., Company Identity)" value={newKbName} onChange={e => setNewKbName(e.target.value)} />
-                                                <Button className="w-full" onClick={handleCreateKb}>Create Base</Button>
-                                            </div>
-                                        </DialogContent>
-                                    </Dialog>
+                                    <div className="flex gap-2">
+                                        {/* Edit Dialog */}
+                                        <Dialog open={isEditingKb} onOpenChange={setIsEditingKb}>
+                                            <DialogContent>
+                                                <DialogHeader><DialogTitle>Edit Knowledge Base</DialogTitle></DialogHeader>
+                                                <div className="space-y-4 pt-2">
+                                                    <Input placeholder="Name" value={editKbName} onChange={e => setEditKbName(e.target.value)} />
+                                                    <Button className="w-full" onClick={handleUpdateKb}>Save Changes</Button>
+                                                </div>
+                                            </DialogContent>
+                                        </Dialog>
+
+                                        <Dialog open={isAddingKb} onOpenChange={setIsAddingKb}>
+                                            <DialogTrigger asChild>
+                                                <Button size="sm" variant="outline" className="gap-2">
+                                                    <Plus className="h-4 w-4" /> New Base
+                                                </Button>
+                                            </DialogTrigger>
+                                            <DialogContent>
+                                                <DialogHeader><DialogTitle>Create Knowledge Base</DialogTitle></DialogHeader>
+                                                <div className="space-y-4 pt-2">
+                                                    <Input placeholder="Name (e.g., Company Identity)" value={newKbName} onChange={e => setNewKbName(e.target.value)} />
+                                                    <Button className="w-full" onClick={handleCreateKb}>Create Base</Button>
+                                                </div>
+                                            </DialogContent>
+                                        </Dialog>
+                                    </div>
                                 </div>
                                 {kbs.length === 0 ? (
                                     <div className="flex-1 flex flex-col items-center justify-center p-12 border-2 border-dashed border-border/10 rounded-xl text-muted-foreground">
@@ -229,14 +305,23 @@ export function KnowledgeSettings() {
                                                         <h4 className="font-medium truncate">{kb.name}</h4>
                                                         <p className="text-xs text-muted-foreground">Dynamic Knowledge</p>
                                                     </div>
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="icon"
-                                                        className="h-7 w-7 opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10"
-                                                        onClick={(e) => handleDeleteKb(kb.id, e)}
-                                                    >
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
+                                                    <div onClick={(e) => e.stopPropagation()} className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
+                                                                    <MoreHorizontal className="h-4 w-4" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end">
+                                                                <DropdownMenuItem onClick={(e) => handleStartEditKb(kb, e)}>
+                                                                    <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={(e) => handleDeleteKb(kb.id, e)}>
+                                                                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ))}
@@ -251,40 +336,109 @@ export function KnowledgeSettings() {
                                     </Button>
                                     <div className="h-4 w-[1px] bg-border mx-2" />
                                     <h3 className="font-semibold text-lg">{selectedKb.name}</h3>
-                                    <Dialog open={isAddingContent} onOpenChange={setIsAddingContent}>
-                                        <DialogTrigger asChild>
-                                            <Button size="sm" className="ml-auto gap-2">
-                                                <Plus className="h-4 w-4" /> Add Item
-                                            </Button>
-                                        </DialogTrigger>
-                                        <DialogContent className="max-w-2xl">
-                                            <DialogHeader><DialogTitle>Add Knowledge Item</DialogTitle></DialogHeader>
-                                            <div className="space-y-4 pt-2">
+
+                                    {/* Edit Content SidePanel */}
+                                    <SidePanel isOpen={isEditingContent} onClose={() => setIsEditingContent(false)} className="sm:max-w-xl w-full">
+                                        <SidePanelHeader>
+                                            <SidePanelTitle>Edit Knowledge Item</SidePanelTitle>
+                                            <SidePanelDescription>Make changes to this knowledge item.</SidePanelDescription>
+                                        </SidePanelHeader>
+                                        <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-medium text-muted-foreground ml-1">Title</label>
+                                                <Input placeholder="Title" value={editContentTitle} onChange={e => setEditContentTitle(e.target.value)} />
+                                            </div>
+                                            <div className="space-y-1 flex-1 flex flex-col">
+                                                <label className="text-xs font-medium text-muted-foreground ml-1">Content</label>
+                                                <Textarea
+                                                    placeholder="Content"
+                                                    className="flex-1 resize-none font-mono text-sm leading-relaxed p-4"
+                                                    value={editContentText}
+                                                    onChange={e => setEditContentText(e.target.value)}
+                                                />
+                                            </div>
+                                        </div>
+                                        <SidePanelFooter>
+                                            <Button className="w-full" onClick={handleUpdateContent}>Update Content</Button>
+                                        </SidePanelFooter>
+                                    </SidePanel>
+
+                                    {/* Add Content Sheet */}
+                                    {/* Add Content SidePanel */}
+                                    <Button size="sm" className="ml-auto gap-2" onClick={() => setIsAddingContent(true)}>
+                                        <Plus className="h-4 w-4" /> Add Item
+                                    </Button>
+
+                                    <SidePanel isOpen={isAddingContent} onClose={() => setIsAddingContent(false)} className="sm:max-w-xl w-full">
+                                        <SidePanelHeader>
+                                            <SidePanelTitle>Add Knowledge Item</SidePanelTitle>
+                                            <SidePanelDescription>Add new information to {selectedKb.name}.</SidePanelDescription>
+                                        </SidePanelHeader>
+                                        <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+                                            <div className="space-y-1">
+                                                <label className="text-xs font-medium text-muted-foreground ml-1">Title</label>
                                                 <Input placeholder="Title (e.g., Company Vision)" value={newContentTitle} onChange={e => setNewContentTitle(e.target.value)} />
-                                                <Textarea placeholder="Paste or type content here..." className="min-h-[250px]" value={newContent} onChange={e => setNewContent(e.target.value)} />
-                                                <Button className="w-full" onClick={handleAddContent}>Save to {selectedKb.name}</Button>
                                             </div>
-                                        </DialogContent>
-                                    </Dialog>
-                                </div>
-                                <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-                                    {kbContent.map(item => (
-                                        <div key={item.id} className="p-4 border border-border/10 rounded-lg bg-card/20 hover:bg-card/40 transition-colors">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <h4 className="font-medium text-primary text-sm">{item.title || 'Untitled Knowledge'}</h4>
-                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" onClick={() => handleDeleteContent(item.id)}>
-                                                    <Trash2 className="h-3.5 w-3.5" />
-                                                </Button>
+                                            <div className="space-y-1 flex-1 flex flex-col">
+                                                <label className="text-xs font-medium text-muted-foreground ml-1">Content</label>
+                                                <Textarea
+                                                    placeholder="Paste or type content here..."
+                                                    className="flex-1 resize-none font-mono text-sm leading-relaxed p-4"
+                                                    value={newContent}
+                                                    onChange={e => setNewContent(e.target.value)}
+                                                />
                                             </div>
-                                            <div className="text-sm text-foreground/90 whitespace-pre-wrap leading-relaxed">{item.content}</div>
                                         </div>
-                                    ))}
-                                    {kbContent.length === 0 && (
-                                        <div className="text-center py-20 text-muted-foreground border-2 border-dashed border-border/10 rounded-xl">
-                                            <p>This knowledge base is empty. Start adding information relevant to this category.</p>
-                                        </div>
-                                    )}
+                                        <SidePanelFooter>
+                                            <Button className="w-full" onClick={handleAddContent}>Save to {selectedKb.name}</Button>
+                                        </SidePanelFooter>
+                                    </SidePanel>
                                 </div>
+                                {isContentLoading ? (
+                                    <div className="flex-1 flex items-center justify-center">
+                                        <CircularLoader className="h-8 w-8 text-primary" />
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
+                                        {kbContent.map(item => (
+                                            <div
+                                                key={item.id}
+                                                className="p-4 border border-border/10 rounded-lg bg-card/20 hover:bg-card/40 transition-colors cursor-pointer group"
+                                                onClick={() => handleStartEditContent(item)}
+                                            >
+                                                <div className="flex justify-between items-center">
+                                                    <div className="flex items-center gap-3">
+                                                        <FileText className="h-4 w-4 text-primary/70" />
+                                                        <h4 className="font-medium text-primary text-sm">{item.title || 'Untitled Knowledge'}</h4>
+                                                    </div>
+                                                    <div onClick={e => e.stopPropagation()}>
+                                                        <DropdownMenu>
+                                                            <DropdownMenuTrigger asChild>
+                                                                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                    <MoreHorizontal className="h-4 w-4" />
+                                                                </Button>
+                                                            </DropdownMenuTrigger>
+                                                            <DropdownMenuContent align="end">
+                                                                <DropdownMenuItem onClick={(e) => handleStartEditContent(item)}>
+                                                                    <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={(e) => handleDeleteContent(item.id)}>
+                                                                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                                                </DropdownMenuItem>
+                                                            </DropdownMenuContent>
+                                                        </DropdownMenu>
+                                                    </div>
+                                                </div>
+                                                {/* Content is hidden, only shown on click/edit */}
+                                            </div>
+                                        ))}
+                                        {kbContent.length === 0 && (
+                                            <div className="text-center py-20 text-muted-foreground border-2 border-dashed border-border/10 rounded-xl">
+                                                <p>This knowledge base is empty. Start adding information relevant to this category.</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </TabsContent>

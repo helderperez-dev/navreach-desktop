@@ -34,3 +34,8 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# Certificates
+certificates/
+
+electron-builder.env
