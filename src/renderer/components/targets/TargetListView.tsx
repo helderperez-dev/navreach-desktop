@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { TargetListSidebar } from './TargetListSidebar';
 import { TargetTable } from './TargetTable';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Search, X, Zap, Upload, SlidersHorizontal, LayoutGrid, Puzzle, PanelLeft } from 'lucide-react';
+import { Plus, Search, X, Zap, Upload, SlidersHorizontal, LayoutGrid, Code2, PanelLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/stores/app.store';
@@ -273,7 +273,7 @@ export function TargetListView() {
                                 disabled={!selectedListId}
                                 title={!selectedListId ? "Select a list to configure integration" : "API Integration"}
                             >
-                                <Puzzle className="h-4 w-4" />
+                                <Code2 className="h-4 w-4" />
                             </Button>
                             <Button
                                 variant="ghost"
