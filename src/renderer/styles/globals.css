@@ -59,6 +59,17 @@
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* Allow text selection only in input fields and editable content */
+  input,
+  textarea,
+  [contenteditable="true"],
+  .selectable {
+    user-select: text;
+    -webkit-user-select: text;
   }
 
   ::-webkit-scrollbar {

@@ -327,7 +327,7 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
                 <Activity className="h-2.5 w-2.5" />
                 Input Arguments
               </div>
-              <div className="rounded-xl border p-3 bg-black/20 border-white/5 text-white/40 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto custom-scrollbar leading-relaxed text-[11px]">
+              <div className="selectable rounded-xl border p-3 bg-black/20 border-white/5 text-white/40 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto custom-scrollbar leading-relaxed text-[11px]">
                 {typeof toolCall.arguments === 'string' ? toolCall.arguments : JSON.stringify(toolCall.arguments, null, 2)}
               </div>
             </div>
@@ -343,7 +343,7 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
                 {isFailed ? 'System Error' : 'Execution Result'}
               </div>
               <div className={cn(
-                "rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed text-[11px]",
+                "selectable rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed text-[11px]",
                 isFailed ? "bg-red-500/5 border-red-500/10 text-red-400/80" : "bg-black/20 border-white/5 text-white/40"
               )}>
                 {resultDisplay}
@@ -494,7 +494,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
         <div className={cn('flex-1 min-w-0 space-y-1 overflow-hidden', isUser && 'flex flex-col items-end')}>
 
           {isUser ? (
-            <div className="max-w-[85%] bg-white/[0.03] backdrop-blur-lg hover:bg-white/[0.06] text-white/90 px-5 py-3 rounded-2xl rounded-tr-[4px] text-[13px] leading-relaxed border border-white/10 mx-0 text-left break-words transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+            <div className="selectable max-w-[85%] bg-white/[0.03] backdrop-blur-lg hover:bg-white/[0.06] text-white/90 px-5 py-3 rounded-2xl rounded-tr-[4px] text-[13px] leading-relaxed border border-white/10 mx-0 text-left break-words transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
               <div className="whitespace-pre-wrap break-words">
                 <ProcessedText text={message.content} variables={variables} />
               </div>
@@ -534,7 +534,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                         {expandedThoughts ? <ChevronDown className="h-3 w-3 ml-auto" /> : <ChevronRight className="h-3 w-3 ml-auto" />}
                       </button>
                       {expandedThoughts && (
-                        <div className="px-3 py-2 bg-muted/20 text-xs text-muted-foreground border-t border-border font-mono leading-relaxed whitespace-pre-wrap">
+                        <div className="selectable px-3 py-2 bg-muted/20 text-xs text-muted-foreground border-t border-border font-mono leading-relaxed whitespace-pre-wrap">
                           {block.content}
                         </div>
                       )}
@@ -565,7 +565,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
                   if (!cleanContent) return null;
 
                   return (
-                    <div key={idx} className="prose prose-sm max-w-full w-full text-white/70 leading-relaxed text-left dark:prose-invert break-words min-w-0 overflow-hidden font-light tracking-wide">
+                    <div key={idx} className="selectable prose prose-sm max-w-full w-full text-white/70 leading-relaxed text-left dark:prose-invert break-words min-w-0 overflow-hidden font-light tracking-wide">
                       <ReactMarkdown
                         components={{
                           p: ({ children }) => <p className="mb-4 last:mb-0 transform-gpu">{withTags(children)}</p>,
@@ -683,7 +683,7 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
               {isFailed ? 'Error Block' : 'Result Output'}
             </div>
             <div className={cn(
-              "whitespace-pre-wrap break-all pl-3 border-l text-[11px]",
+              "selectable whitespace-pre-wrap break-all pl-3 border-l text-[11px]",
               isFailed ? "text-red-400/80 border-red-500/20" : "text-white/40 border-white/10"
             )}>
               <ProcessedText text={block.result.trim()} variables={variables} />
