@@ -59,56 +59,26 @@ export function TimerDisplay() {
 
     return (
         <div className={cn(
-            "flex items-center gap-3 transition-all duration-700 animate-in fade-in slide-in-from-left-4",
-            isNearingLimit ? "text-red-400" : "text-blue-400"
+            "flex items-center gap-2.5 transition-all duration-700 animate-in fade-in slide-in-from-left-4",
+            isNearingLimit ? "text-red-400" : "text-white/60"
         )}>
-            {/* Minimalist Status Indicator */}
-            <div className="relative h-6 w-6 flex items-center justify-center">
-                {/* Thinking/Progress Ring */}
-                <svg className="absolute inset-0 h-full w-full -rotate-90">
-                    <circle
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        fill="transparent"
-                        className="opacity-10"
-                    />
-                    {agentRunLimit && (
-                        <circle
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            fill="transparent"
-                            strokeDasharray={63}
-                            strokeDashoffset={63 - (63 * progress) / 100}
-                            className="transition-all duration-1000 ease-out"
-                            strokeLinecap="round"
-                        />
-                    )}
-                </svg>
-
-                {/* Status Dot */}
-                <div className="relative z-10 flex items-center justify-center">
-                    {isStreaming ? (
-                        <div className={cn(
-                            "h-1.5 w-1.5 rounded-full animate-pulse",
-                            isNearingLimit ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,1)]" : "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,1)]"
-                        )} />
-                    ) : (
-                        <Clock className="h-3 w-3 opacity-40 text-muted-foreground" />
-                    )}
-                </div>
+            {/* Minimalist Status Indicator - Simple Dot Only */}
+            <div className="relative flex items-center justify-center">
+                {isStreaming ? (
+                    <div className={cn(
+                        "h-1.5 w-1.5 rounded-full animate-pulse",
+                        isNearingLimit ? "bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" : "bg-white/50 shadow-[0_0_6px_rgba(255,255,255,0.3)]"
+                    )} />
+                ) : (
+                    <Clock className="h-3 w-3 opacity-40 text-muted-foreground" />
+                )}
             </div>
 
-            {/* Time Typography - Horizontal & Compact */}
+            {/* Time Typography - Elegant Sans-Serif */}
             <div className="flex items-center gap-1.5 leading-none">
                 <span className={cn(
-                    "text-sm font-mono font-bold tabular-nums tracking-tight",
-                    !isNearingLimit ? "text-foreground" : "text-red-400"
+                    "text-[15px] font-medium tabular-nums tracking-normal",
+                    !isNearingLimit ? "text-white/70" : "text-red-400"
                 )}>
                     {agentRunLimit ? formatTime(remainingSeconds) : formatTime(Math.floor((Date.now() - effectiveStartTime) / 1000))}
                 </span>

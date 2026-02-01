@@ -823,8 +823,11 @@ export function ChatPanel() {
     <div className="relative flex flex-col h-full bg-[#030303] min-w-0 w-full overflow-hidden">
       <div className="flex items-center justify-between h-14 px-5 border-b border-white/[0.03] sticky top-0 z-20 gap-2 bg-black/20 backdrop-blur-md">
         <div className="flex items-center gap-3 min-w-0 flex-1">
-          <h2 className="text-[13px] font-medium tracking-tight text-white/90">{showHistory ? 'History' : 'Assistant'}</h2>
-          {!showHistory && <TimerDisplay />}
+          {showHistory ? (
+            <h2 className="text-[13px] font-medium tracking-tight text-white/90">History</h2>
+          ) : (
+            <TimerDisplay />
+          )}
         </div>
         <div className="flex items-center gap-1">
           {showHistory ? (
@@ -977,20 +980,20 @@ export function ChatPanel() {
 
                       const getLiveToolLabel = (name: string) => {
                         const labels: Record<string, string> = {
-                          'browser_navigate': 'Navigating',
-                          'browser_click': 'Clicking Element',
+                          'browser_navigate': 'Opening Page',
+                          'browser_click': 'Clicking',
                           'browser_type': 'Typing',
                           'browser_scroll': 'Scrolling',
-                          'browser_snapshot': 'Snapshot',
+                          'browser_snapshot': 'Taking Screenshot',
                           'browser_wait': 'Waiting',
+                          'browser_move_to_element': 'Focusing',
+                          'browser_get_visible_text': 'Reading Text',
                           'x_search': 'Searching X',
                           'x_like': 'Liking Post',
                           'x_reply': 'Replying',
                           'x_post': 'Posting',
-                          'x_engage': 'Engaging',
-                          'x_scan_posts': 'Scanning Posts',
-                          'browser_move_to_element': 'Focusing',
-                          'browser_get_visible_text': 'Read text',
+                          'x_engage': 'Multi-step Engagement',
+                          'x_scan_posts': 'Scanning X (Twitter) Posts',
                         };
                         if (labels[name]) return labels[name];
                         return name

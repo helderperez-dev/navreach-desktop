@@ -134,7 +134,6 @@ export function TargetListSidebar() {
                         )}
                         onClick={() => setViewMode('all')}
                     >
-                        <Globe className="h-4 w-4 mr-3 opacity-70" />
                         <div className="flex-1 font-medium text-[13px]">All Contacts</div>
                     </div>
 
@@ -147,7 +146,6 @@ export function TargetListSidebar() {
                         )}
                         onClick={() => setViewMode('engaged')}
                     >
-                        <Clock className="h-4 w-4 mr-3 opacity-70" />
                         <div className="flex-1 font-medium text-[13px]">Engaged</div>
                     </div>
                 </div>
@@ -163,7 +161,6 @@ export function TargetListSidebar() {
                                     : "text-muted-foreground hover:text-foreground"
                             )}
                         >
-                            <List className="h-3 w-3" />
                             Lists
                         </button>
                         <button
@@ -175,7 +172,6 @@ export function TargetListSidebar() {
                                     : "text-muted-foreground hover:text-foreground"
                             )}
                         >
-                            <Clock className="h-3 w-3" />
                             Segments
                         </button>
                     </div>
