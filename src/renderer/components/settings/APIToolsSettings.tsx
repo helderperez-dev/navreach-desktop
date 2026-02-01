@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Check, X, Play, Copy, RefreshCw, Send, Sparkles } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, X, Play, Copy, RefreshCw, Send, Sparkles, MoreVertical } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { tomorrow } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -7,6 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -565,32 +571,38 @@ export function APIToolsSettings() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleEdit(tool)}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={async () => {
-                      const confirmed = await confirm({
-                        title: 'Delete API Tool',
-                        description: `Are you sure you want to delete "${tool.name}"? This action cannot be undone.`,
-                        confirmLabel: 'Delete',
-                        variant: 'destructive'
-                      });
-                      if (confirmed) deleteAPITool(tool.id);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleEdit(tool)}>
+                      <Pencil className="h-4 w-4 mr-2" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={async () => {
+                        const confirmed = await confirm({
+                          title: 'Delete API Tool',
+                          description: `Are you sure you want to delete "${tool.name}"? This action cannot be undone.`,
+                          confirmLabel: 'Delete',
+                          variant: 'destructive'
+                        });
+                        if (confirmed) deleteAPITool(tool.id);
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             ))}
 
