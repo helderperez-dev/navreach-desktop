@@ -1730,12 +1730,12 @@ You are in FAST mode.
 
                     toolExecutionCount = 0; // Reset for this specific turn
 
-                    // Add timeout to prevent hanging - 180 second timeout for model calls
-                    // Increased from 120s to 180s to handle complex operations
+                    // Add timeout to prevent hanging - 300 second timeout for model calls
+                    // Increased from 180s to 300s to handle complex multi-step operations
                     let response;
                     try {
                         const timeoutPromise = new Promise((_, reject) =>
-                            setTimeout(() => reject(new Error('Model call timed out after 180s')), 180000)
+                            setTimeout(() => reject(new Error('Model call timed out after 300s')), 300000)
                         );
 
                         // Prune message history before calling the model to manage context window and prevent token limits
@@ -1945,6 +1945,25 @@ You are in FAST mode.
                         }
 
                         if (!response) {
+                            // If it's a timeout or transient error and we're in infinite mode, retry instead of failing
+                            const isTransientError = errorMessage.toLowerCase().includes('timeout') ||
+                                errorMessage.toLowerCase().includes('fetch failed') ||
+                                errorMessage.toLowerCase().includes('socket') ||
+                                errorMessage.toLowerCase().includes('und_err');
+
+                            if (infiniteMode && isTransientError && iteration < hardStopIterations) {
+                                console.warn(`[AI Service] Transient error (${errorMessage}) in infinite mode. Retrying turn...`);
+                                if (window && !window.isDestroyed()) {
+                                    window.webContents.send('ai:stream-chunk', {
+                                        content: `⚠️ Transient error: ${errorMessage}. Retrying automatically...\n`,
+                                        done: false,
+                                        isNarration: true,
+                                    });
+                                }
+                                await new Promise(resolve => setTimeout(resolve, 5000));
+                                continue;
+                            }
+
                             if (window && !window.isDestroyed()) {
                                 window.webContents.send('ai:stream-chunk', {
                                     content: `⚠️ Error: ${errorMessage}\n`,

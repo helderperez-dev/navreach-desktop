@@ -336,6 +336,7 @@ export function BrowserView() {
           ref={webviewRef as any}
           key={currentWorkspace?.id || 'default'}
           src={INITIAL_URL}
+          tabIndex={-1}
           className="absolute inset-0 w-full h-full"
           // @ts-ignore - webview attributes
           partition={currentWorkspace ? `persist:workspace_${currentWorkspace.id}` : undefined}

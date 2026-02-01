@@ -324,6 +324,20 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
     (contents as any).setBackgroundColor('#0A0A0B');
   }
 
+  // PREVENT OS FOCUS STEALING:
+  // Intercept the webContents focus event. If the main window isn't currently
+  // the active foreground window in the OS, we prevent the webview from
+  // grabbing focus which would otherwise pull the whole Reavion window to the front.
+  contents.on('focus', () => {
+    const focusedWin = BrowserWindow.getFocusedWindow();
+    const mainWin = BrowserWindow.getAllWindows()[0];
+    if (mainWin && focusedWin !== mainWin) {
+      // If Reavion isn't the active app, don't let the webview grab focus.
+      // We blur the window to ensure it doesn't stay as the active responder.
+      contents.executeJavaScript('window.blur()').catch(() => { });
+    }
+  });
+
   // MIMIC CHROME: Set a modern Chrome User-Agent
   // This ensures social networks see us as a regular browser, not Electron
   const chromeUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -418,6 +432,30 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
             return getParameter.apply(this, arguments);
           };
       } catch(e) {}
+
+      // 7. Prevent focus stealing
+      // We override focus methods to prevent background pages from grabbing focus
+      // but we allow it if we are explicitly performing an interaction.
+      try {
+        window.focus = function() {
+          console.log('[Reavion] Blocked window.focus()');
+        };
+        
+        const originalElementFocus = HTMLElement.prototype.focus;
+        HTMLElement.prototype.focus = function() {
+          if (window.__REAVION_INTERNAL_FOCUS__) {
+            return originalElementFocus.apply(this, arguments);
+          }
+        };
+
+        // Proactively blur anything that grabs focus without an internal automation flag
+        // or if the document itself doesn't have OS-level focus.
+        document.addEventListener('focusin', (e) => {
+          if (!window.__REAVION_INTERNAL_FOCUS__ && !document.hasFocus()) {
+            try { (e.target as any)?.blur(); } catch(err) {}
+          }
+        }, true);
+      } catch (e) {}
     })();
   `;
 
@@ -474,6 +512,15 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
 
   // Inject recorder and inspector scripts
   contents.on('did-finish-load', () => {
+    // CRITICAL: Prevent focus stealing on page load
+    // When a page finishes loading, it often tries to focus itself or an input element.
+    // We proactively blur the window if Reavion isn't the active app.
+    const focusedWin = BrowserWindow.getFocusedWindow();
+    const mainWin = BrowserWindow.getAllWindows()[0];
+    if (mainWin && focusedWin !== mainWin) {
+      contents.executeJavaScript('window.blur(); document.activeElement?.blur();').catch(() => { });
+    }
+
     // Send navigation event to initiator
     const initiator = recordingInitiators.get(tabId);
     if (initiator && !initiator.isDestroyed()) {
@@ -493,6 +540,15 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
       contents.executeJavaScript(INSPECTOR_SCRIPT).catch(err => {
         console.error(`[Inspector] Failed to re-inject on ${tabId}:`, err);
       });
+    }
+  });
+
+  // Also prevent focus stealing on navigation start
+  contents.on('did-start-navigation', () => {
+    const focusedWin = BrowserWindow.getFocusedWindow();
+    const mainWin = BrowserWindow.getAllWindows()[0];
+    if (mainWin && focusedWin !== mainWin) {
+      contents.executeJavaScript('window.blur();').catch(() => { });
     }
   });
 
@@ -1172,8 +1228,23 @@ export function createBrowserTools(options?: {
         }
 
         sendDebugLog('info', `Navigating to: ${targetUrl}`);
+
+        // PREVENT FOCUS STEALING: Blur before navigation
+        const focusedWin = BrowserWindow.getFocusedWindow();
+        const mainWin = BrowserWindow.getAllWindows()[0];
+        const shouldPreventFocus = mainWin && focusedWin !== mainWin;
+
+        if (shouldPreventFocus) {
+          await contents.executeJavaScript('window.blur();').catch(() => { });
+        }
+
         try {
           await contents.loadURL(targetUrl);
+
+          // PREVENT FOCUS STEALING: Blur after navigation starts
+          if (shouldPreventFocus) {
+            await contents.executeJavaScript('window.blur();').catch(() => { });
+          }
         } catch (navError: any) {
           if (contents.isDestroyed()) throw new Error('Browser closed during navigation');
           // ERR_ABORTED (-3) can happen on redirects - check if page actually loaded
@@ -1277,7 +1348,7 @@ export function createBrowserTools(options?: {
         const roundedY = Math.round(y);
 
         // Native click sequence
-        contents.focus();
+        // contents.focus(); // REMOVED: Prevent stealing OS focus during background automation
         contents.sendInputEvent({ type: 'mouseMove', x: roundedX, y: roundedY });
         await new Promise(r => setTimeout(r, 50));
         contents.sendInputEvent({ type: 'mouseDown', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
@@ -1763,7 +1834,7 @@ export function createBrowserTools(options?: {
         if (!result || !result.success) {
           return JSON.stringify({ success: false, error: result?.error || 'Script injection failed' });
         }
-        contents.focus();
+        // contents.focus(); // REMOVED: Prevent stealing OS focus during background automation
         const roundedX = Math.round(x);
         const roundedY = Math.round(y);
 

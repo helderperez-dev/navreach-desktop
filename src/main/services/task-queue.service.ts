@@ -77,6 +77,18 @@ export class TaskQueueService {
 
             if (error) {
                 console.error('[TaskQueueService] Failed to fetch next task:', error);
+
+                // If it's a fetch error or socket error, retry after a short delay instead of stopping completely
+                const errorMsg = String(error.message || '').toLowerCase();
+                if (errorMsg.includes('fetch failed') || errorMsg.includes('socket') || errorMsg.includes('und_err')) {
+                    console.log('[TaskQueueService] Transient network error detected. Retrying in 5s...');
+                    setTimeout(() => {
+                        this.isProcessing = false;
+                        this.processNextTask();
+                    }, 5000);
+                    return;
+                }
+
                 this.isProcessing = false;
                 return;
             }

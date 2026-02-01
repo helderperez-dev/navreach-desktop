@@ -97,18 +97,26 @@ export async function getScopedSupabase(accessToken?: string, refreshToken?: str
         }
     });
 
-    try {
-        // 5. Set the session. If it's expired but we have a refresh token, setSession will try to refresh it immediately.
-        const { error } = await client.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken || ''
-        });
+    if (accessToken) {
+        try {
+            // 5. Set the session. If it's expired but we have a refresh token, setSession will try to refresh it immediately.
+            const { error } = await client.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken || ''
+            });
 
-        if (error) {
-            console.warn('[Supabase Main] Error setting session on new scoped client:', error.message);
+            if (error) {
+                // If it's just "Auth session missing!", it might be a race condition or expired token.
+                // Since we set the Authorization header anyway, this is often non-fatal for RLS.
+                if (error.message?.includes('Auth session missing')) {
+                    console.debug('[Supabase Main] Session initialization warning (non-fatal):', error.message);
+                } else {
+                    console.warn('[Supabase Main] Error setting session on new scoped client:', error.message);
+                }
+            }
+        } catch (e) {
+            console.error('[Supabase Main] Exception setting session on scoped client:', e);
         }
-    } catch (e) {
-        console.error('[Supabase Main] Exception setting session on scoped client:', e);
     }
 
     // Cache the client so subsequent calls in the same turn/context are fast

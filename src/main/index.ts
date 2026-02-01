@@ -115,7 +115,8 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.maximize();
-    mainWindow?.show();
+    // Use showInactive to prevent stealing focus from other apps on launch
+    mainWindow?.showInactive();
 
     // Handle pending auth hash from cold start
     if (pendingAuthHash && mainWindow) {
@@ -154,6 +155,10 @@ if (!gotTheLock) {
       const url = commandLine.pop();
       if (url && url.startsWith('reavion://')) {
         if (mainWindow.isMinimized()) mainWindow.restore();
+        // Only focus if not already focused to avoid stealing from other apps
+        if (!mainWindow.isVisible()) {
+          mainWindow.show();
+        }
         mainWindow.focus();
         handleAuthRedirect(url);
       }

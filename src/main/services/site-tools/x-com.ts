@@ -169,6 +169,33 @@ const POINTER_HELPERS = `
 
 const BASE_SCRIPT_HELPERS = `
   ${POINTER_HELPERS}
+// BLOCK FOCUS STEALING from the site
+if (!window.__REAVION_FOCUS_PROTECTED__) {
+  window.__REAVION_FOCUS_PROTECTED__ = true;
+  try {
+    window.focus = function() {
+       console.log("[Reavion] Blocked window.focus()");
+    };
+    
+    const originalElementFocus = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function() {
+      if (window.__REAVION_INTERNAL_FOCUS__) {
+        return originalElementFocus.apply(this, arguments);
+      }
+    };
+  } catch (e) {}
+}
+
+async function safeFocus(el) {
+  if (!el) return;
+  window.__REAVION_INTERNAL_FOCUS__ = true;
+  try {
+    if (typeof el.focus === 'function') el.focus({ preventScroll: true });
+  } finally {
+    window.__REAVION_INTERNAL_FOCUS__ = false;
+  }
+}
+
 var logs = [];
 function log(msg, data) {
   logs.push({ time: new Date().toISOString(), msg, data });
@@ -478,7 +505,7 @@ async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
 
 async function typeHumanLike(el, text) {
   if (!el) return;
-  el.focus({ preventScroll: true });
+  await safeFocus(el);
   
   const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
   
@@ -490,7 +517,7 @@ async function typeHumanLike(el, text) {
     
     // Ensure focus every 10 characters or if focus is lost
     if (i % 10 === 0 || document.activeElement !== el) {
-       el.focus({ preventScroll: true });
+       await safeFocus(el);
     }
 
     // 1. TYPO CHANCE (2% chance for a minor mistake)
@@ -554,11 +581,7 @@ const WAIT_FOR_RESULTS_SCRIPT = `
   (async function () {
     ${BASE_SCRIPT_HELPERS}
 
-    // Prevent focus stealing for NEW searches, but don't kick user out of their own typing
-    try {
-      window.focus = function () { console.log("Blocked window.focus to prevent app stealing OS focus"); };
-    } catch (e) { /* ignore */ }
-
+    // Results are awaited via the check() polling loop below
     return await new Promise((resolve) => {
       const start = Date.now();
       const check = () => {
@@ -1028,7 +1051,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                if (composer) {
                   await safeClick(composer, 'Composer');
                   // Soft focus
-                  composer.focus({ preventScroll: true });
+                  await safeFocus(composer);
                   await typeHumanLike(composer, ${JSON.stringify(text)});
                   await wait(800);
                   const send = document.querySelector('[data-testid="tweetButton"]');
@@ -1120,7 +1143,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
             await safeClick(composer, 'Composer', { focusWait: 50, afterWait: 200 });
             // Soft focus - preventScroll helps avoid window jumping
-            composer.focus({ preventScroll: true });
+            await safeFocus(composer);
             await typeHumanLike(composer, ${JSON.stringify(text)});
             await wait(500);
             
@@ -1209,7 +1232,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
             await safeClick(composer, 'Composer');
             // Soft focus
-            composer.focus({ preventScroll: true });
+            await safeFocus(composer);
             await typeHumanLike(composer, ${JSON.stringify(text)}, { refocusInterval: 500 });
             await wait(500);
 
@@ -1777,7 +1800,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                             
                             if (composer) {
                                 await safeClick(composer, 'Reply Composer');
-                                composer.focus({ preventScroll: true });
+                                await safeFocus(composer);
                                 await typeHumanLike(composer, rText);
                                 await wait(500);
                                 const send = modal.querySelector('[data-testid="tweetButton"]');
@@ -1893,7 +1916,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                       for (let i = 0; i < 4; i++) {
                           const input = inputs[i];
                           if (input) {
-                              input.focus();
+                              await safeFocus(input);
                               await wait(150 + Math.random() * 250);
                               document.execCommand('insertText', false, pinStr[i] || "");
                               await wait(100 + Math.random() * 150);
@@ -1909,7 +1932,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               }
 
               await safeClick(dmComposer, 'DM Composer');
-              dmComposer.focus({ preventScroll: true });
+              await safeFocus(dmComposer);
               await typeHumanLike(dmComposer, ${JSON.stringify(text)});
               await wait(800);
 
