@@ -42,6 +42,10 @@ const settingsAPI = {
   set: <T>(key: string, value: T) => ipcRenderer.invoke('settings:set', key, value),
   getAll: (accessToken?: string) => ipcRenderer.invoke('settings:get-all', accessToken) as Promise<AppSettings>,
   reset: () => ipcRenderer.invoke('settings:reset'),
+  testAPITool: (tool: any) => {
+    console.log('[Preload] testAPITool called with:', tool);
+    return ipcRenderer.invoke('settings:test-api-tool', tool) as Promise<{ success: boolean; data?: any; error?: string; status?: number; statusText?: string }>;
+  },
 
   // Platform Knowledge
   getPlatformKnowledge: (accessToken?: string) => ipcRenderer.invoke('settings:get-platform-knowledge', accessToken) as Promise<any[]>,

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import type { ModelProvider, MCPServer, APITool, AppSettings } from '../../shared/types';
 import { useAuthStore } from './auth.store';
 
@@ -141,8 +142,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const { success, tool: savedTool, error } = await window.api.settings.addAPITool(tool, accessToken);
     if (success) {
       set((state) => ({ apiTools: [...state.apiTools, savedTool || tool] }));
+      toast.success('API tool added successfully');
     } else {
       console.error('Failed to add API tool:', error);
+      toast.error(error || 'Failed to add API tool');
+      throw new Error(error || 'Failed to add API tool');
     }
   },
 
@@ -153,8 +157,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set((state) => ({
         apiTools: state.apiTools.map((t) => (t.id === tool.id ? tool : t))
       }));
+      toast.success('API tool updated successfully');
     } else {
       console.error('Failed to update API tool:', error);
+      toast.error(error || 'Failed to update API tool');
+      throw new Error(error || 'Failed to update API tool');
     }
   },
 
@@ -165,8 +172,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set((state) => ({
         apiTools: state.apiTools.filter((t) => t.id !== id)
       }));
+      toast.success('API tool deleted successfully');
     } else {
       console.error('Failed to delete API tool:', error);
+      toast.error(error || 'Failed to delete API tool');
+      throw new Error(error || 'Failed to delete API tool');
     }
   },
 }));

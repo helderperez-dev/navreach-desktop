@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Server, Wrench, Key, ShieldCheck, Monitor, Settings, BrainCircuit, CreditCard } from 'lucide-react';
+import { Server, Wrench, Cpu, ShieldCheck, Monitor, Settings, Brain, LayoutGrid, CreditCard } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { GeneralSettings } from './GeneralSettings';
@@ -15,11 +15,11 @@ type SettingsTab = 'general' | 'workspace' | 'mcp' | 'api-tools' | 'model-provid
 
 const tabs: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
   { id: 'general', label: 'General', icon: <Monitor className="h-4 w-4" /> },
-  { id: 'workspace', label: 'Workspace', icon: <Settings className="h-4 w-4" /> },
-  { id: 'knowledge', label: 'Knowledge Base', icon: <BrainCircuit className="h-4 w-4" /> },
+  { id: 'workspace', label: 'Workspace', icon: <LayoutGrid className="h-4 w-4" /> },
+  { id: 'knowledge', label: 'Knowledge Base', icon: <Brain className="h-4 w-4" /> },
   { id: 'mcp', label: 'MCP Servers', icon: <Server className="h-4 w-4" /> },
   { id: 'api-tools', label: 'API Tools', icon: <Wrench className="h-4 w-4" /> },
-  { id: 'model-providers', label: 'Model Providers', icon: <Key className="h-4 w-4" /> },
+  { id: 'model-providers', label: 'Model Providers', icon: <Cpu className="h-4 w-4" /> },
   { id: 'integrations', label: 'Integrations', icon: <ShieldCheck className="h-4 w-4" /> },
   { id: 'billing', label: 'Billing', icon: <CreditCard className="h-4 w-4" /> },
 ];

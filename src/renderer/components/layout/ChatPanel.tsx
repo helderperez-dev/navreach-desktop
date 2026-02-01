@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Conversation } from '@shared/types';
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { ArrowUp, Square, Plus, Trash2, History, X, MessageSquare, PanelLeftClose, Globe, MousePointer, Type, ScrollText, FileText, ArrowLeft, ArrowRight, RefreshCw, Clock, Search, Eye, Check, Heart, UserPlus, Camera, Zap, Rocket } from 'lucide-react';
+import { ArrowUp, Square, Plus, Trash2, History, X, MessageSquare, PanelLeftClose, Globe, MousePointer, Type, ScrollText, FileText, ArrowLeft, ArrowRight, RefreshCw, Clock, Search, Eye, Check, Heart, UserPlus, Camera, Zap, Rocket, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChatStore } from '@/stores/chat.store';
@@ -1005,39 +1005,41 @@ export function ChatPanel() {
 
                       return (
                         <div key={idx} className={cn(
-                          "rounded-lg border border-border bg-card/50 overflow-hidden transition-all duration-300",
+                          "my-2 rounded-2xl liquid-glass bg-white/5 overflow-hidden transition-all duration-300 group/tool",
                           isRunning ? "opacity-100" : "opacity-80"
                         )}>
-                          <div className="flex items-center gap-3 px-3 py-2.5">
+                          <div className="flex items-center gap-3 px-4 py-2.5">
                             <div className={cn(
-                              "flex items-center justify-center w-6 h-6 rounded-md border text-xs",
-                              isSuccess ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-500" :
-                                isFailed ? "bg-destructive/10 border-destructive/20 text-destructive" :
-                                  "bg-primary/10 border-primary/20 text-primary"
+                              "flex items-center justify-center w-5 h-5 rounded-lg border text-xs transition-colors",
+                              isSuccess ? "bg-white/5 border-white/10 text-white/50" :
+                                isFailed ? "bg-red-500/5 border-red-500/20 text-red-400/70" :
+                                  "bg-white/5 border-white/10 text-white/40"
                             )}>
-                              {isSuccess ? <Check className="h-3.5 w-3.5" /> :
-                                isFailed ? <X className="h-3.5 w-3.5" /> :
-                                  <CircularLoader className="h-3.5 w-3.5" />
+                              {isSuccess ? <Check className="h-3 w-3" /> :
+                                isFailed ? <X className="h-3 w-3" /> :
+                                  <CircularLoader className="h-3 w-3" />
                               }
                             </div>
 
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
                                 <span className={cn(
-                                  "text-sm font-medium truncate",
-                                  isSuccess ? "text-foreground/80" :
-                                    isFailed ? "text-destructive" : "text-primary/80"
+                                  "font-medium text-[13px] tracking-tight truncate transition-colors",
+                                  isSuccess ? "text-white/60" :
+                                    isFailed ? "text-red-400/80" : "text-white/40"
                                 )}>
                                   {label}
                                 </span>
                                 {tool._duration && (
-                                  <span className="text-[10px] text-muted-foreground font-mono ml-2">
+                                  <span className="text-[10px] text-white/20 font-mono ml-2">
                                     {(tool._duration / 1000).toFixed(1)}s
                                   </span>
                                 )}
                               </div>
+                            </div>
 
-                              {/* Hide args/result snippet to keep UI focused on action only */}
+                            <div className="p-1 rounded-md transition-colors group-hover/tool:bg-white/5">
+                              <ChevronRight className="h-3.5 w-3.5 text-white/20" />
                             </div>
                           </div>
                         </div>

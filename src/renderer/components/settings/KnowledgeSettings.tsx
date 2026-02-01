@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Pencil, Trash2, Check, X, BrainCircuit, Globe, Code, User, FileText, Target, Plus, Database, ChevronRight, Folder, MoreHorizontal } from 'lucide-react';
+import { Pencil, Trash2, Check, X, Globe, Code, User, FileText, Target, Plus, Database, ChevronRight, Folder, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';

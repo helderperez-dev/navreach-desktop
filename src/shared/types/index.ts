@@ -76,8 +76,10 @@ export interface APITool {
   endpoint: string;
   method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
   headers?: Record<string, string>;
+  queryParams?: Record<string, string>;
   bodyTemplate?: string;
   responseMapping?: string;
+  lastTestSuccess?: boolean;
 }
 
 export interface AppSettings {

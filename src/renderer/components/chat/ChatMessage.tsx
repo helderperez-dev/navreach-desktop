@@ -318,23 +318,38 @@ function StructuredToolCard({ toolCall, toolResult }: { toolCall: any; toolResul
       </button>
 
       {/* Expanded Details */}
-      {isExpanded && resultDisplay && (
-        <div className="px-4 py-3 border-t border-white/5 bg-white/[0.01] text-xs font-mono space-y-3 animate-in fade-in slide-in-from-top-1 duration-300">
-          <div>
-            <div className={cn(
-              "flex items-center gap-1.5 text-[9px] uppercase tracking-[0.1em] mb-2 font-bold",
-              isFailed ? "text-red-400/40" : "text-white/20"
-            )}>
-              {isFailed ? <AlertCircle className="h-2.5 w-2.5" /> : <Activity className="h-2.5 w-2.5" />}
-              {isFailed ? 'System Error' : 'Execution Result'}
+      {isExpanded && (
+        <div className="px-4 py-3 border-t border-white/5 bg-white/[0.01] text-xs font-mono space-y-4 animate-in fade-in slide-in-from-top-1 duration-300">
+          {/* Arguments Section */}
+          {toolCall.arguments && (
+            <div>
+              <div className="flex items-center gap-1.5 text-[9px] uppercase tracking-[0.1em] mb-2 font-bold text-white/20">
+                <Activity className="h-2.5 w-2.5" />
+                Input Arguments
+              </div>
+              <div className="rounded-xl border p-3 bg-black/20 border-white/5 text-white/40 overflow-x-auto whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto custom-scrollbar leading-relaxed text-[11px]">
+                {typeof toolCall.arguments === 'string' ? toolCall.arguments : JSON.stringify(toolCall.arguments, null, 2)}
+              </div>
             </div>
-            <div className={cn(
-              "rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed text-[11px]",
-              isFailed ? "bg-red-500/5 border-red-500/10 text-red-400/80" : "bg-black/20 border-white/5 text-white/40"
-            )}>
-              {resultDisplay}
+          )}
+
+          {/* Result Section */}
+          {resultDisplay && (
+            <div>
+              <div className={cn(
+                "flex items-center gap-1.5 text-[9px] uppercase tracking-[0.1em] mb-2 font-bold",
+                isFailed ? "text-red-400/40" : "text-white/20"
+              )}>
+                {isFailed ? 'System Error' : 'Execution Result'}
+              </div>
+              <div className={cn(
+                "rounded-xl border p-3 overflow-x-auto whitespace-pre-wrap break-all max-h-[400px] overflow-y-auto custom-scrollbar leading-relaxed text-[11px]",
+                isFailed ? "bg-red-500/5 border-red-500/10 text-red-400/80" : "bg-black/20 border-white/5 text-white/40"
+              )}>
+                {resultDisplay}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>
@@ -618,7 +633,7 @@ function LegacyToolGroup({ block, variables }: { block: any; variables?: any[] }
   const isFailed = block.status === 'failed';
 
   return (
-    <div className="my-2 rounded-2xl liquid-glass overflow-hidden group/tool">
+    <div className="my-2 rounded-2xl liquid-glass bg-white/5 overflow-hidden group/tool">
       {/* Tool Header - Click to toggle details */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}

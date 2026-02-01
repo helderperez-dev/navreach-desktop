@@ -42,6 +42,7 @@ declare global {
         addAPITool: (tool: import('@shared/types').APITool, accessToken?: string) => Promise<{ success: boolean; tool?: import('@shared/types').APITool; error?: string }>;
         updateAPITool: (tool: import('@shared/types').APITool, accessToken?: string) => Promise<{ success: boolean; tool?: import('@shared/types').APITool; error?: string }>;
         deleteAPITool: (id: string, accessToken?: string) => Promise<{ success: boolean; error?: string }>;
+        testAPITool: (tool: import('@shared/types').APITool) => Promise<{ success: boolean; data?: any; error?: string; status?: number; statusText?: string }>;
 
         getPlatformKnowledge: () => Promise<import('@shared/types').PlatformKnowledge[]>;
         addPlatformKnowledge: (record: Partial<import('@shared/types').PlatformKnowledge>) => Promise<{ success: boolean; data?: import('@shared/types').PlatformKnowledge; error?: string }>;

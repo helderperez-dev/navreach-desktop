@@ -126,8 +126,10 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
         endpoint: t.endpoint,
         method: t.method,
         headers: t.headers,
+        queryParams: t.query_params,
         bodyTemplate: t.body_template,
-        responseMapping: t.response_mapping
+        responseMapping: t.response_mapping,
+        lastTestSuccess: t.last_test_success
       }));
 
       // Sync to local store for main-process services (like AI Agent)
@@ -352,19 +354,35 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
         endpoint: tool.endpoint,
         method: tool.method,
         headers: tool.headers,
+        query_params: tool.queryParams,
         body_template: tool.bodyTemplate,
-        response_mapping: tool.responseMapping
+        response_mapping: tool.responseMapping,
+        last_test_success: tool.lastTestSuccess
       })
       .select()
       .single();
 
     if (error) return { success: false, error: error.message };
 
+    const formattedTool: APITool = {
+      id: data.id,
+      name: data.name,
+      description: data.description,
+      enabled: data.enabled,
+      endpoint: data.endpoint,
+      method: data.method,
+      headers: data.headers,
+      queryParams: data.query_params,
+      bodyTemplate: data.body_template,
+      responseMapping: data.response_mapping,
+      lastTestSuccess: data.last_test_success
+    };
+
     // Sync to local store
     const current = store.get('apiTools') || [];
-    store.set('apiTools', [...current, data]);
+    store.set('apiTools', [...current, formattedTool]);
 
-    return { success: true, tool: data };
+    return { success: true, tool: formattedTool };
   });
 
   ipcMain.handle('settings:update-api-tool', async (_event, tool: APITool, accessToken?: string) => {
@@ -378,8 +396,10 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
         endpoint: tool.endpoint,
         method: tool.method,
         headers: tool.headers,
+        query_params: tool.queryParams,
         body_template: tool.bodyTemplate,
         response_mapping: tool.responseMapping,
+        last_test_success: tool.lastTestSuccess,
         updated_at: new Date().toISOString()
       })
       .eq('id', tool.id);
@@ -396,8 +416,10 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       endpoint: tool.endpoint,
       method: tool.method,
       headers: tool.headers,
+      queryParams: tool.queryParams,
       bodyTemplate: tool.bodyTemplate,
-      responseMapping: tool.responseMapping
+      responseMapping: tool.responseMapping,
+      lastTestSuccess: tool.lastTestSuccess
     } : t));
 
     return { success: true, tool };
@@ -417,6 +439,57 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
     store.set('apiTools', current.filter((t: any) => t.id !== toolId));
 
     return { success: true };
+  });
+
+  ipcMain.handle('settings:test-api-tool', async (_event, tool: APITool) => {
+    try {
+      let finalEndpoint = tool.endpoint;
+
+      // 1. Handle Query Parameters
+      if (tool.queryParams && Object.keys(tool.queryParams).length > 0) {
+        const url = new URL(finalEndpoint);
+        Object.entries(tool.queryParams).forEach(([key, value]) => {
+          if (key && value) url.searchParams.append(key, value);
+        });
+        finalEndpoint = url.toString();
+      }
+
+      // 2. Prepare Request
+      const options: RequestInit = {
+        method: tool.method || 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tool.headers || {}),
+        },
+      };
+
+      if (tool.method !== 'GET' && tool.bodyTemplate) {
+        options.body = tool.bodyTemplate;
+      }
+
+      const response = await fetch(finalEndpoint, options);
+      const isJson = response.headers.get('content-type')?.includes('application/json');
+      const data = isJson ? await response.json() : await response.text();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          status: response.status,
+          statusText: response.statusText,
+          error: typeof data === 'string' ? data : JSON.stringify(data),
+          data
+        };
+      }
+
+      return {
+        success: true,
+        status: response.status,
+        statusText: response.statusText,
+        data
+      };
+    } catch (error: any) {
+      return { success: false, error: error.message || String(error) };
+    }
   });
 
   // Platform Knowledge Handlers
