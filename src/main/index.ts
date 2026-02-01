@@ -1,5 +1,4 @@
 import { app, BrowserWindow, shell, ipcMain, nativeImage, dialog } from 'electron';
-import { loadElectronLlm } from '@electron/llm';
 
 // SILENCE NOISY LANGCHAIN WARNINGS
 process.env.LANGCHAIN_ADAPTER_MIGRATION_WARNING = 'false';
@@ -167,11 +166,6 @@ if (!gotTheLock) {
 
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('com.reavion.app');
-
-    // Initialize Electron LLM
-    loadElectronLlm({
-      getModelPath: (modelAlias) => modelAlias,
-    });
 
     // Auto-updater
     autoUpdater.checkForUpdatesAndNotify();
