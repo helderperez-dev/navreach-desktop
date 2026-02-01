@@ -43,6 +43,10 @@ export function TargetForm({ open, onOpenChange, target, onViewHistory, noAnimat
     const [duplicateTarget, setDuplicateTarget] = useState<Target | null>(null);
     const [isCheckingDuplicate, setIsCheckingDuplicate] = useState(false);
 
+    // List Selection State
+    const [listSearch, setListSearch] = useState('');
+    const [showListDropdown, setShowListDropdown] = useState(false);
+
     useEffect(() => {
         if (target) {
             setStableTarget(target);
@@ -373,30 +377,88 @@ export function TargetForm({ open, onOpenChange, target, onViewHistory, noAnimat
                         )}
 
                         <Field label="Assign to Lists">
-                            <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-muted-foreground/10">
-                                {lists.map(list => (
-                                    <button
-                                        key={list.id}
-                                        type="button"
-                                        onClick={() => {
-                                            setFormData(prev => ({
-                                                ...prev,
-                                                list_ids: prev.list_ids.includes(list.id)
-                                                    ? prev.list_ids.filter((id: string) => id !== list.id)
-                                                    : [...prev.list_ids, list.id]
-                                            }));
+                            <div
+                                className="group flex flex-wrap gap-1.5 p-2 px-3 min-h-[48px] rounded-xl border border-border bg-muted/50 transition-all duration-200 hover:border-border/80 focus-within:bg-muted/80 focus-within:border-foreground/30 relative"
+                                onClick={() => document.getElementById('list-search-input')?.focus()}
+                            >
+                                {formData.list_ids.map(id => {
+                                    const list = lists.find(l => l.id === id);
+                                    if (!list) return null;
+                                    return (
+                                        <div key={id} className="animate-in fade-in zoom-in-95 duration-200 inline-flex items-center rounded-md border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-xs font-medium text-blue-100/90 gap-1">
+                                            <span className="max-w-[150px] truncate">{list.name}</span>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setFormData(prev => ({
+                                                        ...prev,
+                                                        list_ids: prev.list_ids.filter(lid => lid !== id)
+                                                    }));
+                                                }}
+                                                className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded-full p-0.5 transition-colors"
+                                            >
+                                                <X className="h-3 w-3" />
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                                <div className="relative flex-1 min-w-[120px]">
+                                    <input
+                                        id="list-search-input"
+                                        type="text"
+                                        className="w-full bg-transparent border-none outline-none text-sm placeholder:text-muted-foreground/50 h-6"
+                                        placeholder={formData.list_ids.length === 0 ? "Search or select lists..." : ""}
+                                        value={listSearch}
+                                        onChange={(e) => setListSearch(e.target.value)}
+                                        onFocus={() => setShowListDropdown(true)}
+                                        onBlur={() => setTimeout(() => setShowListDropdown(false), 200)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Backspace' && !listSearch && formData.list_ids.length > 0) {
+                                                setFormData(prev => ({
+                                                    ...prev,
+                                                    list_ids: prev.list_ids.slice(0, -1)
+                                                }));
+                                            }
                                         }}
-                                        className={cn(
-                                            "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-2",
-                                            formData.list_ids.includes(list.id)
-                                                ? "bg-blue-500/10 border-blue-500/40 text-blue-100"
-                                                : "bg-muted/30 border-transparent text-muted-foreground hover:bg-muted/50"
-                                        )}
-                                    >
-                                        {list.name}
-                                        {formData.list_ids.includes(list.id) && <X className="h-3 w-3 text-blue-400" />}
-                                    </button>
-                                ))}
+                                    />
+                                    {/* Dropdown */}
+                                    {showListDropdown && (
+                                        <div className="absolute top-full left-0 w-full mt-2 min-w-[200px] max-h-60 overflow-y-auto rounded-xl border border-border/40 bg-popover/95 backdrop-blur-xl shadow-xl z-50 p-1">
+                                            {lists
+                                                .filter(l =>
+                                                    !formData.list_ids.includes(l.id) &&
+                                                    l.name.toLowerCase().includes(listSearch.toLowerCase())
+                                                )
+                                                .map(list => (
+                                                    <button
+                                                        key={list.id}
+                                                        type="button"
+                                                        className="w-full text-left px-3 py-2 text-sm text-foreground/80 hover:bg-accent hover:text-accent-foreground rounded-lg transition-colors flex items-center justify-between group/item"
+                                                        onClick={() => {
+                                                            setFormData(prev => ({
+                                                                ...prev,
+                                                                list_ids: [...prev.list_ids, list.id]
+                                                            }));
+                                                            setListSearch('');
+                                                            document.getElementById('list-search-input')?.focus();
+                                                        }}
+                                                    >
+                                                        <span>{list.name}</span>
+                                                        <Plus className="h-3.5 w-3.5 opacity-0 group-hover/item:opacity-50" />
+                                                    </button>
+                                                ))}
+                                            {lists.filter(l => !formData.list_ids.includes(l.id) && l.name.toLowerCase().includes(listSearch.toLowerCase())).length === 0 && (
+                                                <div className="px-3 py-4 text-center">
+                                                    <p className="text-xs text-muted-foreground">No lists found</p>
+                                                    {listSearch && (
+                                                        <p className="text-[10px] text-muted-foreground/50 mt-1">Press Enter to create (Coming soon)</p>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </Field>
 

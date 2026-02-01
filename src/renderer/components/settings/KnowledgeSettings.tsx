@@ -15,9 +15,13 @@ import { CircularLoader } from '@/components/ui/CircularLoader';
 import { useAuthStore } from '@/stores/auth.store';
 
 import { knowledgeService } from '@/services/knowledgeService';
+import { useConfirmation } from '@/providers/ConfirmationProvider';
+
 
 export function KnowledgeSettings() {
+    const { confirm } = useConfirmation();
     const [activeTab, setActiveTab] = useState("dynamic");
+
     const [isLoading, setIsLoading] = useState(true);
 
     // Element Library State
@@ -100,6 +104,15 @@ export function KnowledgeSettings() {
     };
 
     const handleDeleteElement = async (id: string) => {
+        const confirmed = await confirm({
+            title: 'Delete Mapping',
+            description: 'Are you sure you want to delete this element mapping?',
+            confirmLabel: 'Delete',
+            variant: 'destructive'
+        });
+
+        if (!confirmed) return;
+
         try {
             await knowledgeService.deletePlatformKnowledge(id);
             setElements(prev => prev.filter(item => item.id !== id));
@@ -108,6 +121,7 @@ export function KnowledgeSettings() {
             toast.error('Failed to delete element');
         }
     };
+
 
     const handleSaveElement = async () => {
         if (!elementFormData.domain || !elementFormData.selector) {
@@ -143,7 +157,16 @@ export function KnowledgeSettings() {
 
     const handleDeleteKb = async (id: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        if (!confirm('Are you sure you want to delete this knowledge base and all its content?')) return;
+
+        const confirmed = await confirm({
+            title: 'Delete Knowledge Base',
+            description: 'Are you sure you want to delete this knowledge base and all its content? This action cannot be undone.',
+            confirmLabel: 'Delete',
+            variant: 'destructive'
+        });
+
+        if (!confirmed) return;
+
         try {
             await knowledgeService.deleteKnowledgeBase(id);
             setKbs(prev => prev.filter(k => k.id !== id));
@@ -153,6 +176,7 @@ export function KnowledgeSettings() {
             toast.error('Failed to delete KB');
         }
     };
+
 
     const handleStartEditKb = (kb: KnowledgeBase, e: React.MouseEvent) => {
         e.stopPropagation();
@@ -214,6 +238,15 @@ export function KnowledgeSettings() {
     };
 
     const handleDeleteContent = async (id: string) => {
+        const confirmed = await confirm({
+            title: 'Delete Item',
+            description: 'Are you sure you want to delete this knowledge item?',
+            confirmLabel: 'Delete',
+            variant: 'destructive'
+        });
+
+        if (!confirmed) return;
+
         try {
             await knowledgeService.deleteKBContent(id);
             setKbContent(prev => prev.filter(c => c.id !== id));
@@ -222,6 +255,7 @@ export function KnowledgeSettings() {
             toast.error('Failed to delete content');
         }
     };
+
 
     return (
         <div className="space-y-6 h-full flex flex-col">

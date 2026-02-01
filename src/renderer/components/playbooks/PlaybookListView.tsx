@@ -15,6 +15,8 @@ import { Playbook } from '@/types/playbook';
 import { toast } from 'sonner';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import { CircularLoader } from '@/components/ui/CircularLoader';
+import { useConfirmation } from '@/providers/ConfirmationProvider';
+
 
 interface PlaybookListViewProps {
     onCreate: () => void;
@@ -32,16 +34,29 @@ export function PlaybookListView({ onCreate, onSelect, playbooks, loading, onRef
     // Internal filtering based on props
 
 
-    const handleDelete = async (e: React.MouseEvent, id: string) => {
+    const { confirm } = useConfirmation();
+
+    const handleDelete = async (e: React.MouseEvent, playbook: Playbook) => {
         e.stopPropagation();
+
+        const confirmed = await confirm({
+            title: 'Delete Playbook',
+            description: `Are you sure you want to delete "${playbook.name}"? This action cannot be undone.`,
+            confirmLabel: 'Delete',
+            variant: 'destructive'
+        });
+
+        if (!confirmed) return;
+
         try {
-            await playbookService.deletePlaybook(id);
+            await playbookService.deletePlaybook(playbook.id);
             toast.success('Playbook deleted');
             onRefresh();
         } catch (error) {
             toast.error('Failed to delete playbook');
         }
     };
+
 
     const handleExport = (e: React.MouseEvent, playbook: Playbook) => {
         e.stopPropagation();
@@ -257,7 +272,8 @@ export function PlaybookListView({ onCreate, onSelect, playbooks, loading, onRef
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end" className="w-40">
                                             <DropdownMenuItem onClick={(e) => handleExport(e, playbook)}>Export JSON</DropdownMenuItem>
-                                            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={(e) => handleDelete(e, playbook.id)}>
+                                            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={(e) => handleDelete(e, playbook)}>
+
                                                 <Trash className="h-4 w-4 mr-2" />
                                                 Delete
                                             </DropdownMenuItem>

@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import * as Dialog from '@radix-ui/react-dialog';
 import {
     BarChart2,
-    Download,
     Heart,
     MessageSquare,
     UserPlus,
@@ -520,7 +519,7 @@ export function EngagementDashboard() {
     const [logs, setLogs] = useState<EngagementLog[]>([]);
     const [stats, setStats] = useState<EngagementStats | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [isExporting, setIsExporting] = useState(false);
+
 
     // Filters
     const [dateFilter, setDateFilter] = useState<DateFilter>('all');
@@ -607,22 +606,8 @@ export function EngagementDashboard() {
         fetchData();
     }, [accessToken]);
 
-    const handleExport = async () => {
-        if (!accessToken) return;
-        setIsExporting(true);
-        try {
-            const result = await window.api.engagement.exportCsv(accessToken);
-            if (result.success) {
-                // Success notification is handled by the main process
-            }
-        } catch (error) {
-            console.error('Export failed:', error);
-        } finally {
-            setIsExporting(false);
-        }
-    };
-
     // Filtered Logs
+
     // Base Filtered Logs (for trends context)
     const baseFilteredLogs = useMemo(() => {
         return logs.filter(log => {
@@ -890,16 +875,7 @@ export function EngagementDashboard() {
                                     <SlidersHorizontal className="h-4 w-4" />
                                 </Button>
 
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-9 px-4 rounded-xl border-white/5 bg-card/50 hover:bg-white/5 flex items-center gap-2"
-                                    onClick={handleExport}
-                                    disabled={isExporting}
-                                >
-                                    <Download className="h-3.5 w-3.5" />
-                                    <span className="text-xs font-semibold">Export CSV</span>
-                                </Button>
+
 
                                 {/* Filter Sidebar Drawer */}
                                 <Dialog.Root open={isFilterDrawerOpen} onOpenChange={setIsFilterDrawerOpen}>

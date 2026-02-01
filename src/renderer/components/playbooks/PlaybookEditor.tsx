@@ -23,7 +23,10 @@ import { toast } from 'sonner';
 
 import { Playbook, PlaybookCapabilities, PlaybookExecutionDefaults } from '@/types/playbook';
 import { playbookService } from '@/services/playbookService';
+
+import { useConfirmation } from '@/providers/ConfirmationProvider';
 import { useAppStore } from '@/stores/app.store';
+
 import { useChatStore } from '@/stores/chat.store';
 import { useBrowserStore } from '@/stores/browser.store';
 import { useSettingsStore } from '@/stores/settings.store';
@@ -50,7 +53,9 @@ const initialCapabilities: PlaybookCapabilities = {
 const initialDefaults: PlaybookExecutionDefaults = { mode: 'observe', require_approval: true, speed: 'normal' };
 
 function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
+    const { confirm } = useConfirmation();
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const [reactFlowInstance, setReactFlowInstance] = useState<any>(null);
@@ -406,7 +411,8 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
         toast.info(`Copied ${selectedNodes.length} nodes to clipboard`);
     }, [nodes, edges]);
 
-    const onPaste = useCallback((event: ClipboardEvent) => {
+    const onPaste = useCallback(async (event: ClipboardEvent) => {
+
         const target = event.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
             return;
@@ -452,9 +458,16 @@ function PlaybookEditorContent({ playbookId, onBack }: PlaybookEditorProps) {
             const isFullPlaybook = !!(data.graph || data.capabilities || (data.name && data.description));
 
             if (isFullPlaybook) {
-                if (nodes.length > 2 && !window.confirm('You are pasting a full playbook. Replace current contents?')) {
-                    return;
+                if (nodes.length > 2) {
+                    const confirmed = await confirm({
+                        title: 'Import Playbook',
+                        description: 'You are pasting a full playbook. Replace current contents?',
+                        confirmLabel: 'Replace',
+                        variant: 'destructive'
+                    });
+                    if (!confirmed) return;
                 }
+
 
                 setNodes(nodesToImport);
                 setEdges(edgesToImport || []);

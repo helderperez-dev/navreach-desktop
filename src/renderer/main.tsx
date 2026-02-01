@@ -16,8 +16,13 @@ console.warn = (...args) => {
   originalWarn(...args);
 };
 
+import { ConfirmationProvider } from './providers/ConfirmationProvider';
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <BrowserRouter>
-    <App />
+    <ConfirmationProvider>
+      <App />
+    </ConfirmationProvider>
   </BrowserRouter>
 );
+

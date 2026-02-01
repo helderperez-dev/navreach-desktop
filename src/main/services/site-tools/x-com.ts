@@ -1698,8 +1698,22 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 
                 // --- CHECKS ---
                 const myHandle = getMyHandle();
-                const isLiked = !!tweet.querySelector('[data-testid="unlike"]'); // Red heart
-                const isMyRetweet = tweet.querySelector('[data-testid="socialContext"]')?.innerText.toLowerCase().includes('you retweeted');
+                
+                // Robust Like Detection
+                const unlikeBtn = tweet.querySelector('[data-testid="unlike"]');
+                const likeBtn = tweet.querySelector('[data-testid="like"]');
+                const likeLabel = likeBtn ? (likeBtn.getAttribute('aria-label') || '') : '';
+                // X sometimes uses "Liked" or "Unlike" in aria-label specifically
+                const isLiked = !!unlikeBtn || likeLabel.includes('Liked') || likeLabel.includes('Unlike');
+
+                // Robust Retweet Detection
+                const unretweetBtn = tweet.querySelector('[data-testid="unretweet"]');
+                const rtBtn = tweet.querySelector('[data-testid="retweet"]');
+                const rtLabel = rtBtn ? (rtBtn.getAttribute('aria-label') || '') : '';
+                const isRetweeted = !!unretweetBtn || rtLabel.includes('Retweeted') || rtLabel.includes('Undo Retweet');
+
+                const contextText = tweet.querySelector('[data-testid="socialContext"]')?.innerText.toLowerCase() || '';
+                const isMyRetweet = contextText.includes('you retweeted') || isRetweeted;
 
                 if (skipSelf && (isMyRetweet || (myHandle && target_username === myHandle))) {
                      return { 
@@ -2145,8 +2159,18 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
               const findResult = await findTweetRobustly(${index}, ${JSON.stringify(expected_author)});
               if (!findResult.tweet) return { success: false, error: 'Tweet not found' };
               const tweet = findResult.tweet;
-              const liked = !!tweet.querySelector('[data-testid="unlike"]');
-              const retweeted = !!tweet.querySelector('[data-testid="unretweet"]');
+              // Robust Like Detection
+              const unlikeBtn = tweet.querySelector('[data-testid="unlike"]');
+              const likeBtn = tweet.querySelector('[data-testid="like"]');
+              const likeLabel = likeBtn ? (likeBtn.getAttribute('aria-label') || '') : '';
+              const liked = !!unlikeBtn || likeLabel.includes('Liked') || likeLabel.includes('Unlike');
+
+              // Robust Retweet Detection
+              const unretweetBtn = tweet.querySelector('[data-testid="unretweet"]');
+              const rtBtn = tweet.querySelector('[data-testid="retweet"]');
+              const rtLabel = rtBtn ? (rtBtn.getAttribute('aria-label') || '') : '';
+              const retweeted = !!unretweetBtn || rtLabel.includes('Retweeted') || rtLabel.includes('Undo Retweet');
+
               return { success: true, engaged: liked || retweeted, liked, retweeted };
             } catch (e) {
               return { success: false, error: e.toString() };

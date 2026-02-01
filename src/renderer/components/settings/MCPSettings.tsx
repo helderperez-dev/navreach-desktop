@@ -6,10 +6,14 @@ import { Input } from '@/components/ui/input';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/stores/settings.store';
+import { useConfirmation } from '@/providers/ConfirmationProvider';
 import type { MCPServer, MCPStdioConfig, MCPSSEConfig } from '@shared/types';
 
+
 export function MCPSettings() {
+  const { confirm } = useConfirmation();
   const { mcpServers, loadSettings, addMCPServer, updateMCPServer, deleteMCPServer, isLoading } = useSettingsStore();
+
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [jsonMode, setJsonMode] = useState(false);
@@ -320,8 +324,17 @@ export function MCPSettings() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this server?')) return;
+    const confirmed = await confirm({
+      title: 'Delete MCP Server',
+      description: 'Are you sure you want to delete this server? This action cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'destructive'
+    });
+
+    if (!confirmed) return;
+
     try {
+
       await deleteMCPServer(id);
       toast.success('Server deleted');
       await loadSettings();

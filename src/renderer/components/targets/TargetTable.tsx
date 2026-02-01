@@ -22,7 +22,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { formatDistanceToNow } from 'date-fns';
-import { ConfirmationDialog } from '@/components/ui/ConfirmationDialog';
+import { useConfirmation } from '@/providers/ConfirmationProvider';
+
 
 interface TargetTableProps {
     onEdit: (target: Target) => void;
@@ -58,12 +59,12 @@ export function TargetTable({
 }: TargetTableProps) {
     const { targets, isLoading, deleteTarget, viewMode, hasMore, isFetchingMore, loadMoreTargets, lists, selectedListId, saveTargetAssignments } = useTargetsStore();
     const { tasks } = useTasksStore();
+    const { confirm } = useConfirmation();
     const [sortField, setSortField] = useState<SortField>(viewMode === 'engaged' ? 'last_interaction_at' : 'created_at');
     const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
     const [analyzeTarget, setAnalyzeTarget] = useState<Target | null>(null);
     const [targetToSave, setTargetToSave] = useState<Target | null>(null);
-    const [targetToDelete, setTargetToDelete] = useState<Target | null>(null);
-    const [isBulkDeleteOpen, setIsBulkDeleteOpen] = useState(false);
+
     const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
     const [isAllSelectedGlobally, setIsAllSelectedGlobally] = useState(false);
     const [isBulkSaveOpen, setIsBulkSaveOpen] = useState(false);
@@ -496,7 +497,18 @@ export function TargetTable({
 
     const handleBulkDelete = async () => {
         const count = isAllSelectedGlobally ? totalCountInList : selectedTargets.size;
+
+        const confirmed = await confirm({
+            title: 'Delete Multiple Contacts',
+            description: `Are you sure you want to delete ${count} targets? This action cannot be undone.`,
+            confirmLabel: 'Delete All',
+            variant: 'destructive'
+        });
+
+        if (!confirmed) return;
+
         toast.info(`Deleting ${count} targets...`);
+
 
         try {
             if (isAllSelectedGlobally && selectedListId) {
@@ -957,11 +969,18 @@ export function TargetTable({
                                                 <div className="h-[1px] bg-border/40 my-1 mx-1" />
                                                 <DropdownMenuItem
                                                     className="gap-2 text-xs text-red-400 focus:text-red-400 focus:bg-destructive/10 cursor-pointer rounded-lg mx-1"
-                                                    onClick={(e) => {
+                                                    onClick={async (e) => {
                                                         e.stopPropagation();
-                                                        setTargetToDelete(target);
+                                                        const confirmed = await confirm({
+                                                            title: 'Delete Contact',
+                                                            description: `Are you sure you want to delete ${target.name}? This action cannot be undone.`,
+                                                            confirmLabel: 'Delete',
+                                                            variant: 'destructive'
+                                                        });
+                                                        if (confirmed) deleteTarget(target.id);
                                                     }}
                                                 >
+
                                                     <Trash2 className="h-3.5 w-3.5" />
                                                     Delete
                                                 </DropdownMenuItem>
@@ -1061,9 +1080,10 @@ export function TargetTable({
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setIsBulkDeleteOpen(true)}
+                                    onClick={handleBulkDelete}
                                     className="h-8 gap-2 px-3 rounded-full hover:bg-white/10 text-zinc-200 hover:text-white font-medium ml-1"
                                 >
+
                                     <Trash2 className="h-3.5 w-3.5" />
                                     Delete
                                 </Button>
@@ -1110,26 +1130,7 @@ export function TargetTable({
                     }
                 }}
             />
-
-            <ConfirmationDialog
-                open={!!targetToDelete}
-                onOpenChange={(open) => !open && setTargetToDelete(null)}
-                title="Delete Contact"
-                description={`Are you sure you want to delete ${targetToDelete?.name}? This action cannot be undone.`}
-                confirmLabel="Delete"
-                variant="destructive"
-                onConfirm={() => targetToDelete && deleteTarget(targetToDelete.id)}
-            />
-
-            <ConfirmationDialog
-                open={isBulkDeleteOpen}
-                onOpenChange={setIsBulkDeleteOpen}
-                title="Delete Multiple Contacts"
-                description={`Are you sure you want to delete ${isAllSelectedGlobally ? totalCountInList : selectedTargets.size} targets? This action cannot be undone.`}
-                confirmLabel="Delete All"
-                variant="destructive"
-                onConfirm={handleBulkDelete}
-            />
         </div >
+
     );
 }

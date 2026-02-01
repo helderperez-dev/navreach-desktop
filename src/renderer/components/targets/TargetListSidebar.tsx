@@ -16,6 +16,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { SegmentBuilderDialog } from './SegmentBuilderDialog';
+import { useConfirmation } from '@/providers/ConfirmationProvider';
+
 
 export function TargetListSidebar() {
     const {
@@ -25,7 +27,9 @@ export function TargetListSidebar() {
         fetchSegments,
         isLoading, viewMode, setViewMode
     } = useTargetsStore();
+    const { confirm } = useConfirmation();
     const { isPro } = useSubscriptionStore();
+
     const { targetSidebarCollapsed } = useAppStore();
     const [isAdding, setIsAdding] = useState(false);
     const [newListName, setNewListName] = useState('');
@@ -284,8 +288,17 @@ export function TargetListSidebar() {
                                                                 </DropdownMenuItem>
                                                                 <DropdownMenuItem
                                                                     className="gap-2 text-xs text-red-400 focus:text-red-400"
-                                                                    onClick={() => deleteList(list.id)}
+                                                                    onClick={async () => {
+                                                                        const confirmed = await confirm({
+                                                                            title: 'Delete List',
+                                                                            description: `Are you sure you want to delete "${list.name}"? This will not delete the contacts inside, but the list will be removed.`,
+                                                                            confirmLabel: 'Delete',
+                                                                            variant: 'destructive'
+                                                                        });
+                                                                        if (confirmed) deleteList(list.id);
+                                                                    }}
                                                                 >
+
                                                                     <Trash2 className="h-3 w-3" />
                                                                     Delete
                                                                 </DropdownMenuItem>
@@ -363,8 +376,17 @@ export function TargetListSidebar() {
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem
                                                                 className="gap-2 text-xs text-red-400 focus:text-red-400"
-                                                                onClick={() => useTargetsStore.getState().deleteSegment(segment.id)}
+                                                                onClick={async () => {
+                                                                    const confirmed = await confirm({
+                                                                        title: 'Delete Segment',
+                                                                        description: `Are you sure you want to delete "${segment.name}"? This action cannot be undone.`,
+                                                                        confirmLabel: 'Delete',
+                                                                        variant: 'destructive'
+                                                                    });
+                                                                    if (confirmed) useTargetsStore.getState().deleteSegment(segment.id);
+                                                                }}
                                                             >
+
                                                                 <Trash2 className="h-3 w-3" />
                                                                 Delete
                                                             </DropdownMenuItem>

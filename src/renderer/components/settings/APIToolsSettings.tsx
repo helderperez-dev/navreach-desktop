@@ -5,12 +5,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { useSettingsStore } from '@/stores/settings.store';
+import { useConfirmation } from '@/providers/ConfirmationProvider';
 import type { APITool } from '@shared/types';
+
 
 const httpMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 
 export function APIToolsSettings() {
+  const { confirm } = useConfirmation();
   const { apiTools, loadSettings, addAPITool, updateAPITool, deleteAPITool, isLoading } = useSettingsStore();
+
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<APITool>>({
@@ -211,8 +215,17 @@ export function APIToolsSettings() {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => deleteAPITool(tool.id)}
+                    onClick={async () => {
+                      const confirmed = await confirm({
+                        title: 'Delete API Tool',
+                        description: `Are you sure you want to delete "${tool.name}"? This action cannot be undone.`,
+                        confirmLabel: 'Delete',
+                        variant: 'destructive'
+                      });
+                      if (confirmed) deleteAPITool(tool.id);
+                    }}
                   >
+
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>

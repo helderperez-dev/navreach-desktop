@@ -9,9 +9,13 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { CircularLoader } from '@/components/ui/CircularLoader';
+import { useConfirmation } from '@/providers/ConfirmationProvider';
+
 
 export function BillingView() {
+    const { confirm } = useConfirmation();
     const {
+
         credits,
         subscription,
         fetchCredits,
@@ -101,9 +105,15 @@ export function BillingView() {
             return;
         }
 
-        if (!confirm('Are you sure you want to cancel your subscription? You will keep access to Pro features until the end of your current billing period.')) {
-            return;
-        }
+        const confirmed = await confirm({
+            title: 'Cancel Subscription',
+            description: 'Are you sure you want to cancel your subscription? You will keep access to Pro features until the end of your current billing period.',
+            confirmLabel: 'Cancel Subscription',
+            variant: 'destructive'
+        });
+
+        if (!confirmed) return;
+
 
         setLoading(true);
         try {

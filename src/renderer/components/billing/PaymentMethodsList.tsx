@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
+import { useConfirmation } from "@/providers/ConfirmationProvider";
+
 
 interface PaymentMethodsListProps {
     customerId?: string;
@@ -18,7 +20,9 @@ interface PaymentMethodsListProps {
 }
 
 export function PaymentMethodsList({ customerId, refreshKey }: PaymentMethodsListProps) {
+    const { confirm } = useConfirmation();
     const [methods, setMethods] = useState<any[]>([]);
+
     const [defaultMethodId, setDefaultMethodId] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -60,7 +64,14 @@ export function PaymentMethodsList({ customerId, refreshKey }: PaymentMethodsLis
     };
 
     const handleDelete = async (methodId: string) => {
-        if (!confirm("Are you sure you want to remove this payment method?")) return;
+        const confirmed = await confirm({
+            title: 'Remove Payment Method',
+            description: 'Are you sure you want to remove this payment method?',
+            confirmLabel: 'Remove',
+            variant: 'destructive'
+        });
+
+        if (!confirmed) return;
 
         try {
             await window.api.stripe.deletePaymentMethod(methodId);
@@ -70,6 +81,7 @@ export function PaymentMethodsList({ customerId, refreshKey }: PaymentMethodsLis
             toast.error("Failed to remove: " + error.message);
         }
     };
+
 
     const isLoadingData = loading;
 
