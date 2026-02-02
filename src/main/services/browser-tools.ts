@@ -1086,11 +1086,12 @@ const SCRIPT_HELPERS = `
           const isSpace = char === ' ';
           const isPunctuation = ['.', ',', '!', '?'].includes(char);
           
+          const isTurbo = (window.__REAVION_SPEED_MULTIPLIER__ || 1) < 0.3;
           let delay = 30 + Math.random() * 80; // Fast typer base
           if (isSpace) delay += 30; // Pause slightly on spaces
           if (isPunctuation) delay += 100; // Pause more on punctuation
           
-          if (Math.random() < 0.05) delay += 200; // Occasional "thinking" pause
+          if (!isTurbo && Math.random() < 0.05) delay += 200; // Occasional "thinking" pause
           
           await window.wait(delay * (window.__REAVION_SPEED_MULTIPLIER__ || 1));
           
@@ -1191,7 +1192,7 @@ export async function resetBrowser(): Promise<void> {
 
 async function ensureSpeedMultiplier(getSpeed: () => 'slow' | 'normal' | 'fast'): Promise<void> {
   const speed = getSpeed();
-  const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.2 : 1.0;
+  const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.15 : 1.0;
   try {
     const contents = await getContents();
     await contents.executeJavaScript(`window.__REAVION_SPEED_MULTIPLIER__ = ${multiplier};`);
@@ -1280,6 +1281,9 @@ export function createBrowserTools(options?: {
       const contents = await getContents();
       try {
         await ensureSpeedMultiplier(getSpeed);
+        const speed = getSpeed ? getSpeed() : 'normal';
+        const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.15 : 1.0;
+        const isTurbo = multiplier < 0.3;
 
         const coreLogic = `
           const result = await window.safeMoveToElement(${JSON.stringify(selector)}, ${index || 0});
@@ -1350,9 +1354,9 @@ export function createBrowserTools(options?: {
         // Native click sequence
         // contents.focus(); // REMOVED: Prevent stealing OS focus during background automation
         contents.sendInputEvent({ type: 'mouseMove', x: roundedX, y: roundedY });
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, isTurbo ? 10 : 50));
         contents.sendInputEvent({ type: 'mouseDown', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, isTurbo ? 10 : 50));
         contents.sendInputEvent({ type: 'mouseUp', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
 
         return JSON.stringify({ success: true, message: `Clicked ${selector} at ${roundedX},${roundedY}` });
@@ -1380,6 +1384,9 @@ export function createBrowserTools(options?: {
       const contents = await getContents();
       try {
         await ensureSpeedMultiplier(getSpeed);
+        const speed = getSpeed ? getSpeed() : 'normal';
+        const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.15 : 1.0;
+        const isTurbo = multiplier < 0.3;
 
         const coreLogic = `
           const result = await window.safeMoveToElement(${JSON.stringify(selector)}, ${index});
@@ -1403,25 +1410,25 @@ export function createBrowserTools(options?: {
 
         // 1. Move to element
         contents.sendInputEvent({ type: 'mouseMove', x, y });
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, isTurbo ? 20 : 100));
 
         // 2. Click to focus
         contents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, isTurbo ? 10 : 50));
         contents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
-        await new Promise(r => setTimeout(r, 200));
+        await new Promise(r => setTimeout(r, isTurbo ? 50 : 200));
 
         // 3. Clear existing text (Native Select All + Backspace)
         const isMac = process.platform === 'darwin';
         const modifier = isMac ? 'meta' : 'control';
         contents.sendInputEvent({ type: 'keyDown', keyCode: 'a', modifiers: [modifier] });
-        await new Promise(r => setTimeout(r, 30));
+        await new Promise(r => setTimeout(r, isTurbo ? 10 : 30));
         contents.sendInputEvent({ type: 'keyUp', keyCode: 'a', modifiers: [modifier] });
-        await new Promise(r => setTimeout(r, 30));
+        await new Promise(r => setTimeout(r, isTurbo ? 10 : 30));
         contents.sendInputEvent({ type: 'keyDown', keyCode: 'Backspace' });
-        await new Promise(r => setTimeout(r, 30));
+        await new Promise(r => setTimeout(r, isTurbo ? 10 : 30));
         contents.sendInputEvent({ type: 'keyUp', keyCode: 'Backspace' });
-        await new Promise(r => setTimeout(r, 100));
+        await new Promise(r => setTimeout(r, isTurbo ? 20 : 100));
 
         // 4. Human-like Typing
         try {
@@ -1486,6 +1493,7 @@ export function createBrowserTools(options?: {
     }),
     func: async ({ direction, amount, behavior = 'smooth' }) => {
       try {
+        await ensureSpeedMultiplier(getSpeed);
         const contents = await getContents();
         const scrollAmount = direction === 'down' ? amount : -amount;
 
@@ -1540,7 +1548,9 @@ export function createBrowserTools(options?: {
         `);
 
         // Wait significantly for the animation to be visible
-        const waitTime = behavior === 'smooth' ? 1200 : 400;
+        const speed = getSpeed ? getSpeed() : 'normal';
+        const isTurbo = speed === 'fast';
+        const waitTime = behavior === 'smooth' ? (isTurbo ? 400 : 1200) : (isTurbo ? 100 : 400);
         await new Promise(resolve => setTimeout(resolve, waitTime));
 
         return JSON.stringify(result);
@@ -1825,8 +1835,9 @@ export function createBrowserTools(options?: {
       try {
         const contents = await getContents();
         const logic = `
-          window.movePointer(${x}, ${y});
-          await window.wait(500); 
+          await window.movePointer(${x}, ${y});
+          const speedFactor = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
+          await window.wait(Math.max(50, 500 * speedFactor)); 
           window.showVisualClick(${x}, ${y});
           return { success: true };
         `;
@@ -1838,10 +1849,13 @@ export function createBrowserTools(options?: {
         const roundedX = Math.round(x);
         const roundedY = Math.round(y);
 
+        const speed = getSpeed ? getSpeed() : 'normal';
+        const isTurbo = speed === 'fast';
+
         contents.sendInputEvent({ type: 'mouseMove', x: roundedX, y: roundedY });
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, isTurbo ? 10 : 50));
         contents.sendInputEvent({ type: 'mouseDown', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
-        await new Promise(r => setTimeout(r, 50));
+        await new Promise(r => setTimeout(r, isTurbo ? 10 : 50));
         contents.sendInputEvent({ type: 'mouseUp', x: roundedX, y: roundedY, button: 'left', clickCount: 1 });
         return JSON.stringify({ success: true, message: `Clicked at ${roundedX},${roundedY}` });
       } catch (error) {
@@ -1994,8 +2008,9 @@ export function createBrowserTools(options?: {
           const selectorStr = ${JSON.stringify(selector)};
           const element = window.findAnyElement(selectorStr, ${index});
           if (!element) return { success: false, error: 'Element not found: ' + selectorStr };
-          element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-          await window.wait(200);
+          const isTurbo = (window.__REAVION_SPEED_MULTIPLIER__ || 1.0) < 0.3;
+          element.scrollIntoView({ behavior: isTurbo ? 'auto' : 'smooth', block: 'center', inline: 'center' });
+          await window.wait(isTurbo ? 50 : 200);
           const rect = element.getBoundingClientRect();
           const x = Math.round(rect.left + rect.width / 2);
           const y = Math.round(rect.top + rect.height / 2);
@@ -2040,9 +2055,11 @@ export function createBrowserTools(options?: {
           const logic = `
             const selectorStr = ${JSON.stringify(selector)};
             const startTime = Date.now();
+            const speedFactor = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
+            const checkInterval = Math.max(50, 300 * speedFactor);
             while (Date.now() - startTime < ${timeout}) {
               if (window.findAnyElement(selectorStr)) return { success: true };
-              await window.wait(300);
+              await window.wait(checkInterval);
             }
             return { success: false, error: 'Timeout waiting for ' + selectorStr };
           `;

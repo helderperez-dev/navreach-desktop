@@ -150,7 +150,7 @@ export function PlaybookToolbar({
                                                     </SelectLabel>
                                                     {provider.models.map(model => (
                                                         <SelectItem key={model.id} value={model.id} className="text-xs">
-                                                            {provider.id === 'system-default' ? 'Reavion Flash' : model.name}
+                                                            {provider.id === 'system-default' ? 'Reavion Nexus' : model.name}
                                                         </SelectItem>
                                                     ))}
                                                 </SelectGroup>

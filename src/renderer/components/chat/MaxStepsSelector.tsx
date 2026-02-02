@@ -1,6 +1,6 @@
 import { useChatStore } from '@/stores/chat.store';
 import { useSubscriptionStore } from '@/stores/subscription.store';
-import { Clock, Plus, Minus, ChevronLeft, ChevronRight, Infinity, List, Lock } from 'lucide-react';
+import { Clock, Plus, Minus, ChevronLeft, ChevronRight, Infinity, List, Lock, ChevronUp } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -48,8 +48,8 @@ export function MaxStepsSelector() {
   };
 
   const currentLabel = isTimerMode
-    ? `Timer (${agentRunLimit}m)`
-    : (infiniteMode ? '∞ Infinite' : 'Normal');
+    ? `${agentRunLimit}m`
+    : (infiniteMode ? 'Infinite' : 'Normal');
 
   return (
     <Popover open={isOpen} onOpenChange={(open) => {
@@ -61,12 +61,12 @@ export function MaxStepsSelector() {
           variant="ghost"
           size="sm"
           className={cn(
-            "h-7 px-2 text-[11px] shadow-none hover:bg-white/5 transition-all text-muted-foreground hover:text-foreground gap-1.5",
-            isTimerMode && "bg-secondary text-foreground border border-border/50"
+            "h-7 px-2 text-[11px] shadow-none hover:bg-white/5 transition-all text-muted-foreground/60 hover:text-foreground gap-1.5 rounded-md",
+            isTimerMode && "bg-white/5"
           )}
         >
-          {isTimerMode ? <Clock className="h-3 w-3" /> : (infiniteMode ? <Infinity className="h-3 w-3" /> : <List className="h-3 w-3" />)}
-          Max steps · {currentLabel}
+          <ChevronUp className="h-3 w-3 opacity-50" />
+          {currentLabel}
         </Button>
       </PopoverTrigger>
 
@@ -88,8 +88,7 @@ export function MaxStepsSelector() {
               )}
             >
               <div className="flex items-center gap-2">
-                <List className="h-3.5 w-3.5" />
-                <span>Normal (Auto)</span>
+                <span>Normal</span>
               </div>
               {!infiniteMode && !agentRunLimit && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
             </button>
@@ -102,7 +101,6 @@ export function MaxStepsSelector() {
               )}
             >
               <div className="flex items-center gap-2">
-                <Infinity className="h-3.5 w-3.5" />
                 <span>Infinite Mode</span>
                 {!pro && <Lock className="h-2.5 w-2.5 opacity-40 ml-1" />}
               </div>
@@ -129,7 +127,6 @@ export function MaxStepsSelector() {
               )}
             >
               <div className="flex items-center gap-2">
-                <Clock className="h-3.5 w-3.5" />
                 <span>Fixed Timer</span>
                 {!pro && <Lock className="h-2.5 w-2.5 opacity-40 ml-1" />}
               </div>

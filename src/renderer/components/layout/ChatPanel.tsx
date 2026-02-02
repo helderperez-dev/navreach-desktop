@@ -13,6 +13,7 @@ import { useDebugStore } from '@/stores/debug.store';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { ModelSelector } from '@/components/chat/ModelSelector';
 import { MaxStepsSelector } from '@/components/chat/MaxStepsSelector';
+import { SpeedSelector } from '@/components/chat/SpeedSelector';
 import { TimerDisplay } from '@/components/chat/TimerDisplay';
 import { CircularLoader } from '@/components/ui/CircularLoader';
 import { cn } from '@/lib/utils';
@@ -147,6 +148,8 @@ export function ChatPanel() {
     setMaxIterations,
     infiniteMode,
     setInfiniteMode,
+    executionSpeed,
+    setSpeed,
     setAgentStartTime,
     pendingPrompt,
     setPendingPrompt,
@@ -707,7 +710,13 @@ export function ChatPanel() {
           authMessage
         ] as any[];
 
-      let speed: 'slow' | 'normal' | 'fast' = 'normal';
+      let speed: 'slow' | 'normal' | 'fast' = executionSpeed;
+
+      // Auto-boost for Reavion Nexus if not explicitly on 'slow'
+      if (model.providerId === 'system-default' && speed === 'normal') {
+        speed = 'fast';
+      }
+
       if (playbookId) {
         const pb = latestPlaybooks.find(p => p.id === playbookId);
         if (pb?.execution_defaults?.speed) {
@@ -1125,18 +1134,11 @@ export function ChatPanel() {
               placeholder="Message Reavion..."
               className="w-full min-h-[44px] max-h-[200px] px-4 pt-3 pb-2 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0 scrollbar-thin scrollbar-thumb-muted-foreground/20"
             />
-            <div className="px-3 py-2.5 flex items-end justify-between gap-2 border-t border-border/5">
-              <div className="flex flex-col gap-1.5 min-w-0 flex-1 overflow-hidden">
-                <div className="flex items-center gap-3 flex-wrap text-[10px] text-muted-foreground/60">
-                  <ModelSelector />
-                  <MaxStepsSelector />
-                  {!isPro && (
-                    <div className="flex items-center gap-1 text-[10px] text-primary/60 font-medium">
-                      <Zap className="h-2.5 w-2.5 fill-current" />
-                      <span>{Math.max(0, limits.ai_actions_limit - dailyUsage.aiActions)} actions left today</span>
-                    </div>
-                  )}
-                </div>
+            <div className="px-3 py-1.5 flex items-center justify-between gap-3 border-t border-border/5">
+              <div className="flex items-center gap-0.5 min-w-0">
+                <ModelSelector />
+                <MaxStepsSelector />
+                <SpeedSelector />
               </div>
               <div className="flex items-center">
                 {isStreaming ? (

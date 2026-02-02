@@ -33,6 +33,8 @@ interface ChatState {
   setAgentRunLimit: (min: number | null) => void;
   setCurrentSessionTime: (sec: number) => void;
   setPendingPrompt: (prompt: string | { content: string, isIsolated?: boolean, playbookId?: string } | null) => void;
+  executionSpeed: 'slow' | 'normal' | 'fast';
+  setSpeed: (speed: 'slow' | 'normal' | 'fast') => void;
   assignWorkspaces: (workspaceId: string) => void;
   reset: () => void;
 }
@@ -51,6 +53,7 @@ export const useChatStore = create<ChatState>()(
       agentRunLimit: null,
       currentSessionTime: 0,
       pendingPrompt: null,
+      executionSpeed: 'normal',
 
       createConversation: () => {
         const id = uuidv4();
@@ -304,6 +307,7 @@ export const useChatStore = create<ChatState>()(
       setAgentRunLimit: (min) => set({ agentRunLimit: min }),
       setCurrentSessionTime: (sec) => set({ currentSessionTime: sec }),
       setPendingPrompt: (prompt) => set({ pendingPrompt: prompt }),
+      setSpeed: (speed) => set({ executionSpeed: speed }),
       assignWorkspaces: (workspaceId) => {
         set((state) => ({
           conversations: state.conversations.map(conv =>
@@ -333,6 +337,7 @@ export const useChatStore = create<ChatState>()(
         maxIterations: state.maxIterations,
         infiniteMode: state.infiniteMode,
         agentRunLimit: state.agentRunLimit,
+        executionSpeed: state.executionSpeed,
       }),
     }
   )

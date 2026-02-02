@@ -9,6 +9,8 @@ import {
   SelectLabel,
   SelectTrigger,
 } from '@/components/ui/select';
+import { ChevronUp } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 export function ModelSelector() {
   const { selectedModel, setSelectedModel } = useChatStore();
@@ -50,8 +52,8 @@ export function ModelSelector() {
   };
 
   const getDisplayName = () => {
-    if (!selectedModel) return 'Select model';
-    return selectedModel.providerId === 'system-default' ? 'Reavion Flash' : selectedModel.name;
+    if (!selectedModel) return 'Select';
+    return selectedModel.providerId === 'system-default' ? 'Reavion Nexus' : selectedModel.name;
   };
 
   if (enabledProviders.length === 0) {
@@ -62,7 +64,10 @@ export function ModelSelector() {
 
   return (
     <Select value={selectedModel?.id || ''} onValueChange={handleModelChange}>
-      <SelectTrigger className="h-auto px-0 py-0 text-xs border-0 bg-transparent shadow-none hover:text-foreground text-muted-foreground gap-0 w-auto focus:ring-0 [&>svg]:hidden">
+      <SelectTrigger className={cn(
+        "h-7 px-2 text-[11px] border-0 bg-transparent shadow-none hover:bg-white/5 transition-all text-muted-foreground/60 hover:text-foreground gap-1.5 focus:ring-0 w-auto rounded-md [&>svg:last-child]:hidden [&>span:last-child]:hidden"
+      )}>
+        <ChevronUp className="h-3 w-3 opacity-50" />
         <span className="truncate">{getDisplayName()}</span>
       </SelectTrigger>
       <SelectContent align="start">
@@ -73,7 +78,7 @@ export function ModelSelector() {
             </SelectLabel>
             {provider.models.map((model) => (
               <SelectItem key={model.id} value={model.id} className="text-xs">
-                {provider.id === 'system-default' ? 'Reavion Flash' : model.name}
+                {provider.id === 'system-default' ? 'Reavion Nexus' : model.name}
               </SelectItem>
             ))}
           </SelectGroup>

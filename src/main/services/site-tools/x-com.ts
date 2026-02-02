@@ -268,7 +268,10 @@ function wait(ms) {
   const hesitation = Math.random() < 0.1 ? (200 + Math.random() * 600) : 0;
   
   let adjustedMs = (ms * multiplier * randomFactor) + hesitation;
-  if (isFast) adjustedMs = ms * multiplier; // Strict speed if fast mode is forced
+  if (isFast) {
+    // Turbo mode: No randomness, no hesitation, and capped at 500ms max for long waits
+    adjustedMs = Math.min(ms * multiplier, 500); 
+  }
 
   return new Promise((resolve, reject) => {
     const start = Date.now();
@@ -292,9 +295,11 @@ async function safeClick(el, label, options = {}) {
   log('Clicking ' + label, { tagName: clickable.tagName });
 
   const rectBefore = clickable.getBoundingClientRect();
+  const isTurbo = (window.__REAVION_SPEED_MULTIPLIER__ || 1.0) < 0.3;
+  
   if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
     clickable.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' }); 
-    await wait(options.scrollWait || 400); 
+    await wait(options.scrollWait || (isTurbo ? 200 : 400)); 
   }
 
   const rect = clickable.getBoundingClientRect();
@@ -303,7 +308,7 @@ async function safeClick(el, label, options = {}) {
   
   if (typeof window.movePointer === 'function') await window.movePointer(x, y);
 
-  await wait(options.focusWait || 100); // Small pause after arriving before clicking (human hesitation/verification)
+  await wait(options.focusWait || (isTurbo ? 50 : 100)); // Small pause after arriving before clicking (human hesitation/verification)
 
   if (typeof window.showVisualClick === 'function') window.showVisualClick(x, y);
 
@@ -340,7 +345,7 @@ async function safeClick(el, label, options = {}) {
     throw e;
   }
 
-  await wait(options.afterWait || 800); 
+  await wait(options.afterWait || (isTurbo ? 300 : 800)); 
 }
 
 function getVerificationStatus(tweetNode) {

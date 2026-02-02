@@ -151,7 +151,7 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
           models: [
             {
               id: defaultModelId,
-              name: 'Reavion Flash',
+              name: 'Reavion Nexus',
               providerId: 'system-default',
               contextWindow: 128000,
               enabled: true

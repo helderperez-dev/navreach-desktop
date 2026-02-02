@@ -8,9 +8,11 @@ import { useAuthStore } from '@/stores/auth.store';
 import { supabase } from '@/lib/supabase';
 import { ModelSelector } from '@/components/chat/ModelSelector';
 import { MaxStepsSelector } from '@/components/chat/MaxStepsSelector';
+import { SpeedSelector } from '@/components/chat/SpeedSelector';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MentionInput } from '@/components/ui/mention-input';
+import { cn } from '@/lib/utils';
 import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
 import { useWorkspaceStore } from '@/stores/workspace.store';
@@ -80,6 +82,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     maxIterations,
     agentRunLimit,
     infiniteMode,
+    executionSpeed,
   } = useChatStore();
   const { modelProviders, mcpServers, apiTools } = useSettingsStore();
   const { lists, fetchLists, segments, fetchSegments } = useTargetsStore();
@@ -324,6 +327,12 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
       refreshToken = data.session?.refresh_token;
     }
 
+    let speed: 'slow' | 'normal' | 'fast' = executionSpeed;
+    // Auto-boost for Reavion Nexus if not explicitly on 'slow'
+    if (model.providerId === 'system-default' && speed === 'normal') {
+      speed = 'fast';
+    }
+
     try {
       const result = await window.api.ai.chat({
         messages: [{ role: 'user', content: userMessage, id: crypto.randomUUID(), timestamp: Date.now() }],
@@ -339,6 +348,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
         playbooks: playbooks,
         targetLists: lists,
         segments: segments,
+        speed: speed,
       });
 
       if (!result.success && result.error) {
@@ -483,7 +493,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
           transition={{ delay: 0.2, duration: 0.4 }}
         >
           <form onSubmit={handleSubmit}>
-            <div className="bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border transition-all">
+            <div className="relative group/input bg-secondary/30 rounded-2xl border border-border/40 focus-within:border-border transition-all overflow-hidden backdrop-blur-sm">
               <MentionInput
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -491,17 +501,23 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
                 placeholder="How can Reavion help you today?"
                 variableGroups={getGlobalVariables()}
                 autoFocus
-                className="w-full min-h-[50px] max-h-[150px] px-4 pt-4 pb-3 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0"
+                className="w-full min-h-[44px] max-h-[150px] px-4 pt-3 pb-2 text-sm bg-transparent border-0 resize-none focus:outline-none placeholder:text-muted-foreground/60 shadow-none focus-visible:ring-0"
               />
-              <div className="px-3 py-2 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 flex-wrap text-[11px] text-muted-foreground">
+              <div className="px-3 py-1.5 flex items-center justify-between gap-3 border-t border-border/5">
+                <div className="flex items-center gap-0.5">
                   <ModelSelector />
                   <MaxStepsSelector />
+                  <SpeedSelector />
                 </div>
                 <button
                   type="submit"
                   disabled={!input.trim()}
-                  className="h-8 w-8 rounded-full bg-foreground text-background flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed hover:opacity-90 transition-opacity"
+                  className={cn(
+                    "w-8 h-8 rounded-full flex items-center justify-center transition-all",
+                    input.trim()
+                      ? "bg-white text-black hover:bg-white/90"
+                      : "bg-white/5 text-white/20 cursor-not-allowed"
+                  )}
                 >
                   <ArrowUp className="h-4 w-4" />
                 </button>

@@ -818,7 +818,7 @@ export async function resolveAIConfig(
             name: 'Reavion',
             type: sysProviderType as any,
             apiKey: 'managed-by-system',
-            models: [{ id: sysModelId, name: 'Reavion Flash', providerId: 'system-default', contextWindow: 128000, enabled: true }],
+            models: [{ id: sysModelId, name: 'Reavion Nexus', providerId: 'system-default', contextWindow: 128000, enabled: true }],
             enabled: true
         }] : [];
 
@@ -917,7 +917,7 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
 
     const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
     const getToolDelayMs = (toolName: string, speed: 'slow' | 'normal' | 'fast' = 'normal') => {
-        const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.25 : 1.0;
+        const multiplier = speed === 'slow' ? 1.5 : speed === 'fast' ? 0.15 : 1.0;
         let baseDelay = 100;
 
         if (toolName.startsWith('x_')) baseDelay = 400;
