@@ -243,20 +243,22 @@ export interface ChatModelOptions {
     safeMode?: boolean;
     disableReasoning?: boolean; // Specifically disables reasoning but keeps tools if possible
     systemPromptLength?: number;
+    temperature?: number; // Override default temperature
 }
 
 export async function createChatModel(provider: ModelProvider, model: ModelConfig, options: ChatModelOptions | boolean = true) {
     // Backwards compatibility for the third argument being 'streaming' boolean
     const streaming = typeof options === 'boolean' ? options : options.streaming ?? true;
-    const safeMode = typeof options === 'object' ? options.safeMode : (arguments.length > 3 ? arguments[3] : false);
+    const safeMode = typeof options === 'object' ? options.safeMode : false;
     const disableReasoning = typeof options === 'object' ? options.disableReasoning : false;
+    const tempOverride = typeof options === 'object' ? options.temperature : undefined;
 
     const baseUrl = provider.baseUrl?.trim() || undefined;
 
     const baseConfig: any = {
         modelName: model.id,
         model: model.id,
-        temperature: 0.1,
+        temperature: tempOverride !== undefined ? tempOverride : 0.1,
         maxTokens: 4096,
         streaming,
     };
@@ -854,12 +856,23 @@ export async function resolveAIConfig(
         );
 
         if (finalModelId && !modelExists && sysModelId) {
-            console.log(`[AI Service] Model ${finalModelId} not found in effective providers. Falling back to system default: ${sysModelId}`);
-            finalModelId = sysModelId;
-            if (sysProviderType) {
-                effectiveProvider.type = sysProviderType as any;
-                effectiveProvider.id = 'system-default';
-                effectiveProvider.apiKey = 'managed-by-system';
+            // Optimization: If we are already using the system default model, don't spam logs about fallback
+            if (finalModelId !== sysModelId) {
+                console.log(`[AI Service] Model ${finalModelId} not found in effective providers. Falling back to system default: ${sysModelId}`);
+                finalModelId = sysModelId;
+                if (sysProviderType) {
+                    effectiveProvider.type = sysProviderType as any;
+                    effectiveProvider.id = 'system-default';
+                    effectiveProvider.apiKey = 'managed-by-system';
+                }
+            } else if (finalProviderType === 'openrouter') {
+                // For OpenRouter, we might not have all models synced in DB, so if it matches system default, just assume it's fine
+                // or if we trust the ID. But here since it equals sysModelId, we just ensure provider is set correctly if needed.
+                if (sysProviderType) {
+                    effectiveProvider.type = sysProviderType as any;
+                    effectiveProvider.id = 'system-default';
+                    effectiveProvider.apiKey = 'managed-by-system';
+                }
             }
         }
 
@@ -1019,48 +1032,31 @@ export function setupAIHandlers(ipcMain: IpcMain): void {
 
             const isDiscovery = !initialUserPrompt || initialUserPrompt.trim().length < 2;
             // Using Safe Mode (no reasoning/tools-prep) for suggestions to ensure maximum compatibility
-            const chatModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
+            // Explicitly set higher temperature for variety
+            const chatModel = await createChatModel(effectiveProvider, effectiveModel, {
+                streaming: false,
+                safeMode: true,
+                temperature: 0.8 // High entropy for variety
+            });
 
-            // Extract context for better suggestions
-            const playbookContext = request.playbooks?.map(p => `- ${p.name}: ${p.description}`).join('\n') || 'No active playbooks.';
-            const listContext = request.targetLists?.map(l => `- ${l.name} (${l.target_count} targets)`).join('\n') || 'No target lists yet.';
-
-            const systemPrompt = `You are a high-performance growth strategist and AI orchestrator for Reavion, an autonomous agent that dominates social media and lead generation.
-Your goal is to generate 3 BRILLIANT, high-impact suggestions that will WOW the user by showing what Reavion can truly do.
-
-COMMANDS & CAPABILITIES:
-- X.com (Twitter): Search, advanced search, scanning posts, multi-step engagement, liking, replying, following.
-- Browser: Navigating, clicking, typing, scrolling, extracting data, taking snapshots.
-- Database: Saving leads to Target Lists, running Playbooks.
-
-AVAILABLE ASSETS:
-Playbooks:
-${playbookContext}
-
-Target Lists:
-${listContext}
+            const systemPrompt = `Role: GTM/Outreach Automator for Reavion.
+Goal: 3 FAST, UNIQUE, ACTIONABLE suggestions.
+Capabilities: Social Outreach (X/LinkdIn), Lead Gen/Scraping, Playbooks.
 
 INSTRUCTIONS:
 ${isDiscovery
-                    ? "The user is at the start. Suggest 3 'Power Moves'. One for aggressive social growth on X, one for precise lead generation from any website, and one for competitive analysis or multi-platform research."
-                    : `The user is interested in: "${initialUserPrompt}". Create 3 context-aware suggestions. One should be a direct continuation of their thought, one should be a more advanced version of it, and one should be a related 'cross-platform' synergy (e.g., if they mention X, suggest saving leads from X to a database).`}
+                    ? "Suggest 3 diverse GTM moves (mix industry/goal):\n1. Social Engagement\n2. Lead Capture\n3. Market Research"
+                    : `Context: "${initialUserPrompt}". Suggestions:\n1. Direct execution\n2. Multi-step flow\n3. Creative value-add`}
 
-Return ONLY a raw JSON array of objects: { "label": string (max 18 chars), "prompt": string (one clear sentence) }.
+Output: JSON Array ONLY: { "label": string (max 15 chars), "prompt": string (1 sentence) }.
 
 Example:
-[
-  { "label": "X Growth Hack", "prompt": "Find top SaaS influencers on X, scan their recent posts, and engage with high-value replies using my 'Growth' playbook." },
-  { "label": "Social Intel", "prompt": "Search X for tech founders in New York, scan their profiles, and save them to my 'Early Adopters' list." }
-]
+[{"label":"Startup Outreach","prompt":"Find Series A founders on X, engage & save to list."},{"label":"Market Pulse","prompt":"Analyze 'GenAI' sentiment on LinkedIn."},{"label":"Hiring Scout","prompt":"Find React devs on X & scan bios."}]
 
-CRITICAL:
-- No emojis.
-- No markdown code blocks.
-- No conversational filler.
-- Focus on autonomy and multi-step actions.`;
+Rules: Short labels. No emojis. Unique ideas. Max 3.`;
 
             const langchainMessages = [
-                new HumanMessage(`${systemPrompt}\n\nUser Input: ${initialUserPrompt || "Show me some power moves."}`)
+                new HumanMessage(`${systemPrompt}\n\nUser Input: ${initialUserPrompt || "Surprise me with unique ideas."} (Random Seed: ${Date.now()})`)
             ];
 
             // Add timeout - increased to 60s
@@ -1802,6 +1798,20 @@ You are in FAST mode.
                         }
 
                         // Check if it's a rate limit or API error - retry after delay
+
+                        // Check if it's a timeout error - retry
+                        if (errorMessage.includes('timed out')) {
+                            console.log('Model timed out, waiting 5 seconds before retry...');
+                            if (window && !window.isDestroyed()) {
+                                window.webContents.send('ai:stream-chunk', {
+                                    content: `⚠️ Model timed out. Retrying...\n`,
+                                    done: false,
+                                    isNarration: true,
+                                });
+                            }
+                            await new Promise(resolve => setTimeout(resolve, 5000));
+                            continue; // Retry the iteration
+                        }
 
                         // Check if it's a rate limit or API error - retry after delay
                         if (errorMessage.includes('rate') || errorMessage.includes('limit') || errorMessage.includes('429')) {

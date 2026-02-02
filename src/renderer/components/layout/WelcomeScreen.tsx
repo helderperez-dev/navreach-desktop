@@ -15,7 +15,6 @@ import { useTargetsStore } from '@/stores/targets.store';
 import { playbookService } from '@/services/playbookService';
 import { useWorkspaceStore } from '@/stores/workspace.store';
 import type { Conversation, KnowledgeBase, KnowledgeContent } from '@shared/types';
-import { CircularLoader } from '@/components/ui/CircularLoader';
 import { knowledgeService } from '@/services/knowledgeService';
 import reavionLogo from '@assets/reavion-white-welcome.png';
 import reavionLogoBlack from '@assets/reavion-black-welcome.png';
@@ -49,11 +48,7 @@ interface WelcomeScreenProps {
   onSubmit: () => void;
 }
 
-const STATIC_STARTERS: Suggestion[] = [
-  { label: 'X Growth', prompt: 'Search X for people talking about "SaaS marketing", scan their recent posts, and engage with helpful replies.' },
-  { label: 'Lead Sourcing', prompt: 'Search for founders in the AI niche, scrape their profile details from any website and save them to a new list.' },
-  { label: 'Competitor Intel', prompt: 'Go to a competitor website, extract their pricing and main features, and summarize how I can beat them.' }
-];
+const STATIC_STARTERS: Suggestion[] = [];
 
 export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
   const [input, setInput] = useState('');
@@ -200,38 +195,55 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     return groups;
   }, [playbooks, lists, segments, mcpServers, apiTools, knowledgeBases, knowledgeItems]);
 
-  const debouncedInput = useDebounce(input, 1000);
+  const debouncedInput = useDebounce(input, 400);
   const [suggestions, setSuggestions] = useState<Suggestion[]>(STATIC_STARTERS);
   const [isSuggesting, setIsSuggesting] = useState(false);
+
+  /* 
+    Optimization: Track last fetched input to avoid redundant calls 
+    when dependencies like modelProviders update but input hasn't changed.
+  */
+  const lastFetchedInput = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const fetchSuggestions = async () => {
       if (!active) return;
+
+      // If input is empty, clear suggestions and don't fetch "fallbacks"
+      if (!debouncedInput || debouncedInput.trim().length === 0) {
+        setSuggestions([]);
+        lastFetchedInput.current = debouncedInput;
+        if (active) setIsSuggesting(false);
+        return;
+      }
+
+      // Prevent redundant fetches for the same input
+      if (lastFetchedInput.current === debouncedInput) {
+        return;
+      }
+
       setIsSuggesting(true);
       try {
-        // Resolve current model
-        const enabledProviders = modelProviders.filter((p) => p.enabled);
-        let provider = selectedModel
-          ? modelProviders.find((p) => p.id === selectedModel.providerId)
-          : enabledProviders[0];
+        // ALWAYS use the Reavion (system-default) model for suggestions
+        // This ensures fast, free, and consistent results regardless of user's chat selection.
+        const provider = {
+          id: 'system-default',
+          type: 'system-default',
+          name: 'Reavion System',
+          enabled: true,
+          models: []
+        };
 
-        let model = selectedModel;
-        if (!provider && enabledProviders.length > 0) {
-          provider = enabledProviders[0];
-          model = provider.models[0] ? { ...provider.models[0], providerId: provider.id } : null;
-        }
+        const model = {
+          id: 'system-default',
+          name: 'Reavion Default',
+          providerId: 'system-default',
+          enabled: true
+        };
 
-        if (!provider || !model) {
-          // No model config, keep defaults or clear
-          return;
-        }
-
-        // Optimization: Don't fetch if input is just whitespace (but allowed if empty for discovery)
-        if (debouncedInput.length > 0 && !debouncedInput.trim()) {
-          if (active) setIsSuggesting(false);
-          return;
-        }
+        // Mark this input as fetched/fetching to prevent race/dupes
+        lastFetchedInput.current = debouncedInput;
 
         const result = await (window.api.ai as any).suggest({
           messages: [],
@@ -252,7 +264,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
 
     fetchSuggestions();
     return () => { active = false; };
-  }, [debouncedInput, modelProviders, selectedModel]);
+  }, [debouncedInput]);
   // ... (lines in between) ...
 
 
@@ -286,6 +298,7 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
     }
 
     const conversationId = createConversation();
+    setActiveConversation(conversationId);
     const userMessage = input.trim();
 
     addMessage(conversationId, {
@@ -497,31 +510,30 @@ export function WelcomeScreen({ onSubmit }: WelcomeScreenProps) {
           </form>
         </motion.div>
 
-        {suggestions.length > 0 && (
-          <motion.div
-            className="mt-6 w-full"
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3, duration: 0.4 }}
-          >
-            <div className={`relative flex flex-wrap gap-2 justify-center transition-opacity duration-500 ${isSuggesting ? 'opacity-50' : 'opacity-100'}`}>
-              {isSuggesting && (
-                <div className="absolute inset-0 flex items-center justify-center z-10">
-                  <CircularLoader className="h-4 w-4 text-primary" />
-                </div>
-              )}
-              {suggestions.map((suggestion, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => handleSuggestionClick(suggestion.prompt)}
-                  className="px-3 py-1.5 rounded-full text-xs text-muted-foreground bg-secondary/30 border border-border/30 hover:bg-secondary/50 hover:border-border/50 hover:text-foreground transition-colors"
-                >
-                  {suggestion.label}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        )}
+        <AnimatePresence mode="wait">
+          {suggestions.length > 0 && (
+            <motion.div
+              key={suggestions.map(s => s.label).join(',')}
+              className="mt-6 w-full flex justify-center"
+              initial={{ opacity: 0, y: 5 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -5 }}
+              transition={{ duration: 0.4, ease: "easeOut" }}
+            >
+              <div className="flex flex-wrap gap-2 justify-center">
+                {suggestions.map((suggestion, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleSuggestionClick(suggestion.prompt)}
+                    className="px-3 py-1.5 rounded-full text-xs text-muted-foreground bg-secondary/30 border border-border/30 hover:bg-secondary/50 hover:border-border/50 hover:text-foreground transition-colors"
+                  >
+                    {suggestion.label}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </motion.div>
   );
