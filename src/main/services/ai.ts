@@ -1411,7 +1411,7 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
     1. Scan items.
     2. **IMMEDIATELY ENGAGE**: If scan results contain items you haven't engaged with, engage with them in the same turn or next turn. **DO NOT** just scroll/scan over and over without acting.
     3. **ROTATE**: If the current page/tab/search has no more new content, switch to a DIFFERENT search or TAB (e.g., move from "For You" to "Following", or try a new niche keyword).
-- **Summaries**: Keep them extremely brief (1 line) and do not stop.`
+- **Summaries**: Keep them extremely brief (1 line). **NEVER** output [COMPLETE] or say "I have finished". Always state **STATUS: [IN PROGRESS]** to maintain the loop.`
                     : '';
 
             // --- CONTEXT INJECTION START ---
@@ -2070,18 +2070,27 @@ You are in FAST mode.
                         const responseLower = responseContent.toLowerCase();
                         const hasFinishedSignal = responseLower.includes("[complete]") || responseLower.includes("i have finished") || responseLower.includes("mission accomplished");
 
-                        if (infiniteMode && baseUserGoal && iteration < hardStopIterations && !hasFinishedSignal) {
-                            langchainMessages.push(
-                                new HumanMessage(
-                                    `Remain in autonomous mode. Goal: "${baseUserGoal}". Immediately plan and execute the next set of actions. 
-- **IF DATA COLLECTION**: If you reached the end of the current search results or found no new leads, **YOU MUST ROTATE**. Invent a new, similar search query (e.g. change a keyword or location) and start again. 
-- **IF ENGAGEMENT**: If the current feed has no new items, switch tabs or keywords.
-- **NEVER WAIT**: Do not wait for user input unless you are fundamentally blocked.
-Summarize briefly (1 line) and continue.`
-                                )
-                            );
-                            iteration = 0;
-                            continue;
+                        // In Infinite Mode, we ignore the agent's desire to "complete" the task and force a rotation/continuation
+                        // unless specifically blocked.
+                        if (infiniteMode && baseUserGoal && iteration < hardStopIterations) {
+                            const isBlocked = responseLower.includes("[blocked]");
+                            if (!isBlocked) {
+                                langchainMessages.push(
+                                    new HumanMessage(
+                                        `Remain in autonomous mode. Goal: "${baseUserGoal}". You previously indicated progress or completion, but **Infinite Mode** is active. 
+Keep moving! 
+- **IF DATA COLLECTION**: Rotate search queries or keywords now.
+- **IF ENGAGEMENT**: Switch tabs (Latest/Following) or search for new topics.
+- **MOMENTUM**: Do not wait. Execute the next tool immediately.`
+                                    )
+                                );
+                                iteration = 0;
+                                continue;
+                            }
+                        }
+
+                        if (hasFinishedSignal) {
+                            break;
                         }
 
                         break;
