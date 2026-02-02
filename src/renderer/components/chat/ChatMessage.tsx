@@ -446,11 +446,8 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
     !message.content.toLowerCase().includes('approval') &&
     !message.content.toLowerCase().includes('approve');
 
-  // Robust check for isolated playbook run triggers - hide them from the UI
-  // Covers: "Run playbook {{playbooks.ID}}", "run {{playbooks...}}", etc.
-  if (isUser && message.content.trim().match(/^(?:Run playbook|run)\s*{{playbooks\.[^}]+}}$/i)) {
-    return null;
-  }
+  // Keep all user messages visible for a complete chat history
+  // Previous logic was hiding "Run playbook" triggers which confused users
 
   if (isSystem) {
     return (
@@ -495,7 +492,7 @@ export function ChatMessage({ message, variables, onRetry, onApprove, isLast }: 
         <div className={cn('flex-1 min-w-0 space-y-1 overflow-hidden', isUser && 'flex flex-col items-end')}>
 
           {isUser ? (
-            <div className="selectable max-w-[85%] bg-white/[0.03] backdrop-blur-lg hover:bg-white/[0.06] text-white/90 px-5 py-3 rounded-2xl rounded-tr-[4px] text-[13px] leading-relaxed border border-white/10 mx-0 text-left break-words transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
+            <div className="selectable max-w-[85%] bg-white/[0.07] backdrop-blur-lg hover:bg-white/[0.1] text-white/90 px-5 py-3 rounded-2xl rounded-tr-[4px] text-[13px] leading-relaxed border border-white/10 mx-0 text-left break-words transition-all shadow-[0_4px_12px_rgba(0,0,0,0.1)]">
               <div className="whitespace-pre-wrap break-words">
                 <ProcessedText text={message.content} variables={variables} />
               </div>
