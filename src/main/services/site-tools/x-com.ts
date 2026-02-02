@@ -348,6 +348,43 @@ async function safeClick(el, label, options = {}) {
   await wait(options.afterWait || (isTurbo ? 300 : 800)); 
 }
 
+async function clickOutside() {
+  log('Clicking outside to close any open modals or menus');
+  
+  // 1. Robust Close for Modals: Try finding close buttons first
+  const closeBtn = document.querySelector('[data-testid="app-bar-close"]') || 
+                   document.querySelector('[aria-label="Close"]') ||
+                   document.querySelector('[data-testid="close"]');
+                   
+  if (closeBtn && isVisible(closeBtn)) {
+    try {
+      await safeClick(closeBtn, 'Close Modal Button', { native: true });
+      return;
+    } catch (e) {}
+  }
+
+  // 2. Click on the mask/backdrop if present (X uses this for lightweight modals)
+  const mask = document.querySelector('[data-testid="mask"]');
+  if (mask && isVisible(mask)) {
+    const x = 50;
+    const y = window.innerHeight / 2;
+    if (typeof window.movePointer === 'function') await window.movePointer(x, y);
+    if (typeof window.showVisualClick === 'function') window.showVisualClick(x, y);
+    mask.click();
+    await wait(500);
+    return;
+  }
+
+  // 3. Fallback: Generic click in a safe margin area (away from sidebar and feed)
+  const safeX = window.innerWidth - 30;
+  const safeY = 100;
+  if (typeof window.movePointer === 'function') await window.movePointer(safeX, safeY);
+  if (typeof window.showVisualClick === 'function') window.showVisualClick(safeX, safeY);
+  const target = document.elementFromPoint(safeX, safeY) || document.body;
+  target.click();
+  await wait(500);
+}
+
 function getVerificationStatus(tweetNode) {
   if (!tweetNode) return null;
   const badge = tweetNode.querySelector('[data-testid="icon-verified"]');
@@ -457,8 +494,14 @@ async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
         return { success: true, message: 'Followed' };
       }
 
-      if (desiredAction === 'follow' && unfollowItem) return { success: true, already: true, message: 'Already followed' };
-      if (desiredAction === 'unfollow' && followItem) return { success: true, already: true, message: 'Already unfollowed' };
+      if (desiredAction === 'follow' && unfollowItem) {
+        await clickOutside();
+        return { success: true, already: true, message: 'Already followed' };
+      }
+      if (desiredAction === 'unfollow' && followItem) {
+        await clickOutside();
+        return { success: true, already: true, message: 'Already unfollowed' };
+      }
 
       // Close menu if nothing matches or we want to try fallback
       await safeClick(caret, 'Close Caret Menu', { afterWait: 300 });
@@ -493,7 +536,10 @@ async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
         const cardFollow = hoverCard.querySelector('[data-testid$="-follow"]');
         const cardUnfollow = hoverCard.querySelector('[data-testid$="-unfollow"]');
         
-        if (cardUnfollow) return { success: true, already: true, message: 'Already followed (verified via hover)' };
+        if (cardUnfollow) {
+          await clickOutside();
+          return { success: true, already: true, message: 'Already followed (verified via hover)' };
+        }
         
         if (cardFollow && isVisible(cardFollow)) {
            await safeClick(cardFollow, 'Hover Card Follow');
