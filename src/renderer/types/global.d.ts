@@ -60,11 +60,12 @@ declare global {
         deleteKBContent: (id: string) => Promise<{ success: boolean; error?: string }>;
       };
       mcp: {
-        connect: (serverId: string) => Promise<{ success: boolean }>;
-        disconnect: (serverId: string) => Promise<{ success: boolean }>;
-        listTools: (serverId: string) => Promise<{ success: boolean; tools?: unknown[] }>;
-        callTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<{ success: boolean; result?: unknown }>;
-        getStatus: () => Promise<Record<string, { connected: boolean }>>;
+        connect: (serverId: string) => Promise<{ success: boolean; reason?: string }>;
+        disconnect: (serverId: string) => Promise<{ success: boolean; reason?: string }>;
+        listTools: (serverId: string) => Promise<{ success: boolean; tools?: any[]; reason?: string }>;
+        callTool: (serverId: string, toolName: string, args: Record<string, unknown>) => Promise<{ success: boolean; result?: unknown; reason?: string }>;
+        getStatus: (serverId: string) => Promise<{ status: string }>;
+        getAllStatuses: () => Promise<Record<string, string>>;
       };
       window: {
         minimize: () => void;
@@ -112,6 +113,7 @@ declare global {
         onStreamChunk: (callback: (data: { content: string; done: boolean; toolCall?: any; toolResult?: any }) => void) => () => void;
         listWorkflows: () => Promise<{ name: string; path: string }[]>;
         testConnection: (provider: import('@shared/types').ModelProvider, modelId?: string) => Promise<{ success: boolean; message: string; response?: string }>;
+        fetchModels: (params: { apiKey?: string; baseUrl?: string; type: string }) => Promise<import('@shared/types').ModelConfig[]>;
         onPlaybookStatus: (callback: (data: { nodeId: string; status: 'running' | 'success' | 'error'; message?: string }) => void) => () => void;
         suggest: (request: any) => Promise<{ success: boolean; suggestions?: { label: string; prompt: string }[]; error?: string }>;
         resetContext: (workspaceId?: string) => Promise<{ success: boolean; error?: string }>;

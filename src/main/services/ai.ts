@@ -2,6 +2,7 @@ import { IpcMain, BrowserWindow, app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
+import { mcpService } from './mcp';
 
 // SILENCE NOISY LANGCHAIN WARNINGS
 process.env.LANGCHAIN_ADAPTER_MIGRATION_WARNING = 'false';
@@ -214,6 +215,67 @@ let cachedLlamaModel: any = null;
 let cachedLlamaModelPath: string | null = null;
 
 
+// --- MCP HELPERS ---
+
+function jsonSchemaToZod(schema: any): z.ZodTypeAny {
+    if (!schema) return z.any();
+    if (schema.type === 'string') return z.string().describe(schema.description || '');
+    if (schema.type === 'number') return z.number().describe(schema.description || '');
+    if (schema.type === 'integer') return z.number().int().describe(schema.description || '');
+    if (schema.type === 'boolean') return z.boolean().describe(schema.description || '');
+    if (schema.type === 'array') {
+        const itemSchema = schema.items ? jsonSchemaToZod(schema.items) : z.any();
+        return z.array(itemSchema).describe(schema.description || '');
+    }
+    if (schema.type === 'object') {
+        const shape: Record<string, any> = {};
+        const props = schema.properties || {};
+        for (const key in props) {
+            let fieldSchema = jsonSchemaToZod(props[key]);
+            if (!schema.required?.includes(key)) {
+                fieldSchema = fieldSchema.optional();
+            }
+            shape[key] = fieldSchema;
+        }
+        // If additionalProperties is true (or unspecified which defaults to true in some interpretations that LangChain prefers open), 
+        // we generally use strict objects for tool calling to avoid hallucinated args.
+        // However, passthrough() can be used if we expect extra args.
+        return z.object(shape).describe(schema.description || '');
+    }
+    return z.any().describe(schema.description || '');
+}
+
+function convertMcpToolToLangChainTool(mcpTool: any, serverId: string): DynamicStructuredTool {
+    return new DynamicStructuredTool({
+        name: mcpTool.name,
+        description: mcpTool.description || `Tool from MCP server`,
+        schema: jsonSchemaToZod(mcpTool.inputSchema) as any,
+        func: async (args: any) => {
+            try {
+                console.log(`[AI Service] Executing MCP Tool ${mcpTool.name} on server ${serverId} with args:`, args);
+                const result = await mcpService.callTool(serverId, mcpTool.name, args);
+
+                if (result.isError) {
+                    return `Error from MCP Server: ${JSON.stringify(result.content)}`;
+                }
+
+                // Extract text content
+                const textContent = (result.content as any[])
+                    .filter((c: any) => c.type === 'text')
+                    .map((c: any) => c.text)
+                    .join('\n');
+
+                return textContent || JSON.stringify(result.content);
+            } catch (error: any) {
+                console.error(`[AI Service] MCP Tool Execution Failed:`, error);
+                return `Error executing tool ${mcpTool.name}: ${error.message}`;
+            }
+        }
+    });
+}
+
+
+
 interface ChatRequest {
     messages: Message[];
     model: ModelConfig;
@@ -253,7 +315,14 @@ export async function createChatModel(provider: ModelProvider, model: ModelConfi
     const disableReasoning = typeof options === 'object' ? options.disableReasoning : false;
     const tempOverride = typeof options === 'object' ? options.temperature : undefined;
 
-    const baseUrl = provider.baseUrl?.trim() || undefined;
+    let baseUrl = provider.baseUrl?.trim().replace(/\/+$/, '') || undefined;
+
+    // Auto-fix missing version prefixes for known providers
+    if (baseUrl) {
+        if (provider.type === 'lmstudio' && !baseUrl.includes('/v1')) baseUrl = `${baseUrl}/v1`;
+        if (provider.type === 'openai' && !baseUrl.includes('/v1') && baseUrl.includes('localhost')) baseUrl = `${baseUrl}/v1`;
+        if (provider.type === 'z-ai' && !baseUrl.includes('/v4')) baseUrl = `${baseUrl}/v4`;
+    }
 
     const baseConfig: any = {
         modelName: model.id,
@@ -263,15 +332,19 @@ export async function createChatModel(provider: ModelProvider, model: ModelConfi
         streaming,
     };
 
-    // For Z.AI/GLM/Xiaomi models, we MUST be extremely strict with parameters.
+    // For Z.AI/GLM/Xiaomi/Local models, we MUST be extremely strict with parameters.
     const isStrictModel =
         model.id.toLowerCase().includes('z-ai') ||
         model.id.toLowerCase().includes('glm') ||
         model.id.toLowerCase().includes('xiaomi') ||
-        model.id.toLowerCase().includes('mimo');
+        model.id.toLowerCase().includes('mimo') ||
+        provider.type === 'lmstudio' ||
+        provider.type === 'local' ||
+        provider.type === 'ollama';
 
     if (isStrictModel) {
         baseConfig.streaming = false;
+        baseConfig.parallelToolCalls = false;
     }
 
     console.log(`[AI Service] Creating model ${model.id} (SafeMode: ${safeMode}, NoReasoning: ${disableReasoning})`);
@@ -341,13 +414,17 @@ export async function createChatModel(provider: ModelProvider, model: ModelConfi
                 throw err;
             }
         case 'openai':
+        case 'z-ai':
+        case 'lmstudio': {
+            const cleanApiKey = (provider.apiKey || '').replace(/^Bearer\s+/i, '').trim();
             return new ChatOpenAI({
                 ...baseConfig,
-                apiKey: provider.apiKey,
+                apiKey: cleanApiKey,
                 configuration: {
                     baseURL: baseUrl,
                 },
             });
+        }
         case 'custom':
             const customConfig: any = {
                 ...baseConfig,
@@ -422,7 +499,10 @@ export async function createChatModel(provider: ModelProvider, model: ModelConfi
             return new ChatOllama({
                 baseUrl: baseUrl || 'http://localhost:11434',
                 model: model.id,
-                temperature: 0.1,
+                temperature: 0.7,
+                numCtx: 16384, // Increased context window for complex agentic tasks
+                numPredict: 4096, // Allow for long reasoning/monologue
+                repeatPenalty: 1.1,
             });
         default:
             throw new Error(`Unsupported provider type: ${provider.type} (Normalized: ${providerType})`);
@@ -481,6 +561,18 @@ function convertMessages(messages: Message[], systemPrompt?: string, disableVisi
                         } catch (e) {
                             // Not JSON or not an image, keep as text
                         }
+                    } else if (typeof content === 'string' && content.includes('"image_data":"data:image')) {
+                        // CRITICAL: Strip huge base64 image data if vision is explicitly disabled (saves tokens)
+                        try {
+                            const parsed = JSON.parse(content);
+                            if (parsed.image_data) {
+                                delete parsed.image_data;
+                                content = JSON.stringify(parsed);
+                            }
+                        } catch (e) {
+                            // best effort strip
+                            content = content.replace(/"image_data":"data:image\/[^"]+"/, '"image_data":"[stripped]"');
+                        }
                     }
 
                     langchainMessages.push(new ToolMessage({
@@ -490,8 +582,12 @@ function convertMessages(messages: Message[], systemPrompt?: string, disableVisi
                 }
             }
         } else if (msg.role === 'tool') {
+            let content = msg.content;
+            if (disableVision && typeof content === 'string' && content.includes('"image_data":"data:image')) {
+                content = content.replace(/"image_data":"data:image\/[^"]+"/, '"image_data":"[stripped]"');
+            }
             langchainMessages.push(new ToolMessage({
-                content: msg.content,
+                content: content,
                 tool_call_id: (msg as any).tool_call_id || (msg as any).id,
             }));
         } else if (msg.role === 'system') {
@@ -727,6 +823,24 @@ You are autonomous. You do not need to ask for permission to scroll, click, or e
 If you are stuck, stop and THINK. Then try a *different* approach. 
 **NEVER conclude a turn with a promise but no tool call.**
 **Go.**
+`;
+
+const COMPRESSED_AGENT_PROMPT = `**CORE DIRECTIVES**
+1. **ACTOR > CHATTER**: Execute tasks immediately. Do not ask for permission.
+2. **PLAN & ACT**: Always call a tool after describing a plan in the same turn.
+3. **EYES OPEN**: You MUST call \'browser_dom_snapshot\' (snapshot) BEFORE every interaction (click, write).
+4. **SELECTOR STRATEGY**: 
+   - 1. Use \'suggestedSelector\' from snapshot.
+   - 2. Use Aria Labels (aria/Name) or Text (text/Name).
+   - NEVER use numeric IDs or volatile selectors.
+
+**PLATFORM RULES**
+- **X.com**: Use \'x_\' tools. Scan posts, engage, or search.
+- **Search**: Use Google Dorking (site:x.com "keyword") for discovery.
+- **Engagement**: Use \'x_engage\' for Likes+Replies. Reply in the post\'s language.
+
+**O.O.D.A LOOP**: Observe (Snapshot) -> Orient (Analyze) -> Decide -> Act (Tool).
+**REPORTING**: Start Node (running) -> Do Action -> End Node (success). Use [COMPLETE] when finished.
 `;
 
 export async function resolveAIConfig(
@@ -1059,9 +1173,9 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
                 new HumanMessage(`${systemPrompt}\n\nUser Input: ${initialUserPrompt || "Surprise me with unique ideas."} (Random Seed: ${Date.now()})`)
             ];
 
-            // Add timeout - increased to 60s
+            // Add timeout - increased to 120s for local models
             const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Suggestion timed out')), 60000)
+                setTimeout(() => reject(new Error('Suggestion timed out')), 120000)
             );
 
             console.log(`[AI Service] Fetching smart suggestions for: "${initialUserPrompt || 'Starter ideas'}" using ${model.id}`);
@@ -1157,6 +1271,14 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
 
             // Resolve AI Configuration
             const { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken, localDefaultModelId);
+            // Determine if the provider is a local model (Ollama, LM Studio, etc.)
+            // We also check for localhost in the baseUrl to handle custom providers pointing to local instances.
+            const isLocalBaseUrl = effectiveProvider.baseUrl?.includes('localhost') ||
+                effectiveProvider.baseUrl?.includes('127.0.0.1') ||
+                effectiveProvider.baseUrl?.includes('0.0.0.0');
+
+            const isLocalModelType = false; // Unified model handling (all tools enabled)
+
 
             if (effectiveProvider.id !== provider.id || effectiveModel.id !== model.id) {
                 console.log(`[AI Service] Using Resolved Config: ${effectiveProvider.type}/${effectiveModel.id}`);
@@ -1321,13 +1443,45 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
             const requestIntegrationTools = createIntegrationTools(workspaceSettings, request.workspaceId);
             const requestUtilityTools = createUtilityTools({ provider: effectiveProvider, model: effectiveModel, workspaceId: request.workspaceId });
 
-            const requestToolsRaw = [
+            // --- FETCH MCP TOOLS ---
+            const mcpTools: DynamicStructuredTool[] = [];
+            const mcpServers = store.get('mcpServers') || [];
+            const disabledServers = new Set(request.workspaceSettings?.disabledMCPServers || []);
+
+            console.log(`[AI Service] Checking ${mcpServers.length} configured MCP servers...`);
+
+            // We do this concurrently for performance
+            await Promise.all(mcpServers.map(async (server) => {
+                if (!server.enabled) return;
+                if (disabledServers.has(server.id)) return;
+
+                try {
+                    console.log(`[AI Service] Fetching tools from MCP Server: ${server.name} (${server.id})...`);
+                    // List tools (autconnects if needed)
+                    const tools = await mcpService.listTools(server.id);
+                    console.log(`[AI Service] Server ${server.name} returned ${tools.length} tools.`);
+
+                    for (const t of tools) {
+                        mcpTools.push(convertMcpToolToLangChainTool(t, server.id));
+                    }
+                } catch (err: any) {
+                    console.warn(`[AI Service] Failed to load tools from MCP server ${server.name}: ${err.message}`);
+                    // We do not fail the whole request, just skip this server
+                }
+            }));
+
+
+            let requestToolsRaw = [
                 ...requestBrowserTools,
                 ...requestTargetTools,
                 ...requestPlaybookTools,
                 ...requestIntegrationTools,
-                ...requestUtilityTools
+                ...requestUtilityTools,
+                ...mcpTools
             ];
+
+
+            // Dynamic filtering removed - using all available tools for all models.
 
             const deduplicatedTools: DynamicStructuredTool[] = [];
             const seenNames = new Set<string>();
@@ -1356,6 +1510,8 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
             }
 
             console.log(`[AI Service] Final Tool Count: ${deduplicatedTools.length} (out of ${requestToolsRaw.length} raw)`);
+
+            // Tool description compression removed - using full descriptions.
 
             // Reset renderer stop signal
             const contents = await getWebviewContents('main-tab');
@@ -1420,10 +1576,11 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
 
             // 1. Playbooks
             try {
+                const playbookLimit = isLocalModelType ? 3 : 20;
                 let query = scopedSupabase
                     .from('playbooks')
                     .select('id, name, description, graph')
-                    .limit(20);
+                    .limit(playbookLimit);
 
                 if (request.workspaceId) {
                     query = query.eq('workspace_id', request.workspaceId);
@@ -1434,18 +1591,20 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
                     contextInjection += "\n**Playbooks ({{playbooks.ID}}):**\n";
                     playbooksData.forEach((p: any) => {
                         // Extract Node IDs for context context suggestion
-                        const nodeIds = (p.graph as any)?.nodes?.map((n: any) => `"${n.label || n.id}" (${n.id})`).join(', ') || 'No nodes';
-                        contextInjection += `- ${p.name}: {{playbooks.${p.id}}}\n  Description: ${p.description || 'None'}\n  Nodes: ${nodeIds}\n`;
+                        const nodeIds = isLocalModelType ? '...' : ((p.graph as any)?.nodes?.map((n: any) => `"${n.label || n.id}" (${n.id})`).join(', ') || 'No nodes');
+                        const desc = isLocalModelType && p.description ? p.description.slice(0, 50) + '...' : (p.description || 'None');
+                        contextInjection += `- ${p.name}: {{playbooks.${p.id}}}\n  Description: ${desc}\n  Nodes: ${nodeIds}\n`;
                     });
                 }
             } catch (e) { console.error('Error fetching playbooks context:', e); }
 
             // 2. Target Lists
             try {
+                const listLimit = isLocalModelType ? 5 : 20;
                 let query = scopedSupabase
                     .from('target_lists')
                     .select('id, name')
-                    .limit(20);
+                    .limit(listLimit);
 
                 if (request.workspaceId) {
                     query = query.eq('workspace_id', request.workspaceId);
@@ -1473,33 +1632,37 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
             } catch (e) { console.error('Error fetching settings context:', e); }
 
             // 4. Platform-Specific Knowledge Base
-            try {
-                const { data: knowledge } = await (scopedSupabase as any)
-                    .from('platform_knowledge')
-                    .select('domain, url, action, selector, instruction, notes')
-                    .eq('is_active', true);
+            if (!isLocalModelType) {
+                try {
+                    const { data: knowledge } = await (scopedSupabase as any)
+                        .from('platform_knowledge')
+                        .select('domain, url, action, selector, instruction, notes')
+                        .eq('is_active', true);
 
-                if (knowledge && knowledge.length > 0) {
-                    contextInjection += "\n**PLATFORM KNOWLEDGE BASE (Use these overrides!):**\n";
-                    knowledge.forEach((k: any) => {
-                        const pathText = k.url ? ` (Path: ${k.url})` : '';
-                        const instructionText = k.instruction ? ` | INSTRUCTION: "${k.instruction}"` : '';
-                        contextInjection += `- [${k.domain}${pathText}] Action: ${k.action} -> Selector: \`${k.selector}\`${instructionText} (Notes: ${k.notes || 'N/A'})\n`;
-                    });
-                    contextInjection += "\n**NOTE**: When on these domains/paths, prioritize the recommended selectors and instructions above. They are verified by the system owner for maximum reliability.\n";
-                }
-            } catch (e) { console.error('Error fetching platform knowledge:', e); }
+                    if (knowledge && knowledge.length > 0) {
+                        contextInjection += "\n**PLATFORM KNOWLEDGE BASE (Use these overrides!):**\n";
+                        knowledge.forEach((k: any) => {
+                            const pathText = k.url ? ` (Path: ${k.url})` : '';
+                            const instructionText = k.instruction ? ` | INSTRUCTION: "${k.instruction}"` : '';
+                            contextInjection += `- [${k.domain}${pathText}] Action: ${k.action} -> Selector: \`${k.selector}\`${instructionText} (Notes: ${k.notes || 'N/A'})\n`;
+                        });
+                        contextInjection += "\n**NOTE**: When on these domains/paths, prioritize the recommended selectors and instructions above. They are verified by the system owner for maximum reliability.\n";
+                    }
+                } catch (e) { console.error('Error fetching platform knowledge:', e); }
+            }
 
             // 5. User Knowledge Base
             try {
+                const kbLimit = isLocalModelType ? 3 : 50;
                 const { data: userKBContent } = await scopedSupabase
                     .from('knowledge_content')
                     .select('id, title, content')
-                    .limit(50);
+                    .limit(kbLimit);
                 if (userKBContent && userKBContent.length > 0) {
                     contextInjection += "\n**User Knowledge Base ({{kb.ID}}):**\n";
                     userKBContent.forEach((c: any) => {
-                        contextInjection += `- ${c.title || 'Untitled Knowledge'}: {{kb.${c.id}}}\n  Content: ${c.content}\n`;
+                        const kbContent = isLocalModelType ? c.content.slice(0, 100) + '...' : c.content;
+                        contextInjection += `- ${c.title || 'Untitled Knowledge'}: {{kb.${c.id}}}\n  Content: ${kbContent}\n`;
                     });
                 }
             } catch (e) { console.error('Error fetching user knowledge context:', e); }
@@ -1509,7 +1672,9 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
             // 4. Active Toolkit (Dynamic Capability Awareness)
             // This ensures the agent knows exactly which tools are instantiated for this session
             const activeToolNames = deduplicatedTools.map(t => t.name).join(', ');
-            contextInjection += `\n\n**ACTIVE TOOLKIT (Reference):**\n${activeToolNames}\n`;
+            if (!isLocalModelType) {
+                contextInjection += `\n\n**ACTIVE TOOLKIT (Reference):**\n${activeToolNames}\n`;
+            }
             // --- CONTEXT INJECTION END ---
 
             // --- PERSONA & DIRECTIVES ---
@@ -1561,27 +1726,29 @@ You are in FAST mode.
                 effectiveModel.id.toLowerCase().includes('xiaomi') ||
                 effectiveModel.id.toLowerCase().includes('mimo');
 
-            const effectiveSystemPrompt = enableTools
-                ? `${contextInjection}\n${timeContext}${visionDirective}${playbookDirective}${speedDirective}${generalDirective}\n${BROWSER_AGENT_PROMPT}${infiniteDirective}\n\n${systemPrompt || ''}`
+            const agentPrompt = BROWSER_AGENT_PROMPT;
+
+            const effectiveSystemPrompt = (enableTools)
+                ? (`${contextInjection}\n${timeContext}${visionDirective}${playbookDirective}${speedDirective}${generalDirective}\n${agentPrompt}${infiniteDirective}\n\n${systemPrompt || ''}`)
                 : systemPrompt;
 
             if (enableTools) {
-                const isLocalModelType = effectiveProvider.type === 'local' || effectiveProvider.type === 'ollama';
                 let chatModel = await createChatModel(effectiveProvider, effectiveModel, {
                     streaming: false,
-                    systemPromptLength: effectiveSystemPrompt?.length || 0
+                    systemPromptLength: effectiveSystemPrompt?.length || 0,
+                    temperature: isLocalModelType ? 0.0 : 0.1 // Stricter for local models to avoid hallucination under pressure
                 });
                 console.log(`[AI Service] Binding ${deduplicatedTools.length} tools to model (SysPrompt length: ${effectiveSystemPrompt?.length} chars)`);
 
                 let modelWithTools: any;
 
-                const isStrictModel =
+                const isStrictModelForBinding =
                     effectiveModel.id.toLowerCase().includes('z-ai') ||
                     effectiveModel.id.toLowerCase().includes('glm') ||
                     effectiveModel.id.toLowerCase().includes('xiaomi') ||
                     effectiveModel.id.toLowerCase().includes('mimo');
 
-                if (isStrictModel) {
+                if (isStrictModelForBinding) {
                     console.log('[AI Service] Strict model detected. Attempting Safe Tool Binding...');
                     try {
                         if (typeof (chatModel as any).bindTools === 'function') {
@@ -1735,7 +1902,7 @@ You are in FAST mode.
                         );
 
                         // Prune message history before calling the model to manage context window and prevent token limits
-                        langchainMessages = pruneMessageHistory(langchainMessages);
+                        langchainMessages = pruneMessageHistory(langchainMessages, 40);
 
                         // Wrap the invoke call to catch LangChain internal errors
                         const invokeWithErrorHandling = async () => {
@@ -1871,14 +2038,23 @@ You are in FAST mode.
                             continue;
                         }
 
-                        if (errorMessage.includes('400') || errorMessage.includes('401') || errorMessage.includes('403') || isToolIncompatible || isEmptyOutput || errorMessage.toLowerCase().includes('schema') || errorMessage.toLowerCase().includes('validation')) {
+                        const isTruncationError = errorMessage.includes('n_keep') || errorMessage.includes('n_ctx') || errorMessage.toLowerCase().includes('truncate prompt') || errorMessage.toLowerCase().includes('context length');
+
+                        if (errorMessage.includes('400') || errorMessage.includes('401') || errorMessage.includes('403') || isToolIncompatible || isEmptyOutput || isTruncationError || errorMessage.toLowerCase().includes('schema') || errorMessage.toLowerCase().includes('validation')) {
                             console.log(`[Auto-Recovery] Model invocation failed (${errorMessage}). Attempting downgrade...`);
+
+                            // If it's a truncation error, we MUST prune more aggressively or jump to Stage 2 (no tools) 
+                            // because Stage 1 still includes the massive tool definitions which are likely the cause.
+                            if (isTruncationError) {
+                                console.log('[Auto-Recovery] Truncation error detected. Pre-pruning messages and limiting context further.');
+                                langchainMessages = pruneMessageHistory(langchainMessages, 5); // bare minimum history
+                            }
 
                             let success = false;
 
                             // Stage 1: Attempt without Reasoning BUT WITH tools
-                            // Skip Stage 1 if tools are explicitly not supported
-                            if (!isToolIncompatible) {
+                            // Skip Stage 1 if tools are explicitly not supported OR if we have a truncation error (tools are likely the cause)
+                            if (!isToolIncompatible && !isTruncationError) {
                                 try {
                                     console.log('[Auto-Recovery] Stage 1: Retrying with reasoning DISABLED...');
                                     if (window && !window.isDestroyed()) {
@@ -2506,7 +2682,7 @@ Keep moving!
                 return { success: true, response: fullResponse };
             } else {
                 const chatModel = await createChatModel(provider, model, true);
-                const isLocalModelType = provider.type === 'local' || provider.type === 'ollama';
+                const isLocalModelType = false;
                 const langchainMessages = convertMessages(messages, effectiveSystemPrompt, isLocalModelType);
 
                 let fullResponse = '';
@@ -2548,7 +2724,7 @@ Keep moving!
             const { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken);
 
             const chatModel = await createChatModel(effectiveProvider, effectiveModel, false);
-            const isLocalModelType = effectiveProvider.type === 'local' || effectiveProvider.type === 'ollama';
+            const isLocalModelType = false;
             const langchainMessages = convertMessages(messages, systemPrompt, isLocalModelType);
 
             const response = await chatModel.invoke(langchainMessages);
@@ -2600,6 +2776,8 @@ Keep moving!
                         case 'openai': testModelId = 'gpt-3.5-turbo'; break;
                         case 'anthropic': testModelId = 'claude-3-haiku-20240307'; break;
                         case 'openrouter': testModelId = 'openai/gpt-3.5-turbo'; break;
+                        case 'z-ai': testModelId = 'glm-4-flash'; break;
+                        case 'lmstudio': testModelId = 'model-identifier'; break;
                         case 'custom': testModelId = 'gpt-3.5-turbo'; break;
                         case 'ollama': testModelId = 'llama3'; break;
                         default: testModelId = 'gpt-3.5-turbo';
@@ -2750,6 +2928,84 @@ Keep moving!
                 success: false,
                 error: error.message || 'Main handler error'
             };
+        }
+    });
+
+    ipcMain.handle('ai:fetch-models', async (_event, { apiKey, baseUrl, type }: { apiKey?: string; baseUrl?: string; type: string }) => {
+        try {
+            console.log(`[AI Service] Fetching models for ${type} at ${baseUrl}`);
+
+            let url = '';
+            if (type === 'ollama') {
+                url = baseUrl ? `${baseUrl.replace(/\/$/, '')}/api/tags` : 'http://localhost:11434/api/tags';
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Ollama error: ${response.statusText}`);
+                const data = await response.json() as any;
+                return (data.models || []).map((m: any) => ({
+                    id: m.name,
+                    name: m.name,
+                    contextWindow: 8192, // Default for Ollama
+                    enabled: true
+                }));
+            } else if (type === 'openrouter') {
+                url = 'https://openrouter.ai/api/v1/models';
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`OpenRouter error: ${response.statusText}`);
+                const data = await response.json() as any;
+                return (data.data || []).map((m: any) => ({
+                    id: m.id,
+                    name: m.name || m.id,
+                    contextWindow: m.context_length || 4096,
+                    enabled: true
+                }));
+            } else {
+                // OpenAI / Z.AI / LM Studio
+                const cleanApiKey = (apiKey || '').replace(/^Bearer\s+/i, '').trim();
+                let defaultBase = 'https://api.openai.com/v1';
+                if (type === 'z-ai') defaultBase = 'https://api.z.ai/api/coding/paas/v4';
+                if (type === 'lmstudio') defaultBase = 'http://localhost:1234/v1';
+
+                url = baseUrl ? baseUrl.replace(/\/$/, '') : defaultBase;
+
+                // Ensure version suffixes for fetch
+                if (type === 'lmstudio' && !url.includes('/v1')) url = `${url}/v1`;
+                if (type === 'z-ai' && !url.includes('/v4')) url = `${url}/v4`;
+                if (type === 'openai' && !url.includes('/v1') && url.includes('localhost')) url = `${url}/v1`;
+
+                if (!url.endsWith('/models')) {
+                    url = `${url}/models`;
+                }
+
+                const response = await fetch(url, {
+                    headers: {
+                        'Authorization': `Bearer ${cleanApiKey || 'not-needed'}`,
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error?.message || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json() as any;
+                let models = (data.data || []).map((m: any) => ({
+                    id: m.id,
+                    name: m.id,
+                    contextWindow: 128000, // Default window
+                    enabled: true
+                }));
+
+                // Relaxed filtering for custom/LMStudio/Z.AI
+                if (type === 'openai' && !baseUrl) {
+                    models = models.filter((m: any) => m.id.startsWith('gpt-') || m.id.startsWith('o1-'));
+                }
+
+                return models;
+            }
+        } catch (error: any) {
+            console.error('Fetch Models Error:', error);
+            throw error;
         }
     });
 }

@@ -56,6 +56,13 @@ class MCPService {
                 status: 'connected',
             });
         } catch (error) {
+            // Store error status so UI can reflect it
+            // We need a dummy client/transport or just a status record? 
+            // The interface requires client/transport. 
+            // We can't easily satisfy the interface without a valid client.
+            // Let's modify the interface in a follow-up if needed, 
+            // but for now, let's just log it.
+            console.error(`[MCPService] Connection failed for ${serverId}:`, error);
             throw error;
         }
     }

@@ -36,6 +36,8 @@ const providerTypes = [
   { value: 'openai', label: 'OpenAI' },
   { value: 'anthropic', label: 'Anthropic' },
   { value: 'openrouter', label: 'OpenRouter' },
+  { value: 'z-ai', label: 'Z.AI' },
+  { value: 'lmstudio', label: 'LM Studio' },
   { value: 'local', label: 'Local (GGUF)' },
   { value: 'ollama', label: 'Ollama' },
   { value: 'custom', label: 'Custom' },
@@ -77,6 +79,14 @@ const allModels: Record<string, ModelConfig[]> = {
   custom: [],
   local: [],
   ollama: [],
+  'z-ai': [
+    { id: 'glm-4.5-air', name: 'GLM 4.5 Air', providerId: '', contextWindow: 128000, enabled: true },
+    { id: 'glm-4.5', name: 'GLM 4.5', providerId: '', contextWindow: 128000, enabled: true },
+    { id: 'glm-4', name: 'GLM 4 (Original)', providerId: '', contextWindow: 128000, enabled: true },
+    { id: 'glm-4-plus', name: 'GLM 4 Plus', providerId: '', contextWindow: 128000, enabled: true },
+    { id: 'glm-4-air', name: 'GLM 4 Air', providerId: '', contextWindow: 128000, enabled: true },
+    { id: 'glm-4-flash', name: 'GLM 4 Flash', providerId: '', contextWindow: 128000, enabled: true },
+  ],
 };
 
 const defaultModels: Record<string, ModelConfig[]> = {
@@ -86,6 +96,8 @@ const defaultModels: Record<string, ModelConfig[]> = {
   custom: [],
   local: [],
   ollama: [],
+  'z-ai': allModels['z-ai'].filter(m => m.enabled),
+  lmstudio: [],
 };
 
 interface OpenRouterModel {
@@ -102,98 +114,6 @@ interface OpenAIModel {
   owned_by: string;
 }
 
-async function fetchOpenAIModels(apiKey: string, baseUrl?: string): Promise<ModelConfig[]> {
-  try {
-    const url = baseUrl ? `${baseUrl.replace(/\/$/, '')}/models` : 'https://api.openai.com/v1/models';
-    const response = await fetch(url, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (data.data && Array.isArray(data.data)) {
-      return data.data
-        .filter((m: OpenAIModel) => {
-          const id = m.id.toLowerCase();
-          // Filter for models known to support function calling/tools
-          // This includes gpt-4, gpt-3.5-turbo, and newer o1 models
-          // Exclude -instruct models as they often lack tool support in chat format
-          return (id.includes('gpt-') || id.includes('o1-')) && !id.includes('-instruct');
-        })
-        .map((m: OpenAIModel) => ({
-          id: m.id,
-          name: m.id.replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
-          providerId: '',
-          contextWindow: m.id.includes('128k') || m.id.includes('gpt-4o') || m.id.includes('o1') ? 128000 : 16384,
-          enabled: false,
-        }))
-        .sort((a: ModelConfig, b: ModelConfig) => a.name.localeCompare(b.name));
-    }
-    return [];
-  } catch (error) {
-    console.error('Failed to fetch OpenAI models:', error);
-    throw error;
-  }
-}
-
-async function fetchOpenRouterModels(): Promise<ModelConfig[]> {
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/models');
-    const data = await response.json();
-
-    if (data.data && Array.isArray(data.data)) {
-      return data.data
-        .filter((m: OpenRouterModel) => {
-          // Allow all models, but we'll mark them if they support tools later
-          return true;
-        })
-        .map((m: OpenRouterModel) => ({
-          id: m.id,
-          name: m.name.replace(/^.*?\//, '').replace(/-/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
-          providerId: '',
-          contextWindow: m.context_length || 4096,
-          enabled: false,
-          // Store capabilities if needed, for now we assume basic chat works
-        }))
-        .sort((a: ModelConfig, b: ModelConfig) => a.name.localeCompare(b.name));
-    }
-    return [];
-  } catch (error) {
-    console.error('Failed to fetch OpenRouter models:', error);
-    return [];
-  }
-}
-
-async function fetchOllamaModels(baseUrl?: string): Promise<ModelConfig[]> {
-  try {
-    const url = baseUrl ? `${baseUrl.replace(/\/$/, '')}/api/tags` : 'http://localhost:11434/api/tags';
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    if (data.models && Array.isArray(data.models)) {
-      return data.models.map((m: any) => ({
-        id: m.name,
-        name: m.name,
-        providerId: '',
-        contextWindow: 4096, // Default for most local models
-        enabled: true,
-      }));
-    }
-    return [];
-  } catch (error) {
-    console.error('Failed to fetch Ollama models:', error);
-    return [];
-  }
-}
 
 export function ModelProvidersSettings() {
   const { confirm } = useConfirmation();
@@ -255,22 +175,17 @@ export function ModelProvidersSettings() {
   };
 
   const handleFetchModels = async () => {
-    if (formData.type !== 'openrouter' && formData.type !== 'openai' && formData.type !== 'ollama') return;
+    if (formData.type !== 'openrouter' && formData.type !== 'openai' && formData.type !== 'ollama' && formData.type !== 'z-ai' && formData.type !== 'lmstudio') return;
 
     setIsFetchingModels(true);
     try {
-      let fetchedModels: ModelConfig[] = [];
-      if (formData.type === 'openrouter') {
-        fetchedModels = await fetchOpenRouterModels();
-      } else if (formData.type === 'openai') {
-        if (!formData.apiKey) {
-          alert('API Key is required to fetch OpenAI models');
-          return;
-        }
-        fetchedModels = await fetchOpenAIModels(formData.apiKey, formData.baseUrl);
-      } else if (formData.type === 'ollama') {
-        fetchedModels = await fetchOllamaModels(formData.baseUrl);
-      }
+      setHasFetchedModels(false);
+
+      const fetchedModels: ModelConfig[] = await window.api.ai.fetchModels({
+        apiKey: formData.apiKey,
+        baseUrl: formData.baseUrl,
+        type: formData.type || 'openai'
+      });
 
       if (fetchedModels.length > 0) {
         const type = formData.type;
@@ -353,7 +268,7 @@ export function ModelProvidersSettings() {
       alert('Please enter a name for this provider');
       return;
     }
-    if (!formData.apiKey && formData.type !== 'local' && formData.type !== 'ollama') {
+    if (!formData.apiKey && formData.type !== 'local' && formData.type !== 'ollama' && formData.type !== 'lmstudio') {
       alert('API Key is required for this provider type');
       return;
     }
@@ -445,7 +360,7 @@ export function ModelProvidersSettings() {
   // Exception: local/custom/ollama usually rely on manual entry or simple defaults, 
   // but for OpenAI/Anthropic/OpenRouter we want to enforce the "empty until fetch" rule.
   const rawModels = availableModels[formData.type || 'openai'] || [];
-  const currentModels = (isAdding && !hasFetchedModels && ['openai', 'anthropic', 'openrouter'].includes(formData.type || ''))
+  const currentModels = (isAdding && !hasFetchedModels && ['openai', 'anthropic', 'openrouter', 'z-ai', 'lmstudio'].includes(formData.type || ''))
     ? []
     : rawModels;
 
@@ -571,23 +486,34 @@ export function ModelProvidersSettings() {
                 </div>
               )}
 
-              <Field label={formData.type === 'local' || formData.type === 'ollama' ? 'Configuration' : 'API Key'}>
+              <Field label={formData.type === 'local' || formData.type === 'ollama' || formData.type === 'lmstudio' ? 'Configuration' : 'API Key'}>
                 <Input
-                  type={formData.type === 'local' || formData.type === 'ollama' ? 'text' : 'password'}
+                  type={formData.type === 'local' || formData.type === 'ollama' || formData.type === 'lmstudio' ? 'text' : 'password'}
                   value={formData.apiKey || ''}
                   onChange={(e) => setFormData((prev) => ({ ...prev, apiKey: e.target.value }))}
-                  placeholder={formData.type === 'local' ? 'Local model configuration (optional)' : formData.type === 'ollama' ? 'Not required for local Ollama' : 'sk-...'}
-                  disabled={formData.type === 'local' || formData.type === 'ollama'}
-                  className={formData.type === 'local' || formData.type === 'ollama' ? 'hidden' : ''}
+                  placeholder={
+                    formData.type === 'local' ? 'Local model configuration (optional)' :
+                      formData.type === 'ollama' ? 'Not required for local Ollama' :
+                        formData.type === 'lmstudio' ? 'Not required for local LM Studio' :
+                          'sk-...'
+                  }
+                  disabled={formData.type === 'local' || formData.type === 'ollama' || formData.type === 'lmstudio'}
+                  className={formData.type === 'local' || formData.type === 'ollama' || formData.type === 'lmstudio' ? 'hidden' : ''}
                 />
               </Field>
 
-              {(formData.type === 'custom' || formData.type === 'openai' || formData.type === 'ollama') && (
-                <Field label={`Base URL ${formData.type === 'openai' || formData.type === 'ollama' ? '(Optional)' : ''}`}>
+              {(formData.type === 'custom' || formData.type === 'openai' || formData.type === 'ollama' || formData.type === 'z-ai' || formData.type === 'lmstudio') && (
+                <Field label={`Base URL ${formData.type !== 'custom' ? '(Optional)' : ''}`}>
                   <Input
                     value={formData.baseUrl || ''}
                     onChange={(e) => setFormData((prev) => ({ ...prev, baseUrl: e.target.value }))}
-                    placeholder={formData.type === 'openai' ? "https://api.openai.com/v1" : formData.type === 'ollama' ? "http://localhost:11434" : "https://api.example.com/v1"}
+                    placeholder={
+                      formData.type === 'ollama' ? "http://localhost:11434" :
+                        formData.type === 'lmstudio' ? "http://localhost:1234/v1" :
+                          formData.type === 'z-ai' ? "https://api.z.ai/api/coding/paas/v4" :
+                            formData.type === 'openai' ? "https://api.openai.com/v1" :
+                              "https://api.example.com/v1"
+                    }
                   />
                 </Field>
               )}
@@ -625,7 +551,7 @@ export function ModelProvidersSettings() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {(formData.type === 'openrouter' || formData.type === 'openai' || formData.type === 'ollama') && (
+                      {(formData.type === 'openrouter' || formData.type === 'openai' || formData.type === 'ollama' || formData.type === 'z-ai' || formData.type === 'lmstudio') && (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleFetchModels(); }}

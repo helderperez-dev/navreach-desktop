@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, Pencil, Trash2, Check, X, Play, Square, MoreVertical } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, Pencil, Trash2, Check, X, Play, Square, MoreVertical, ChevronRight, ChevronDown } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,10 +10,58 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/stores/settings.store';
 import { useConfirmation } from '@/providers/ConfirmationProvider';
 import type { MCPServer, MCPStdioConfig, MCPSSEConfig } from '@shared/types';
+
+function ToolAccordionItem({ tool }: { tool: any }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="border border-border/10 rounded-lg bg-secondary/20 overflow-hidden">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-3 hover:bg-white/5 transition-colors text-left"
+      >
+        <code className="text-sm font-semibold text-primary">{tool.name}</code>
+        {isOpen ? (
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        )}
+      </button>
+
+      {isOpen && (
+        <div className="p-3 pt-0 border-t border-border/10 animate-in fade-in slide-in-from-top-1 duration-200">
+          <p className="text-sm text-muted-foreground mb-3 mt-3">
+            {tool.description || 'No description'}
+          </p>
+
+          {tool.inputSchema && (
+            <div className="text-xs">
+              <div className="uppercase tracking-wider text-[10px] font-bold text-muted-foreground/60 mb-1">
+                Inputs
+              </div>
+              <pre className="bg-black/20 p-2 rounded border border-white/5 whitespace-pre-wrap break-words font-mono text-xs">
+                {JSON.stringify(tool.inputSchema.properties || {}, null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 
 export function MCPSettings() {
@@ -31,9 +79,66 @@ export function MCPSettings() {
     config: { command: '', args: [], env: {} },
   });
 
+  const [serverStatuses, setServerStatuses] = useState<Record<string, string>>({});
+  const [viewingServer, setViewingServer] = useState<MCPServer | null>(null);
+  const [serverTools, setServerTools] = useState<any[]>([]);
+  const [isLoadingTools, setIsLoadingTools] = useState(false);
+  const [toolCounts, setToolCounts] = useState<Record<string, number>>({});
+
   useEffect(() => {
     loadSettings();
+    fetchStatuses();
+    // Poll statuses every 5 seconds to keep UI in sync
+    const interval = setInterval(fetchStatuses, 5000);
+    return () => clearInterval(interval);
   }, []);
+
+  const hasAutoConnected = useRef(false);
+
+  // Auto-connect enabled servers on mount/load
+  useEffect(() => {
+    if (!hasAutoConnected.current && mcpServers.length > 0) {
+      hasAutoConnected.current = true;
+      const connectEnabledServers = async () => {
+        for (const server of mcpServers) {
+          if (server.enabled) {
+            try {
+              await window.api.mcp.connect(server.id);
+            } catch (e) {
+              // Ignore individual connection errors during auto-connect
+            }
+          }
+        }
+        fetchStatuses();
+      };
+      connectEnabledServers();
+    }
+  }, [mcpServers]);
+
+  const fetchStatuses = async () => {
+    try {
+      const statuses = await window.api.mcp.getAllStatuses();
+      setServerStatuses(statuses);
+
+      // Fetch tool counts for connected servers
+      const counts: Record<string, number> = {};
+      await Promise.all(Object.entries(statuses).map(async ([id, status]) => {
+        if (status === 'connected') {
+          try {
+            const res = await window.api.mcp.listTools(id);
+            if (res.success && res.tools) {
+              counts[id] = res.tools.length;
+            }
+          } catch (e) {
+            // Ignore errors
+          }
+        }
+      }));
+      setToolCounts(prev => ({ ...prev, ...counts }));
+    } catch (e) {
+      console.error('Failed to fetch statuses', e);
+    }
+  };
 
   const handleAdd = () => {
     setIsAdding(true);
@@ -284,20 +389,90 @@ export function MCPSettings() {
     setJsonInput('');
   };
 
-  const handleConnect = async (serverId: string) => {
+  const handleToggleConnection = async (server: MCPServer, checked: boolean) => {
+    // 1. Persist the new "enabled" state to the remote DB (Supabase)
     try {
-      await window.api.mcp.connect(serverId);
+      await updateMCPServer({ ...server, enabled: checked });
     } catch (e) {
-      console.error('Failed to connect:', e);
+      console.error("Failed to persist server state:", e);
+      // We continue anyway to try to effect the runtime change, 
+      // but warn the user maybe? Or just silent fail on persistence but show operational error if that fails?
+      // For now, let's proceed but log it.
     }
+
+    // 2. Perform the runtime action (Connect / Disconnect)
+    if (checked) {
+      // Turn ON -> Connect
+      try {
+        const res = await window.api.mcp.connect(server.id);
+        if (res && !res.success) {
+          toast.error(res.reason || "Connection failed");
+        } else {
+          toast.success(`Connected to ${server.name}`);
+
+          // Fetch tools immediately to update UI counts
+          try {
+            const toolsRes = await window.api.mcp.listTools(server.id);
+            if (toolsRes.success) {
+              setToolCounts(prev => ({ ...prev, [server.id]: (toolsRes.tools || []).length }));
+              setServerStatuses(prev => ({ ...prev, [server.id]: 'connected' }));
+            }
+          } catch (e) {
+            console.error("Failed to fetch initial tool count", e);
+          }
+        }
+      } catch (e) {
+        toast.error("Connection failed");
+      }
+    } else {
+      // Turn OFF -> Disconnect
+      try {
+        await window.api.mcp.disconnect(server.id);
+        toast.success(`Disconnected from ${server.name}`);
+
+        // Clear tool counts and status immediately
+        setToolCounts(prev => {
+          const next = { ...prev };
+          delete next[server.id];
+          return next;
+        });
+        setServerStatuses(prev => ({ ...prev, [server.id]: 'disconnected' }));
+      } catch (e) {
+        toast.error("Disconnection failed");
+      }
+    }
+    await fetchStatuses();
   };
 
-  const handleDisconnect = async (serverId: string) => {
+  const handleViewTools = async (server: MCPServer) => {
+    setViewingServer(server);
+    setServerTools([]);
+    setIsLoadingTools(true);
     try {
-      await window.api.mcp.disconnect(serverId);
-    } catch (e) {
-      console.error('Failed to disconnect:', e);
+      // Ensure connected first? Or listTools will auto-connect?
+      // The service says listTools auto-connects.
+      const res = await window.api.mcp.listTools(server.id);
+      if (res.success) {
+        setServerTools(res.tools || []);
+        // Optimistically update tool counts and status since we just connected
+        setToolCounts(prev => ({
+          ...prev,
+          [server.id]: (res.tools || []).length
+        }));
+        setServerStatuses(prev => ({
+          ...prev,
+          [server.id]: 'connected'
+        }));
+      } else {
+        toast.error(res.reason || "Failed to list tools");
+      }
+    } catch (e: any) {
+      toast.error(e.message || "Failed to list tools");
+    } finally {
+      setIsLoadingTools(false);
     }
+    // Refresh status as listTools might have connected
+    fetchStatuses();
   };
 
   const handleEnvChange = (key: string, value: string, type: 'key' | 'value', index: number) => {
@@ -569,59 +744,60 @@ export function MCPSettings() {
                 className="flex items-center justify-between p-4 border border-border/10 rounded-lg bg-card"
               >
                 <div className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${server.enabled ? 'bg-green-500' : 'bg-muted'}`} />
+                  <div className={`w-2 h-2 rounded-full ${serverStatuses[server.id] === 'connected' || (toolCounts[server.id] !== undefined && toolCounts[server.id] >= 0)
+                    ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]'
+                    : serverStatuses[server.id] === 'error'
+                      ? 'bg-red-500'
+                      : server.enabled
+                        ? 'bg-yellow-500 animate-pulse' // Enabled but not connected yet
+                        : 'bg-muted'
+                    }`} />
                   <div>
                     <h3 className="font-medium">{server.name}</h3>
                     <p className="text-xs text-muted-foreground">
-                      {server.type} · {server.type === 'stdio'
-                        ? (server.config as MCPStdioConfig).command
-                        : (server.config as MCPSSEConfig).url}
+                      {server.type}
+                      {(serverStatuses[server.id] === 'connected' || (toolCounts[server.id] !== undefined && toolCounts[server.id] >= 0)) && toolCounts[server.id] !== undefined && (
+                        <> · <span className="text-emerald-500 font-medium">{toolCounts[server.id]} tools available</span></>
+                      )}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleConnect(server.id)}
-                    title="Connect"
-                  >
-                    <Play className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => handleDisconnect(server.id)}
-                    title="Disconnect"
-                  >
-                    <Square className="h-4 w-4" />
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => handleEdit(server)}>
-                        <Pencil className="h-4 w-4 mr-2" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        className="text-destructive focus:text-destructive"
-                        onClick={() => handleDelete(server.id)}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      checked={server.enabled}
+                      onCheckedChange={(checked) => handleToggleConnection(server, checked)}
+                    />
+                    <div className="w-px h-6 bg-border/20 mx-1" />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                        >
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleViewTools(server)}>
+                          <Square className="h-4 w-4 mr-2" />
+                          View Tools
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleEdit(server)}>
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => handleDelete(server.id)}
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </div>
             ))}
@@ -634,6 +810,42 @@ export function MCPSettings() {
             )}
           </>
         )}
+
+        <Dialog open={!!viewingServer} onOpenChange={(open) => !open && setViewingServer(null)}>
+          <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                Server Tools
+                {viewingServer && (
+                  <Badge variant="outline" className="text-xs font-normal">
+                    {viewingServer.name}
+                  </Badge>
+                )}
+              </DialogTitle>
+              <DialogDescription>
+                Available tools provided by this MCP server.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar mt-4 space-y-4">
+              {isLoadingTools ? (
+                <div className="flex justify-center py-12">
+                  <CircularLoader className="h-8 w-8 text-primary" />
+                </div>
+              ) : serverTools.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground border border-dashed rounded-lg">
+                  No tools found.
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {serverTools.map((tool: any, idx: number) => (
+                    <ToolAccordionItem key={idx} tool={tool} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

@@ -32,7 +32,7 @@ export interface Conversation {
 export interface ModelProvider {
   id: string;
   name: string;
-  type: 'openai' | 'anthropic' | 'openrouter' | 'custom' | 'local' | 'ollama';
+  type: 'openai' | 'anthropic' | 'openrouter' | 'custom' | 'local' | 'ollama' | 'z-ai' | 'lmstudio';
   apiKey: string;
   baseUrl?: string;
   models: ModelConfig[];

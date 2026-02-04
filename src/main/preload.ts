@@ -120,6 +120,7 @@ const aiAPI = {
   listWorkflows: () => ipcRenderer.invoke('ai:list-workflows'),
   suggest: (request: unknown) => ipcRenderer.invoke('ai:suggest', request),
   testConnection: (provider: any, modelId?: string) => ipcRenderer.invoke('ai:test-connection', { provider, modelId }),
+  fetchModels: (params: { apiKey?: string; baseUrl?: string; type: string }) => ipcRenderer.invoke('ai:fetch-models', params),
   onPlaybookStatus: (callback: (data: { nodeId: string; status: 'running' | 'success' | 'error'; message?: string }) => void) => {
     const handler = (_event: unknown, data: any) => callback(data);
     ipcRenderer.on('ai:playbook-status', handler);
