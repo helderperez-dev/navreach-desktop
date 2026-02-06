@@ -317,12 +317,19 @@ export async function createChatModel(provider: ModelProvider, model: ModelConfi
 
     let baseUrl = provider.baseUrl?.trim().replace(/\/+$/, '') || undefined;
 
+    // Default URL for Z.AI if not explicitly provided (matches fetchModels behavior)
+    if (!baseUrl && provider.type === 'z-ai') {
+        baseUrl = 'https://api.z.ai/api/coding/paas/v4';
+    }
+
     // Auto-fix missing version prefixes for known providers
     if (baseUrl) {
         if (provider.type === 'lmstudio' && !baseUrl.includes('/v1')) baseUrl = `${baseUrl}/v1`;
         if (provider.type === 'openai' && !baseUrl.includes('/v1') && baseUrl.includes('localhost')) baseUrl = `${baseUrl}/v1`;
         if (provider.type === 'z-ai' && !baseUrl.includes('/v4')) baseUrl = `${baseUrl}/v4`;
     }
+
+    console.log(`[AI Service] createChatModel - Provider: ${provider.type}, BaseURL: ${baseUrl}, Model: ${model.id}`);
 
     const baseConfig: any = {
         modelName: model.id,
@@ -422,6 +429,10 @@ export async function createChatModel(provider: ModelProvider, model: ModelConfi
                 apiKey: cleanApiKey,
                 configuration: {
                     baseURL: baseUrl,
+                    defaultHeaders: {
+                        'User-Agent': 'Reavion/1.0.0',
+                        'Content-Type': 'application/json'
+                    }
                 },
             });
         }
@@ -2865,6 +2876,40 @@ Keep moving!
                 } catch (invokeError: any) {
                     const msg = invokeError.message || String(invokeError);
                     addTrace('Invocation Failed', msg, 'error');
+
+                    // RAW DIAGNOSTIC FALLBACK for 401/403/Authentication
+                    if (msg.includes('401') || msg.includes('403') || msg.toLowerCase().includes('token')) {
+                        try {
+                            let rawUrl = provider.baseUrl || (provider.type === 'z-ai' ? 'https://api.z.ai/api/coding/paas/v4' : 'https://api.openai.com/v1');
+                            if (provider.type === 'lmstudio' && !rawUrl.includes('/v1')) rawUrl = `${rawUrl}/v1`;
+                            if (provider.type === 'z-ai' && !rawUrl.includes('/v4')) rawUrl = `${rawUrl}/v4`;
+
+                            // Construct chat endpoint
+                            if (!rawUrl.endsWith('/chat/completions')) rawUrl = `${rawUrl.replace(/\/$/, '')}/chat/completions`;
+
+                            addTrace('Diagnostic', `Attempting raw fetch to: ${rawUrl}`, 'info');
+
+                            const cleanKey = (provider.apiKey || '').replace(/^Bearer\s+/i, '').trim();
+                            const rawResp = await fetch(rawUrl, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${cleanKey}`,
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    model: testModel.id,
+                                    messages: [{ role: 'user', content: 'Ping' }],
+                                    stream: false,
+                                    max_tokens: 5
+                                })
+                            });
+
+                            const rawBody = await rawResp.text();
+                            addTrace('Diagnostic Result', `Status: ${rawResp.status}. Body: ${rawBody.substring(0, 200)}`, rawResp.ok ? 'success' : 'error');
+                        } catch (rawErr: any) {
+                            addTrace('Diagnostic Failed', rawErr.message, 'error');
+                        }
+                    }
 
                     if (msg.includes('No endpoints found that support tool use')) {
                         return {

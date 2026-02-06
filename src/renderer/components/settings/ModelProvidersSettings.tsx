@@ -79,14 +79,7 @@ const allModels: Record<string, ModelConfig[]> = {
   custom: [],
   local: [],
   ollama: [],
-  'z-ai': [
-    { id: 'glm-4.5-air', name: 'GLM 4.5 Air', providerId: '', contextWindow: 128000, enabled: true },
-    { id: 'glm-4.5', name: 'GLM 4.5', providerId: '', contextWindow: 128000, enabled: true },
-    { id: 'glm-4', name: 'GLM 4 (Original)', providerId: '', contextWindow: 128000, enabled: true },
-    { id: 'glm-4-plus', name: 'GLM 4 Plus', providerId: '', contextWindow: 128000, enabled: true },
-    { id: 'glm-4-air', name: 'GLM 4 Air', providerId: '', contextWindow: 128000, enabled: true },
-    { id: 'glm-4-flash', name: 'GLM 4 Flash', providerId: '', contextWindow: 128000, enabled: true },
-  ],
+  'z-ai': [],
 };
 
 const defaultModels: Record<string, ModelConfig[]> = {
@@ -708,6 +701,16 @@ export function ModelProvidersSettings() {
                     <p className="text-xs opacity-90 mt-1">{testResult.message || testResult.error}</p>
                     {testResult.response && (
                       <p className="text-xs font-mono mt-1 opacity-75">Response: "{testResult.response}"</p>
+                    )}
+                    {(testResult as any).trace && (testResult as any).trace.length > 0 && (
+                      <div className="mt-2 p-2 bg-black/20 rounded border border-white/10 text-[10px] font-mono overflow-x-auto max-h-[200px] overflow-y-auto">
+                        <div className="font-semibold mb-1 opacity-70">Diagnostic Trace:</div>
+                        {((testResult as any).trace).map((step: any, i: number) => (
+                          <div key={i} className={cn("mb-0.5", step.status === 'error' ? 'text-red-400' : step.status === 'warn' ? 'text-yellow-400' : step.status === 'success' ? 'text-green-400' : 'text-muted-foreground')}>
+                            <span className="opacity-70">[{step.step}]</span> {step.detail}
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>

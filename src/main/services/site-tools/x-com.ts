@@ -255,6 +255,103 @@ function getTweetFullMetadata(t) {
   };
 }
 
+// --- X ALGORITHM OPTIMIZATION HELPERS ---
+// Based on X's open-sourced algorithm, these helpers score tweets for maximum algorithmic impact
+
+function getTweetAge(tweetNode) {
+  // Returns age in minutes. Fresher = better for algorithmic velocity
+  const timeEl = tweetNode.querySelector('time');
+  if (!timeEl) return 9999; // Unknown = old
+  const datetime = timeEl.getAttribute('datetime');
+  if (!datetime) return 9999;
+  const posted = new Date(datetime).getTime();
+  const now = Date.now();
+  return Math.floor((now - posted) / (1000 * 60));
+}
+
+function hasVideoContent(tweetNode) {
+  // Videos get VQV_WEIGHT bonus in X algorithm
+  return !!tweetNode.querySelector('video, [data-testid="videoPlayer"], [data-testid="videoComponent"]');
+}
+
+function hasImageContent(tweetNode) {
+  // Images get photo_expand score in X algorithm
+  return !!tweetNode.querySelector('[data-testid="tweetPhoto"]');
+}
+
+function getTweetEngagementMetrics(tweetNode) {
+  // Extract visible engagement metrics
+  const parseCount = (str) => {
+    if (!str) return 0;
+    const s = str.toUpperCase().trim();
+    const match = s.match(/([0-9,.]+)\s*([KMB])?/);
+    if (!match) return 0;
+    const numStr = match[1].replace(/,/g, '');
+    const suffix = match[2];
+    const val = parseFloat(numStr);
+    if (isNaN(val)) return 0;
+    let multiplier = 1;
+    if (suffix === 'K') multiplier = 1000;
+    else if (suffix === 'M') multiplier = 1000000;
+    else if (suffix === 'B') multiplier = 1000000000;
+    return Math.floor(val * multiplier);
+  };
+
+  const replyBtn = tweetNode.querySelector('[data-testid="reply"]');
+  const rtBtn = tweetNode.querySelector('[data-testid="retweet"], [data-testid="unretweet"]');
+  const likeBtn = tweetNode.querySelector('[data-testid="like"], [data-testid="unlike"]');
+  
+  return {
+    replies: parseCount(replyBtn?.getAttribute('aria-label')?.match(/\d+[KMB]?/)?.[0]),
+    retweets: parseCount(rtBtn?.getAttribute('aria-label')?.match(/\d+[KMB]?/)?.[0]),
+    likes: parseCount(likeBtn?.getAttribute('aria-label')?.match(/\d+[KMB]?/)?.[0]),
+  };
+}
+
+function getTweetAlgoScore(tweetNode) {
+  // Score based on X algorithm weights for maximum visibility
+  // Higher score = better target for engagement
+  let score = 50; // Base score
+  
+  const age = getTweetAge(tweetNode);
+  const hasVideo = hasVideoContent(tweetNode);
+  const hasImage = hasImageContent(tweetNode);
+  const metrics = getTweetEngagementMetrics(tweetNode);
+  const verified = getVerificationStatus(tweetNode);
+  
+  // FRESHNESS: X algorithm heavily favors recent content (velocity!)
+  if (age < 15) score += 40;        // Golden: < 15 mins
+  else if (age < 60) score += 30;   // Hot: < 1 hour
+  else if (age < 180) score += 15;  // Warm: < 3 hours
+  else if (age < 720) score += 5;   // Lukewarm: < 12 hours
+  else score -= 10;                 // Cold: > 12 hours
+  
+  // MEDIA: Videos get VQV bonus, images get photo_expand bonus
+  if (hasVideo) score += 25;
+  if (hasImage) score += 10;
+  
+  // ENGAGEMENT VELOCITY: High engagement = proven content
+  if (metrics.retweets > 10) score += 15;
+  if (metrics.likes > 50) score += 10;
+  if (metrics.replies > 5) score += 10;
+  
+  // VERIFICATION: Verified accounts have more reach potential
+  if (verified === 'gold') score += 15;  // Org accounts
+  else if (verified === 'blue') score += 5;
+  
+  // NEGATIVE: Already engaged = diminishing returns
+  const isLiked = !!tweetNode.querySelector('[data-testid="unlike"]');
+  const isRetweeted = !!tweetNode.querySelector('[data-testid="unretweet"]');
+  if (isLiked) score -= 30;
+  if (isRetweeted) score -= 20;
+  
+  // NEGATIVE: Ads have no algorithmic benefit
+  const isPromoted = !!tweetNode.querySelector('[data-testid="placementTracking"]');
+  if (isPromoted) score -= 100;
+  
+  return Math.max(0, Math.min(100, score));
+}
+
 function wait(ms) {
   const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
   const isFast = multiplier < 1.0;
@@ -1737,16 +1834,17 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const engageTool = new DynamicStructuredTool({
     name: 'x_engage',
-    description: 'Perform multiple actions (like, follow, retweet, reply) on a tweet or post.',
+    description: 'Perform multiple ALGORITHM-OPTIMIZED actions on a tweet. Supports the "Quintuple Threat" pattern: like, follow, retweet, reply, quote. Each action sends positive signals to X algorithm.',
     schema: z.object({
       targetIndex: z.preprocess((val) => (val === null ? 0 : Number(val)), z.number().default(0)).describe('The 0-based index of the tweet in the visible feed.'),
-      actions: z.string().describe('Comma-separated list of actions to take: like, follow, retweet, reply.'),
+      actions: z.string().describe('Comma-separated actions: like, follow, retweet, reply, quote. For maximum impact use "like,follow,reply" (Triple Threat) or add quote for Quadruple.'),
       replyText: z.string().optional().describe('Required if "reply" action is specified.'),
+      quoteText: z.string().optional().describe('Required if "quote" action is specified. Add your value-add commentary.'),
       expected_author: z.string().nullable().optional().describe('Handle of the author (without @) to verify target. Highly recommended.'),
       skip_self: z.boolean().default(true).describe('Skip if the target post is by the logged-in user. Default is true.'),
       skip_if_liked: z.boolean().default(true).describe('Skip if the post is already liked by the logged-in user. Default is true.'),
     }),
-    func: async ({ targetIndex, actions, replyText, expected_author, skip_self, skip_if_liked }) => {
+    func: async ({ targetIndex, actions, replyText, quoteText, expected_author, skip_self, skip_if_liked }: any) => {
       const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
@@ -1868,6 +1966,63 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                         } else {
                             results.push('Reply Button Missing');
                         }
+                    } else if (action === 'quote') {
+                        // QUOTE ACTION - High algorithmic value
+                        const qText = ${JSON.stringify(quoteText || '')};
+                        if (!qText) {
+                            results.push('Quote Skipped (No Text)');
+                            continue;
+                        }
+                        
+                        const rtBtn = tweet.querySelector('[data-testid="retweet"]');
+                        if (!rtBtn) {
+                            if (tweet.querySelector('[data-testid="unretweet"]')) {
+                                results.push('Already Retweeted/Quoted');
+                            } else {
+                                results.push('Retweet Button Missing for Quote');
+                            }
+                            continue;
+                        }
+                        
+                        await safeClick(rtBtn, 'Retweet Menu for Quote');
+                        await wait(600);
+                        
+                        const menuItems = Array.from(document.querySelectorAll('[data-testid="Dropdown"] [role="menuitem"]'));
+                        const quoteBtn = menuItems.find(el => {
+                            const txt = (el.innerText || '').toLowerCase();
+                            return txt.includes('quote') || txt.includes('citar') || txt.includes('cite');
+                        });
+                        
+                        if (!quoteBtn) {
+                            await clickOutside();
+                            results.push('Quote Option Not Found');
+                            continue;
+                        }
+                        
+                        await safeClick(quoteBtn, 'Quote Option');
+                        await wait(1000);
+                        
+                        const modal = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible).pop() || document;
+                        const composer = modal.querySelector('[data-testid="tweetTextarea_0"]') || 
+                                        modal.querySelector('div[role="textbox"][contenteditable="true"]');
+                        
+                        if (composer) {
+                            await safeClick(composer, 'Quote Composer');
+                            await safeFocus(composer);
+                            await typeHumanLike(composer, qText);
+                            await wait(500);
+                            
+                            const sendBtn = modal.querySelector('[data-testid="tweetButton"]');
+                            if (sendBtn) {
+                                await safeClick(sendBtn, 'Send Quote');
+                                results.push('Quoted');
+                                await wait(2000);
+                            } else {
+                                results.push('Quote Send Missing');
+                            }
+                        } else {
+                            results.push('Quote Composer Missing');
+                        }
                     }
                 }
 
@@ -1912,6 +2067,349 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       } catch (e: any) {
         console.error('[X Tool Error] x_engage:', e);
         return JSON.stringify({ success: false, error: e.message || JSON.stringify(e) || String(e) });
+      }
+    }
+  });
+
+  // === X ALGORITHM OPTIMIZATION TOOLS === //
+
+  /**
+   * QUOTE TWEET TOOL
+   * P(quote) has HIGH weight in X algorithm because it creates a NEW content surface
+   * that extends your reach to the original author's audience
+   */
+  const quoteTweetTool = new DynamicStructuredTool({
+    name: 'x_quote_tweet',
+    description: 'Quote tweet a post with your commentary. Quote tweets have HIGH algorithmic value because they create a new reach surface and signal high engagement quality. Use this to add value to viral content in your niche.',
+    schema: z.object({
+      index: z.number().default(0).describe('0-based index of the tweet to quote.'),
+      text: z.string().min(1).describe('Your commentary/value-add for the quote tweet. Make it insightful!'),
+      expected_author: z.string().nullable().optional().describe('Handle of the original author (without @) to verify target.'),
+    }),
+    func: async ({ index, text, expected_author }: { index: number; text: string; expected_author?: string | null }) => {
+      const contents = await ctx.getContents();
+      try {
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            try {
+              // 1. Find Tweet
+              const findResult = await findTweetRobustly(${index}, ${JSON.stringify(expected_author || null)});
+              if (!findResult.tweet) return { success: false, error: findResult.error || 'Tweet not found at index ' + ${index} };
+              const tweet = findResult.tweet;
+              
+              const metadata = getTweetFullMetadata(tweet);
+              
+              // 2. Click Retweet button to open menu
+              const rtBtn = tweet.querySelector('[data-testid="retweet"]');
+              if (!rtBtn) {
+                const unrtBtn = tweet.querySelector('[data-testid="unretweet"]');
+                if (unrtBtn) return { success: false, skipped: true, reason: 'already_retweeted', message: 'Already retweeted/quoted', metadata };
+                return { success: false, error: 'Retweet button not found' };
+              }
+              
+              await safeClick(rtBtn, 'Retweet Menu');
+              await wait(600);
+              
+              // 3. Find and click "Quote" option
+              const quoteOption = document.querySelector('[data-testid="Dropdown"] [role="menuitem"]');
+              const menuItems = Array.from(document.querySelectorAll('[data-testid="Dropdown"] [role="menuitem"]'));
+              const quoteBtn = menuItems.find(el => {
+                const txt = (el.innerText || '').toLowerCase();
+                return txt.includes('quote') || txt.includes('citar') || txt.includes('cite');
+              });
+              
+              if (!quoteBtn) {
+                await clickOutside();
+                return { success: false, error: 'Quote option not found in retweet menu' };
+              }
+              
+              await safeClick(quoteBtn, 'Quote Option');
+              await wait(1000);
+              
+              // 4. Find composer and type
+              const modal = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible).pop() || document;
+              const composer = modal.querySelector('[data-testid="tweetTextarea_0"]') || 
+                              modal.querySelector('div[role="textbox"][contenteditable="true"]');
+              
+              if (!composer) return { success: false, error: 'Quote tweet composer not found' };
+              
+              await safeClick(composer, 'Quote Composer');
+              await safeFocus(composer);
+              await typeHumanLike(composer, ${JSON.stringify(text)});
+              await wait(500);
+              
+              // 5. Send quote tweet
+              const sendBtn = modal.querySelector('[data-testid="tweetButton"]');
+              if (!sendBtn) return { success: false, error: 'Quote tweet send button not found' };
+              
+              await safeClick(sendBtn, 'Send Quote Tweet');
+              await wait(2000);
+              
+              return { 
+                success: true, 
+                message: 'Quote tweeted successfully! This signals high engagement quality to the algorithm.',
+                metadata,
+                algorithmBonus: 'P(quote) is a HIGH weight signal in the X algorithm'
+              };
+            } catch (e) {
+              const err = (e && e.message) || JSON.stringify(e) || String(e);
+              return { success: false, error: err };
+            }
+          })()
+        `);
+
+        const accessToken = ctx.getAccessToken?.();
+        if (result.success && accessToken) {
+          await engagementService.logEngagement(accessToken, {
+            platform: 'x.com',
+            action_type: 'quote',
+            target_username: result.metadata?.target_username || 'unknown',
+            target_name: result.metadata?.target_name,
+            target_avatar_url: result.metadata?.target_avatar_url,
+            metadata: {
+              tweet_id: result.metadata?.tweet_id,
+              target_tweet_text: result.metadata?.target_tweet_text,
+              quote_text: text
+            }
+          });
+        }
+
+        return JSON.stringify(result);
+      } catch (e: any) {
+        console.error('[X Tool Error] x_quote_tweet:', e);
+        return JSON.stringify({ success: false, error: e.message || String(e) });
+      }
+    }
+  });
+
+  /**
+   * GOLDEN HOUR BOOST TOOL  
+   * Based on X algorithm velocity scoring: engagement in the first 15-60 mins = massive boost
+   * This tool monitors YOUR post and instantly engages back with anyone who interacts
+   */
+  const boostMyPostTool = new DynamicStructuredTool({
+    name: 'x_boost_my_post',
+    description: 'GOLDEN HOUR MODE: Navigate to your recent post and engage back with everyone who liked/replied. The X algorithm heavily rewards engagement velocity in the first hour. Use this after posting to maximize algorithmic reach.',
+    schema: z.object({
+      post_url: z.string().nullable().describe('Direct URL to your post (e.g., https://x.com/yourhandle/status/123...). If null, will try to find your most recent post.'),
+      auto_like_replies: z.boolean().default(true).describe('Automatically like all replies to boost engagement signal.'),
+      auto_reply_thanks: z.boolean().default(false).describe('Automatically reply with a short thanks/acknowledgment to commenters.'),
+    }),
+    func: async ({ post_url, auto_like_replies, auto_reply_thanks }: { post_url?: string | null; auto_like_replies?: boolean; auto_reply_thanks?: boolean }) => {
+      const contents = await ctx.getContents();
+      try {
+        // Navigate to the post
+        if (post_url) {
+          await contents.loadURL(post_url);
+        } else {
+          // Try to navigate to user's profile and find recent post
+          await contents.loadURL('https://x.com/profile');
+        }
+        await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            try {
+              const myHandle = getMyHandle();
+              let postUrl = ${JSON.stringify(post_url || null)};
+              
+              // If no URL provided, find the user's most recent post
+              if (!postUrl) {
+                await wait(2000);
+                const tweets = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
+                const myTweet = tweets.find(t => {
+                  const author = getTweetAuthor(t);
+                  return author && myHandle && author.toLowerCase() === myHandle.toLowerCase();
+                });
+                
+                if (myTweet) {
+                  const timeLink = myTweet.querySelector('time')?.parentElement;
+                  if (timeLink && timeLink.href) {
+                    postUrl = timeLink.href;
+                    window.location.href = postUrl;
+                    await wait(3000);
+                  }
+                }
+              }
+              
+              if (!postUrl && !window.location.href.includes('/status/')) {
+                return { success: false, error: 'Could not find your recent post. Please provide a post_url.' };
+              }
+              
+              // Get post age to determine boost strategy
+              const mainTweet = document.querySelector('article[data-testid="tweet"]');
+              const ageMinutes = mainTweet ? getTweetAge(mainTweet) : 9999;
+              
+              let goldenHour = ageMinutes < 60;
+              let boostMode = ageMinutes < 15 ? 'CRITICAL' : ageMinutes < 60 ? 'HIGH' : 'STANDARD';
+              
+              const results = {
+                postAge: ageMinutes + ' minutes',
+                boostMode,
+                repliesLiked: 0,
+                repliesResponded: 0,
+                engagersFound: 0
+              };
+
+              // Scroll and find replies
+              const replies = Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible).slice(1); // Skip main tweet
+              results.engagersFound = replies.length;
+              
+              for (const reply of replies) {
+                // Like each reply (signals high engagement to algorithm)
+                if (${auto_like_replies}) {
+                  const likeBtn = reply.querySelector('[data-testid="like"]');
+                  if (likeBtn && isVisible(likeBtn)) {
+                    await safeClick(likeBtn, 'Like Reply', { afterWait: 300 });
+                    results.repliesLiked++;
+                  }
+                }
+                
+                // Optional: Auto-reply with thanks
+                if (${auto_reply_thanks} && results.repliesResponded < 5) {
+                  const replyBtn = reply.querySelector('[data-testid="reply"]');
+                  if (replyBtn && isVisible(replyBtn)) {
+                    await safeClick(replyBtn, 'Reply to Commenter');
+                    await wait(800);
+                    
+                    const modal = Array.from(document.querySelectorAll('[role="dialog"]')).filter(isVisible).pop() || document;
+                    const composer = modal.querySelector('[data-testid="tweetTextarea_0"]');
+                    
+                    if (composer) {
+                      const thanks = ['Thanks! 🙌', 'Appreciate it! 🙏', 'Thank you! 💪', 'Love this! 🔥'][Math.floor(Math.random() * 4)];
+                      await safeClick(composer, 'Reply Composer');
+                      await typeHumanLike(composer, thanks);
+                      await wait(300);
+                      
+                      const sendBtn = modal.querySelector('[data-testid="tweetButton"]');
+                      if (sendBtn) {
+                        await safeClick(sendBtn, 'Send Thanks');
+                        results.repliesResponded++;
+                      }
+                    }
+                    await wait(1000);
+                  }
+                }
+              }
+              
+              return { 
+                success: true, 
+                message: 'Boost mode complete! ' + results.repliesLiked + ' replies liked, ' + results.repliesResponded + ' responses sent.',
+                ...results,
+                algorithmTip: goldenHour 
+                  ? 'POST IS IN GOLDEN HOUR! Maximum algorithmic amplification active.' 
+                  : 'Post is outside golden hour. Engagement still valuable but velocity bonus is reduced.'
+              };
+            } catch (e) {
+              const err = (e && e.message) || JSON.stringify(e) || String(e);
+              return { success: false, error: err };
+            }
+          })()
+        `);
+
+        return JSON.stringify(result);
+      } catch (e: any) {
+        console.error('[X Tool Error] x_boost_my_post:', e);
+        return JSON.stringify({ success: false, error: e.message || String(e) });
+      }
+    }
+  });
+
+  /**
+   * PROFILE VISIT TOOL
+   * P(profile_click) is a positive signal in X algorithm
+   * Visiting a profile before engaging shows genuine interest
+   */
+  const visitProfileTool = new DynamicStructuredTool({
+    name: 'x_visit_profile',
+    description: 'Visit a user profile to send P(profile_click) signal to the algorithm. Use this BEFORE engaging with someone to show genuine interest. Also useful for researching targets.',
+    schema: z.object({
+      username: z.string().describe('Handle of the user to visit (without @).'),
+      auto_follow: z.boolean().default(false).describe('Automatically follow if not already following.'),
+      dwell_time_ms: z.number().default(3000).describe('How long to stay on profile (milliseconds). Longer dwell = stronger signal.'),
+    }),
+    func: async ({ username, auto_follow, dwell_time_ms }: { username: string; auto_follow?: boolean; dwell_time_ms?: number }) => {
+      const contents = await ctx.getContents();
+      const handle = (username || '').replace('@', '').trim();
+      try {
+        await contents.loadURL(`https://x.com/${handle}`);
+        await contents.executeJavaScript(WAIT_FOR_RESULTS_SCRIPT);
+
+        const result = await contents.executeJavaScript(`
+          (async function() {
+            ${BASE_SCRIPT_HELPERS}
+            try {
+              // Simulate genuine profile browsing behavior
+              await wait(500);
+              
+              // Scroll down slightly to simulate reading bio
+              window.scrollBy({ top: 200, behavior: 'smooth' });
+              await wait(300);
+              
+              // Dwell time (signals genuine interest)
+              await wait(${dwell_time_ms || 3000});
+              
+              // Extract profile data
+              const name = document.querySelector('[data-testid="UserName"] span')?.innerText || '';
+              const bio = document.querySelector('[data-testid="UserDescription"]')?.innerText || '';
+              const followersEl = document.querySelector('a[href$="/followers"] span span') || 
+                                  document.querySelector('a[href$="/verified_followers"] span span');
+              const followers = followersEl?.innerText || '0';
+              
+              let followStatus = 'not_followed';
+              
+              if (${auto_follow}) {
+                const followBtn = document.querySelector('[data-testid$="-follow"]');
+                const unfollowBtn = document.querySelector('[data-testid$="-unfollow"]');
+                
+                if (unfollowBtn) {
+                  followStatus = 'already_following';
+                } else if (followBtn && isVisible(followBtn)) {
+                  await safeClick(followBtn, 'Profile Follow');
+                  followStatus = 'followed';
+                }
+              }
+              
+              return { 
+                success: true, 
+                message: 'Profile visited! P(profile_click) signal sent to algorithm.',
+                profile: {
+                  username: '${handle}',
+                  name,
+                  bio: bio.substring(0, 200),
+                  followers
+                },
+                followStatus,
+                dwellTime: ${dwell_time_ms || 3000} + 'ms',
+                algorithmBonus: 'Profile clicks signal genuine interest and boost content in your feed from this user.'
+              };
+            } catch (e) {
+              const err = (e && e.message) || JSON.stringify(e) || String(e);
+              return { success: false, error: err };
+            }
+          })()
+        `);
+
+        const accessToken = ctx.getAccessToken?.();
+        if (result.success && result.followStatus === 'followed' && accessToken) {
+          await engagementService.logEngagement(accessToken, {
+            platform: 'x.com',
+            action_type: 'follow',
+            target_username: handle,
+            target_name: result.profile?.name,
+            metadata: {
+              source: 'profile_visit',
+              followers: result.profile?.followers
+            }
+          });
+        }
+
+        return JSON.stringify(result);
+      } catch (e: any) {
+        console.error('[X Tool Error] x_visit_profile:', e);
+        return JSON.stringify({ success: false, error: e.message || String(e) });
       }
     }
   });
@@ -2260,12 +2758,13 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const scanPostsTool = new DynamicStructuredTool({
     name: 'x_scan_posts',
-    description: 'Scan visible posts on X.com to get their metadata and engagement status. indices match x_engage targets. USE scroll_bottom=true if you have processed the current visible posts and need to load more.',
+    description: 'Scan visible posts on X.com with ALGORITHM SCORING. Each post gets an algoScore (0-100) based on X algorithm weights: freshness, media type, engagement velocity. Higher scores = better engagement targets. Use scroll_bottom=true to load more.',
     schema: z.object({
       limit: z.number().nullable().default(10),
       scroll_bottom: z.boolean().nullable().describe('Whether to scroll down after scanning to load new posts. Set to true if you are looping or need new results.').default(false),
+      min_algo_score: z.number().nullable().describe('Only return posts with algoScore >= this value. Range 0-100. Recommended: 50+ for quality targets.').default(null),
     }),
-    func: async ({ limit, scroll_bottom }: { limit: number | null, scroll_bottom?: boolean }) => {
+    func: async ({ limit, scroll_bottom, min_algo_score }: { limit: number | null, scroll_bottom?: boolean, min_algo_score?: number | null }) => {
       const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
@@ -2291,7 +2790,21 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                  // Ads often have placementTracking OR a "Promoted" span that isn't just text
                  const isPromoted = !!t.querySelector('[data-testid="placementTracking"]') || 
                                     !!Array.from(t.querySelectorAll('span')).find(s => s.innerText === 'Promoted');
-                 const analyticsValue = t.querySelector('[href*="/analytics"]')?.innerText || '0';
+                 
+                 // X ALGORITHM SCORING 🔥
+                 const algoScore = getTweetAlgoScore(t);
+                 const ageMinutes = getTweetAge(t);
+                 const hasVideo = hasVideoContent(t);
+                 const hasImage = hasImageContent(t);
+                 const metrics = getTweetEngagementMetrics(t);
+                 const verifiedType = getVerificationStatus(t);
+                 
+                 // Freshness label for quick reference
+                 let freshness = 'cold';
+                 if (ageMinutes < 15) freshness = 'golden';
+                 else if (ageMinutes < 60) freshness = 'hot';
+                 else if (ageMinutes < 180) freshness = 'warm';
+                 else if (ageMinutes < 720) freshness = 'lukewarm';
                  
                  return { 
                    index: i, 
@@ -2299,14 +2812,26 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                    authorName,
                    tweetId,
                    text, 
+                   // Engagement status
                    isLiked, 
                    isRetweeted, 
                    isPromoted,
                    isEngaged: isLiked || isRetweeted,
-                   metrics: analyticsValue,
+                   // X ALGORITHM DATA 🚀
+                   algoScore,
+                   ageMinutes,
+                   freshness,
+                   hasVideo,
+                   hasImage,
+                   verifiedType,
+                   metrics,
                    visible: true 
                  };
               });
+
+              // Filter by minimum algo score if specified
+              const minScore = ${min_algo_score ?? 0};
+              const filtered = minScore > 0 ? data.filter(p => p.algoScore >= minScore) : data;
 
               // 2. Handle Scroll AFTER scanning
               let scrolled = false;
@@ -2315,13 +2840,31 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                  scrolled = true;
               }
               
+              // Sort by algoScore descending for priority targeting
+              filtered.sort((a, b) => b.algoScore - a.algoScore);
+              
+              const goldenCount = filtered.filter(p => p.freshness === 'golden').length;
+              const hotCount = filtered.filter(p => p.freshness === 'hot').length;
+              const videoCount = filtered.filter(p => p.hasVideo).length;
+              
               return { 
                 success: true, 
-                count: data.length, 
-                posts: data,
+                count: filtered.length, 
+                posts: filtered,
                 scrolled,
-                message: data.length > 0 
-                  ? ('Scanned ' + data.length + ' visible posts.' + (scrolled ? ' Scrolled down to load more.' : ''))
+                algoInsights: {
+                  goldenPosts: goldenCount,
+                  hotPosts: hotCount,
+                  videoPosts: videoCount,
+                  avgScore: Math.round(filtered.reduce((s, p) => s + p.algoScore, 0) / (filtered.length || 1)),
+                  recommendation: goldenCount > 0 
+                    ? 'PRIORITY: Engage with golden posts first (< 15 min old) for maximum velocity boost!' 
+                    : hotCount > 0 
+                      ? 'GOOD: Hot posts available (< 1 hour). Engage quickly for algorithmic lift.'
+                      : 'MODERATE: No fresh posts. Consider switching to a different search.'
+                },
+                message: filtered.length > 0 
+                  ? ('Scanned ' + data.length + ' posts, ' + filtered.length + ' meet algo criteria. Top score: ' + (filtered[0]?.algoScore || 0) + '/100.' + (scrolled ? ' Scrolled down.' : ''))
                   : ('No posts found. Are you on a feed? (URL: ' + window.location.href + ')')
               };
             } catch(e) {
@@ -2443,5 +2986,26 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
     }
   });
 
-  return [searchTool, advancedSearchTool, likeTool, replyTool, postTool, followTool, scoutTool, profileTool, engageTool, dmTool, switchTabTool, analyzeNotificationsTool, checkEngagementTool, scanPostsTool, engagingTool, recoverTool];
+  return [
+    searchTool,
+    advancedSearchTool,
+    likeTool,
+    replyTool,
+    postTool,
+    followTool,
+    scoutTool,
+    profileTool,
+    engageTool,
+    dmTool,
+    switchTabTool,
+    analyzeNotificationsTool,
+    checkEngagementTool,
+    scanPostsTool,
+    engagingTool,
+    recoverTool,
+    // X ALGORITHM OPTIMIZATION TOOLS 🚀
+    quoteTweetTool,
+    boostMyPostTool,
+    visitProfileTool,
+  ];
 }
