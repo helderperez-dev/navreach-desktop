@@ -20,6 +20,14 @@ interface TargetsState {
     isLoading: boolean;
     error: string | null;
     recentLogs: any[];
+    selectedTargetIds: Set<string>;
+    setSelectedTargetIds: (ids: Set<string>) => void;
+    isAllSelectedGlobally: boolean;
+    setIsAllSelectedGlobally: (selected: boolean) => void;
+    isExportModalOpen: boolean;
+    setIsExportModalOpen: (open: boolean) => void;
+    exportListId: string | null;
+    setExportListId: (id: string | null) => void;
 
     viewMode: 'list' | 'all' | 'engaged' | 'segment';
     setViewMode: (mode: 'list' | 'all' | 'engaged' | 'segment') => void;
@@ -68,6 +76,8 @@ interface TargetsState {
     saveTargetAssignments: (targetData: any, listIds: string[]) => Promise<Target | null>;
     bulkSaveTargetAssignments: (targetsData: any[], listIds: string[]) => Promise<Target[]>;
     getFilterSuggestions: (field: string, metadataKey?: string) => Promise<string[]>;
+
+    exportTargets: (format: 'csv' | 'json', options?: { listId?: string, targetIds?: string[] }) => Promise<void>;
 }
 
 export const useTargetsStore = create<TargetsState>((set, get) => ({
@@ -81,6 +91,10 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
     isLoading: false,
     error: null,
     recentLogs: [],
+    selectedTargetIds: new Set(),
+    isAllSelectedGlobally: false,
+    isExportModalOpen: false,
+    exportListId: null,
     realtimeChannel: null as RealtimeChannel | null,
 
     // Pagination defaults
@@ -207,14 +221,19 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
     },
 
     setSelectedSegmentId: (id) => {
-        set({ selectedSegmentId: id });
+        set({ selectedSegmentId: id, selectedTargetIds: new Set() });
         if (id && get().viewMode === 'segment') {
             get().fetchTargets();
         }
     },
 
+    setSelectedTargetIds: (ids) => set({ selectedTargetIds: ids }),
+    setIsAllSelectedGlobally: (selected) => set({ isAllSelectedGlobally: selected }),
+    setIsExportModalOpen: (open) => set({ isExportModalOpen: open }),
+    setExportListId: (id) => set({ exportListId: id }),
+
     setSelectedListId: (id) => {
-        set({ selectedListId: id });
+        set({ selectedListId: id, selectedTargetIds: new Set() });
         if (id) {
             set({ lastSelectedListId: id });
             get().fetchTargets(id);
@@ -1167,5 +1186,140 @@ export const useTargetsStore = create<TargetsState>((set, get) => ({
         if (!workspaceId) return [];
         const { data } = await targetService.getFieldUniqueValues(workspaceId, field, metadataKey);
         return data || [];
+    },
+
+    exportTargets: async (format: 'csv' | 'json', options?: { listId?: string, targetIds?: string[] }) => {
+        const listId = options?.listId;
+        const targetIds = options?.targetIds;
+        const idToUse = listId || (get().viewMode === 'list' ? get().selectedListId : get().viewMode === 'segment' ? get().selectedSegmentId : null);
+        const mode = get().viewMode;
+        const workspaceId = useWorkspaceStore.getState().currentWorkspace?.id;
+
+        if (!workspaceId) {
+            toast.error('No active workspace');
+            return;
+        }
+
+        toast.info('Preparing export...');
+
+        let data: any[] = [];
+        let error = null;
+        let fileName = 'export';
+
+        try {
+            // If targetIds are provided, we just filter from current targets or fetch them
+            if (targetIds && targetIds.length > 0) {
+                // For simplicity, if we have targetIds, we use them. 
+                // We might want to fetch full records if they aren't in current state, 
+                // but usually they are if selected.
+                data = get().targets.filter(t => targetIds.includes(t.id));
+                fileName = 'selected_leads';
+            } else {
+                const currentList = get().lists.find(l => l.id === idToUse);
+                const currentSegment = get().segments.find(s => s.id === idToUse);
+
+                if (currentList) {
+                    fileName = currentList.name || 'list-export';
+                    const res = await targetService.getAllTargetsInList(currentList.id);
+                    data = res.data || [];
+                    error = res.error;
+                } else if (currentSegment) {
+                    fileName = currentSegment.name || 'segment-export';
+                    const res = await segmentService.getTargetsByFilters(workspaceId, currentSegment.filters, currentSegment.match_type, 0, 10000);
+                    data = res.data || [];
+                    error = res.error;
+                } else if (mode === 'all') {
+                    fileName = 'all-contacts';
+                    const { data: allData, error: allErr } = await supabase
+                        .from('targets')
+                        .select('*, assignments:target_assignments!target_assignments_target_id_fkey(list_id, target_lists!target_assignments_list_id_fkey(name))')
+                        .eq('workspace_id', workspaceId)
+                        .order('created_at', { ascending: false });
+
+                    data = allData?.map((t: any) => ({
+                        ...t,
+                        all_list_names: t.assignments?.map((a: any) => a.target_lists?.name).filter(Boolean).join(', ') || ''
+                    })) || [];
+                    error = allErr;
+                } else if (mode === 'engaged') {
+                    fileName = 'engaged-contacts';
+                    const { data: engagedData, error: engagedErr } = await supabase
+                        .from('targets')
+                        .select('*, assignments:target_assignments!target_assignments_target_id_fkey(list_id, target_lists!target_assignments_list_id_fkey(name))')
+                        .eq('workspace_id', workspaceId)
+                        .not('last_interaction_at', 'is', null)
+                        .order('last_interaction_at', { ascending: false });
+
+                    data = engagedData?.map((t: any) => ({
+                        ...t,
+                        all_list_names: t.assignments?.map((a: any) => a.target_lists?.name).filter(Boolean).join(', ') || ''
+                    })) || [];
+                    error = engagedErr;
+                }
+            }
+
+            if (error) throw error;
+            if (data.length === 0) {
+                toast.error('No data to export');
+                return;
+            }
+
+            // Cleanup data for export
+            const cleanData = data.map(t => {
+                const { assignments, list_to_target_map, target_lists, ...rest } = t;
+                const flattened: any = { ...rest };
+
+                // Flatten metadata
+                if (flattened.metadata && typeof flattened.metadata === 'object') {
+                    Object.keys(flattened.metadata).forEach(key => {
+                        flattened[`metadata_${key}`] = flattened.metadata[key];
+                    });
+                    delete flattened.metadata;
+                }
+
+                // Flatten tags
+                if (Array.isArray(flattened.tags)) {
+                    flattened.tags = flattened.tags.join(', ');
+                }
+
+                return flattened;
+            });
+
+            let content = '';
+            let mimeType = '';
+
+            if (format === 'json') {
+                content = JSON.stringify(cleanData, null, 2);
+                mimeType = 'application/json';
+            } else {
+                // CSV formatting
+                const headers = Array.from(new Set(cleanData.flatMap(row => Object.keys(row))));
+                const csvRows = [
+                    headers.join(','),
+                    ...cleanData.map(row => headers.map(header => {
+                        const val = row[header];
+                        const cell = val === null || val === undefined ? '' : String(val).replace(/"/g, '""');
+                        return cell.includes(',') || cell.includes('"') || cell.includes('\n') ? `"${cell}"` : cell;
+                    }).join(','))
+                ];
+                content = csvRows.join('\n');
+                mimeType = 'text/csv';
+            }
+
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${fileName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${format}`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            toast.success('Export completed');
+        } catch (err: any) {
+            console.error('Export failed:', err);
+            toast.error(`Export failed: ${err.message}`);
+        }
     }
 }));

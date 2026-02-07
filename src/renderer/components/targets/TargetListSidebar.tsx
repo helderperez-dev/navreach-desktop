@@ -5,7 +5,8 @@ import { useAppStore } from '@/stores/app.store';
 import { useSubscriptionStore } from '@/stores/subscription.store';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Plus, List, MoreVertical, Trash2, Edit2, Globe, Clock } from 'lucide-react';
+import { Plus, List, MoreVertical, Trash2, Edit2, Globe, Clock, Download } from 'lucide-react';
+import { ExportDialog } from './ExportDialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
     DropdownMenu,
@@ -25,7 +26,8 @@ export function TargetListSidebar() {
         segments, selectedSegmentId, setSelectedSegmentId,
         addList, deleteList, updateList,
         fetchSegments,
-        isLoading, viewMode, setViewMode
+        isLoading, viewMode, setViewMode, exportTargets,
+        setIsExportModalOpen, setExportListId
     } = useTargetsStore();
     const { confirm } = useConfirmation();
     const { isPro } = useSubscriptionStore();
@@ -283,6 +285,16 @@ export function TargetListSidebar() {
                                                                     Rename
                                                                 </DropdownMenuItem>
                                                                 <DropdownMenuItem
+                                                                    className="gap-2 text-xs"
+                                                                    onClick={() => {
+                                                                        setExportListId(list.id);
+                                                                        setIsExportModalOpen(true);
+                                                                    }}
+                                                                >
+                                                                    <Download className="h-3 w-3 text-muted-foreground" />
+                                                                    Export
+                                                                </DropdownMenuItem>
+                                                                <DropdownMenuItem
                                                                     className="gap-2 text-xs text-red-400 focus:text-red-400"
                                                                     onClick={async () => {
                                                                         const confirmed = await confirm({
@@ -369,6 +381,16 @@ export function TargetListSidebar() {
                                                             >
                                                                 <Edit2 className="h-3 w-3" />
                                                                 Edit
+                                                            </DropdownMenuItem>
+                                                            <DropdownMenuItem
+                                                                className="gap-2 text-xs"
+                                                                onClick={() => {
+                                                                    setExportListId(segment.id);
+                                                                    setIsExportModalOpen(true);
+                                                                }}
+                                                            >
+                                                                <Download className="h-3 w-3 text-muted-foreground" />
+                                                                Export
                                                             </DropdownMenuItem>
                                                             <DropdownMenuItem
                                                                 className="gap-2 text-xs text-red-400 focus:text-red-400"

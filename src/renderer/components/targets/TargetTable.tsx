@@ -57,7 +57,15 @@ export function TargetTable({
     metadataKeys = [],
     recentLogs = []
 }: TargetTableProps) {
-    const { targets, isLoading, deleteTarget, viewMode, hasMore, isFetchingMore, loadMoreTargets, lists, selectedListId, saveTargetAssignments } = useTargetsStore();
+    const {
+        targets, fetchLists, selectedListId, fetchTargets, fetchSegments,
+        isLoading, viewMode, lists, segments, selectedSegmentId,
+        subscribeToChanges, unsubscribe, recentLogs: storeRecentLogs, fetchRecentLogs,
+        searchQuery: storeSearchQuery, setSearchQuery: setStoreSearchQuery, exportTargets,
+        setIsExportModalOpen, setExportListId, isExportModalOpen,
+        hasMore, isFetchingMore, loadMoreTargets, deleteTarget, saveTargetAssignments,
+        selectedTargetIds, setSelectedTargetIds, isAllSelectedGlobally, setIsAllSelectedGlobally
+    } = useTargetsStore();
     const { tasks } = useTasksStore();
     const { confirm } = useConfirmation();
     const [sortField, setSortField] = useState<SortField>(viewMode === 'engaged' ? 'last_interaction_at' : 'created_at');
@@ -65,8 +73,6 @@ export function TargetTable({
     const [analyzeTarget, setAnalyzeTarget] = useState<Target | null>(null);
     const [targetToSave, setTargetToSave] = useState<Target | null>(null);
 
-    const [selectedTargets, setSelectedTargets] = useState<Set<string>>(new Set());
-    const [isAllSelectedGlobally, setIsAllSelectedGlobally] = useState(false);
     const [isBulkSaveOpen, setIsBulkSaveOpen] = useState(false);
     const [isLayoutReady, setIsLayoutReady] = useState(false);
     const hasAutoResized = useRef(false);
@@ -165,8 +171,7 @@ export function TargetTable({
 
     // Reset selection when view mode changes
     useEffect(() => {
-        setSelectedTargets(new Set());
-        setIsAllSelectedGlobally(false);
+        setSelectedTargetIds(new Set());
     }, [viewMode]);
 
     const tableRef = useRef<HTMLDivElement>(null);
@@ -206,7 +211,7 @@ export function TargetTable({
     const currentList = lists.find(l => l.id === selectedListId);
     const totalCountInList = currentList?.target_count || 0;
     const allVisibleSelected = filteredAndSortedTargets.length > 0 &&
-        filteredAndSortedTargets.every(t => selectedTargets.has(t.id));
+        filteredAndSortedTargets.every(t => selectedTargetIds.has(t.id));
     const showSelectionPrompt = viewMode === 'list' && allVisibleSelected && !isAllSelectedGlobally && totalCountInList > targets.length;
 
     // Consolidated Column Resizing State (Percentages)
@@ -358,7 +363,7 @@ export function TargetTable({
     };
 
     const handleSelectAll = (checked: boolean | 'indeterminate') => {
-        const newSet = new Set(selectedTargets);
+        const newSet = new Set(selectedTargetIds);
         const visibleIds = filteredAndSortedTargets.map(t => t.id);
 
         if (checked === false) {
@@ -368,7 +373,7 @@ export function TargetTable({
             // Select all visible or indeterminate
             visibleIds.forEach(id => newSet.add(id));
         }
-        setSelectedTargets(newSet);
+        setSelectedTargetIds(newSet);
     };
 
     const handleSelectEntireList = () => {
@@ -376,14 +381,14 @@ export function TargetTable({
     };
 
     const handleSelectOne = (id: string, checked: boolean) => {
-        const newSelected = new Set(selectedTargets);
+        const newSelected = new Set(selectedTargetIds);
         if (checked) {
             newSelected.add(id);
         } else {
             newSelected.delete(id);
             setIsAllSelectedGlobally(false);
         }
-        setSelectedTargets(newSelected);
+        setSelectedTargetIds(newSelected);
     };
 
     const handleBulkAnalyze = async () => {
@@ -398,7 +403,7 @@ export function TargetTable({
             }
             targetsToProcess = data || [];
         } else {
-            targetsToProcess = targets.filter(t => selectedTargets.has(t.id));
+            targetsToProcess = targets.filter(t => selectedTargetIds.has(t.id));
         }
 
         if (targetsToProcess.length === 0) return;
@@ -455,7 +460,7 @@ export function TargetTable({
             useAppStore.getState().toggleQueueSidebar();
         }
 
-        setSelectedTargets(new Set());
+        setSelectedTargetIds(new Set());
         setIsAllSelectedGlobally(false);
     };
 
@@ -471,7 +476,7 @@ export function TargetTable({
             }
             targetsToProcess = data || [];
         } else {
-            targetsToProcess = targets.filter(t => selectedTargets.has(t.id));
+            targetsToProcess = targets.filter(t => selectedTargetIds.has(t.id));
         }
 
         if (targetsToProcess.length === 0) return;
@@ -490,13 +495,13 @@ export function TargetTable({
         const { bulkSaveTargetAssignments } = useTargetsStore.getState();
         await bulkSaveTargetAssignments(targetsData, [listId]);
 
-        setSelectedTargets(new Set());
+        setSelectedTargetIds(new Set());
         setIsAllSelectedGlobally(false);
         setIsBulkSaveOpen(false);
     };
 
     const handleBulkDelete = async () => {
-        const count = isAllSelectedGlobally ? totalCountInList : selectedTargets.size;
+        const count = isAllSelectedGlobally ? totalCountInList : selectedTargetIds.size;
 
         const confirmed = await confirm({
             title: 'Delete Multiple Contacts',
@@ -512,16 +517,16 @@ export function TargetTable({
 
         try {
             if (isAllSelectedGlobally && selectedListId) {
-                const idsToDelete = Array.from(selectedTargets);
+                const idsToDelete = Array.from(selectedTargetIds);
                 for (const id of idsToDelete) {
                     await deleteTarget(id);
                 }
             } else {
-                const idsToDelete = Array.from(selectedTargets);
+                const idsToDelete = Array.from(selectedTargetIds);
                 await Promise.all(idsToDelete.map(id => deleteTarget(id)));
             }
 
-            setSelectedTargets(new Set());
+            setSelectedTargetIds(new Set());
             setIsAllSelectedGlobally(false);
             toast.success('Targets deleted');
         } catch (error: any) {
@@ -572,9 +577,9 @@ export function TargetTable({
                             <th className="px-6 py-4 w-[50px] bg-background">
                                 <Checkbox
                                     checked={
-                                        filteredAndSortedTargets.length > 0 && filteredAndSortedTargets.every(t => selectedTargets.has(t.id))
+                                        filteredAndSortedTargets.length > 0 && filteredAndSortedTargets.every(t => selectedTargetIds.has(t.id))
                                             ? true
-                                            : (filteredAndSortedTargets.some(t => selectedTargets.has(t.id))
+                                            : (filteredAndSortedTargets.some(t => selectedTargetIds.has(t.id))
                                                 ? 'indeterminate'
                                                 : false)
                                     }
@@ -735,7 +740,7 @@ export function TargetTable({
                             >
                                 <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
                                     <Checkbox
-                                        checked={selectedTargets.has(target.id)}
+                                        checked={selectedTargetIds.has(target.id)}
                                         onCheckedChange={(checked) => handleSelectOne(target.id, !!checked)}
                                         className="border-muted-foreground/30 data-[state=checked]:bg-foreground data-[state=checked]:border-foreground"
                                     />
@@ -1025,7 +1030,7 @@ export function TargetTable({
 
             <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30">
                 <AnimatePresence>
-                    {(selectedTargets.size > 0 || isAllSelectedGlobally) && (
+                    {(selectedTargetIds.size > 0 || isAllSelectedGlobally) && (
                         <motion.div
                             initial={{ y: 20, opacity: 0, scale: 0.95 }}
                             animate={{ y: 0, opacity: 1, scale: 1 }}
@@ -1037,13 +1042,13 @@ export function TargetTable({
                                 <span className="text-xs font-semibold whitespace-nowrap">
                                     {isAllSelectedGlobally
                                         ? totalCountInList
-                                        : selectedTargets.size} selected
+                                        : selectedTargetIds.size} selected
                                 </span>
                                 <Button
                                     variant="ghost"
                                     size="icon"
                                     onClick={() => {
-                                        setSelectedTargets(new Set());
+                                        setSelectedTargetIds(new Set());
                                         setIsAllSelectedGlobally(false);
                                     }}
                                     className="h-5 w-5 rounded-full hover:bg-white/20 text-zinc-400 hover:text-white"
@@ -1110,7 +1115,7 @@ export function TargetTable({
                     }
                 }}
                 lists={lists}
-                targetCount={targetToSave ? 1 : (selectedTargets.size || (isAllSelectedGlobally ? totalCountInList : 0))}
+                targetCount={targetToSave ? 1 : (selectedTargetIds.size || (isAllSelectedGlobally ? totalCountInList : 0))}
                 onConfirm={async (listId) => {
                     if (targetToSave) {
                         // Single save

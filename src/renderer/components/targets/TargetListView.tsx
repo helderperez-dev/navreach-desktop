@@ -6,7 +6,7 @@ import { useWorkspaceStore } from '@/stores/workspace.store';
 import { TargetListSidebar } from './TargetListSidebar';
 import { TargetTable } from './TargetTable';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Plus, Search, X, Zap, Upload, SlidersHorizontal, LayoutGrid, Code2, PanelLeft } from 'lucide-react';
+import { Plus, Search, X, Zap, Upload, Download, SlidersHorizontal, LayoutGrid, Code2, PanelLeft, FileJson, FileSpreadsheet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAppStore } from '@/stores/app.store';
@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { TargetForm } from './TargetForm';
 import { CSVImportDialog } from './CSVImportDialog';
+import { ExportDialog } from './ExportDialog';
 import { IntegrationDialog } from './IntegrationDialog';
 import { Target } from '@/types/targets';
 import { supabase } from '@/lib/supabase';
@@ -39,7 +40,8 @@ export function TargetListView() {
         targets, fetchLists, selectedListId, fetchTargets, fetchSegments,
         isLoading, viewMode, lists, segments, selectedSegmentId,
         subscribeToChanges, unsubscribe, recentLogs, fetchRecentLogs,
-        searchQuery, setSearchQuery
+        searchQuery, setSearchQuery, exportTargets,
+        setIsExportModalOpen, setExportListId, isExportModalOpen
     } = useTargetsStore();
     const { currentWorkspace } = useWorkspaceStore();
     const { session } = useAuthStore();
@@ -289,6 +291,20 @@ export function TargetListView() {
                             <Button
                                 variant="ghost"
                                 size="sm"
+                                className="h-10 w-10 p-0 text-muted-foreground hover:text-foreground hover:bg-muted rounded-xl transition-all focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-muted focus-visible:text-foreground"
+                                onClick={() => {
+                                    setExportListId(null); // Current view
+                                    setIsExportModalOpen(true);
+                                }}
+                                title="Export Targets"
+                                disabled={targets.length === 0}
+                            >
+                                <Download className="h-4 w-4" />
+                            </Button>
+
+                            <Button
+                                variant="ghost"
+                                size="sm"
                                 className={cn(
                                     "h-10 w-10 p-0 rounded-xl transition-all focus-visible:ring-0 focus-visible:outline-none",
                                     isViewOptionsOpen
@@ -444,6 +460,8 @@ export function TargetListView() {
                     open={isImportOpen}
                     onOpenChange={setIsImportOpen}
                 />
+
+                <ExportDialog />
 
                 {selectedListId && (
                     <IntegrationDialog
