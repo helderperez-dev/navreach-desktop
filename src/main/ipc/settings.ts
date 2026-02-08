@@ -97,8 +97,30 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
         return acc;
       }, {});
 
-      const defaultProviderType = sysSettings['default_ai_provider'];
-      const defaultModelId = sysSettings['default_ai_model'];
+      let defaultProviderType = sysSettings['default_ai_provider'];
+      let defaultModelId = sysSettings['default_ai_model'];
+
+      // BACK COMPATIBILITY: Derive defaults from fallback chain if legacy keys are missing
+      if (!defaultProviderType || !defaultModelId) {
+        try {
+          const rawChain = sysSettings['reavion_nexus_fallback_chain'];
+          if (rawChain) {
+            const chain = typeof rawChain === 'string' ? JSON.parse(rawChain) : rawChain;
+            if (Array.isArray(chain) && chain.length > 0) {
+              const firstItem = chain[0];
+              if (typeof firstItem === 'string') {
+                defaultModelId = defaultModelId || firstItem;
+                defaultProviderType = defaultProviderType || 'openrouter';
+              } else {
+                defaultModelId = defaultModelId || firstItem.model;
+                defaultProviderType = defaultProviderType || (firstItem.gateway || firstItem.provider || 'openrouter');
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing fallback chain for settings defaults:', e);
+        }
+      }
 
       const modelProviders = (providersRes.data || []).map((p: any) => ({
         id: p.id,

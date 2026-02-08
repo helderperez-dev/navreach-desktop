@@ -215,6 +215,61 @@ let cachedLlamaModel: any = null;
 let cachedLlamaModelPath: string | null = null;
 
 
+// --- MULTI-ACCOUNT & FALLBACK HELPERS ---
+
+async function getValidProviderKey(providerId: string, supabaseClient: any): Promise<{ id: string, key: string } | null> {
+    try {
+        const { data, error } = await supabaseClient
+            .from('provider_keys')
+            .select('id, key, priority')
+            .eq('provider_id', providerId)
+            .eq('is_active', true)
+            .or(`rate_limited_until.is.null,rate_limited_until.lt.${new Date().toISOString()}`)
+            .order('priority', { ascending: true }); // Get highest priority (lowest number) first
+
+        if (error) {
+            console.error('[AI Service] Error fetching provider keys:', error);
+            return null;
+        }
+
+        if (!data || data.length === 0) return null;
+
+        // Group by priority to allow load balancing within the same priority tier
+        // The data is already sorted by priority, so the first item has the best (lowest) priority value.
+        const bestPriority = data[0].priority;
+
+        // Filter for all keys that share this best priority
+        const candidateKeys = data.filter((k: any) => k.priority === bestPriority);
+
+        // Random selection for load balancing within the top tier
+        const randomIndex = Math.floor(Math.random() * candidateKeys.length);
+        return candidateKeys[randomIndex];
+    } catch (e) {
+        console.error('[AI Service] Exception in getValidProviderKey:', e);
+        return null;
+    }
+}
+
+async function reportRateLimit(keyId: string, supabaseClient: any) {
+    if (!keyId) return;
+    try {
+        // Set rate limited until start of next day
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+
+        console.log(`[AI Service] Marking key ${keyId} as rate limited until ${tomorrow.toISOString()}`);
+
+        await supabaseClient
+            .from('provider_keys')
+            .update({ rate_limited_until: tomorrow.toISOString() })
+            .eq('id', keyId);
+    } catch (e) {
+        console.error('[AI Service] Failed to report rate limit:', e);
+    }
+}
+
+
 // --- MCP HELPERS ---
 
 function jsonSchemaToZod(schema: any): z.ZodTypeAny {
@@ -859,10 +914,13 @@ export async function resolveAIConfig(
     provider: ModelProvider,
     model: ModelConfig,
     accessToken?: string,
-    localDefaultModelId?: string // New parameter for local settings fallback
+    localDefaultModelId?: string, // New parameter for local settings fallback
+    options: { forceSystemDefault?: boolean; forceProviderId?: string } = {}
 ): Promise<{ effectiveProvider: ModelProvider, effectiveModel: ModelConfig }> {
     let effectiveProvider = { ...provider };
     let effectiveModel = { ...model };
+
+    let userSettings: any = null;
 
     try {
         // 1. Fetch System Settings
@@ -883,7 +941,6 @@ export async function resolveAIConfig(
         }, {});
 
         // 2. Fetch User Settings (if authenticated)
-        let userSettings: any = null;
         if (accessToken) {
             const { data: userData } = await supabaseClient
                 .from('user_settings')
@@ -892,8 +949,35 @@ export async function resolveAIConfig(
             userSettings = userData;
         }
 
-        const sysProviderType = sysSettings['default_ai_provider'];
-        const sysModelId = sysSettings['default_ai_model'];
+
+
+        // UNIFIED DEFAULT LOGIC:
+        // The "System Default" is the FIRST item in the Fallback Chain.
+        // Legacy keys (default_ai_provider, default_ai_model) are fallbacks or deprecated.
+
+        let sysProviderType = sysSettings['default_ai_provider'];
+        let sysModelId = sysSettings['default_ai_model'];
+
+        try {
+            const rawChain = sysSettings['reavion_nexus_fallback_chain'];
+            if (rawChain) {
+                const chain = typeof rawChain === 'string' ? JSON.parse(rawChain) : rawChain;
+                if (Array.isArray(chain) && chain.length > 0) {
+                    const firstItem = chain[0];
+                    // Support both object {model, gateway} and legacy string formats
+                    if (typeof firstItem === 'string') {
+                        sysModelId = firstItem;
+                        sysProviderType = 'openrouter'; // Default for legacy strings
+                    } else {
+                        sysModelId = firstItem.model;
+                        sysProviderType = firstItem.gateway || firstItem.provider || 'openrouter';
+                    }
+                    console.log(`[AI Service] System Default derived from Fallback Chain: ${sysModelId} (${sysProviderType})`);
+                }
+            }
+        } catch (e) {
+            console.error('[AI Service] Error parsing fallback chain for defaults:', e);
+        }
 
         const cloudProviderType = userSettings?.ai_provider;
         const cloudModelId = userSettings?.ai_model;
@@ -907,9 +991,19 @@ export async function resolveAIConfig(
 
         const isExplicitRequest = model.id && model.id !== 'system-default' && model.id !== 'automatic';
 
-        const targetProviderType = isExplicitRequest ? (provider.type || provider.id) : (cloudProviderType || (localDefaultModelId ? undefined : sysProviderType));
-        const targetModelId = isExplicitRequest ? model.id : (cloudModelId || localDefaultModelId || sysModelId);
-        const targetApiKey = cloudApiKey || sysSettings['system_ai_api_key'];
+        // FORCE SYSTEM DEFAULT OVERRIDE
+        if (options.forceSystemDefault) {
+            console.log('[AI Service] Forcing System Default (ignoring user overrides)...');
+        }
+
+        const targetProviderType = options.forceSystemDefault ? sysProviderType : (
+            isExplicitRequest ? (provider.type || provider.id) : (cloudProviderType || (localDefaultModelId ? undefined : sysProviderType))
+        );
+        const targetModelId = options.forceSystemDefault ? sysModelId : (
+            isExplicitRequest ? model.id : (cloudModelId || localDefaultModelId || sysModelId)
+        );
+        // Basic key logic: use cloud key. If missing, it will be handled by rotation logic (isManaged).
+        const targetApiKey = options.forceSystemDefault ? '' : cloudApiKey;
 
         // If we have a local model ID but no provider override from cloud, 
         // we need to set the provider type correctly for that model.
@@ -966,7 +1060,49 @@ export async function resolveAIConfig(
         if (finalProviderType) {
             effectiveProvider.type = finalProviderType as any;
             effectiveProvider.id = finalProviderType;
-            if (finalProviderType === 'openrouter' && !effectiveProvider.baseUrl) {
+
+            // NEXUS GATEWAY LOGIC (Unified)
+            // Check if the provider ID (or forced ID) matches a defined Nexus Gateway.
+            // This applies to BOTH primary resolution and fallback.
+            const gatewayIdToCheck = options.forceProviderId || finalProviderType;
+
+            if (gatewayIdToCheck) {
+                try {
+                    // Optimistic check: only query if it looks like a custom gateway (not standard types)
+                    // OR just always query/cache. For now, strict query.
+                    const { data: gatewayData } = await supabaseClient
+                        .from('nexus_providers')
+                        .select('*')
+                        .eq('id', gatewayIdToCheck)
+                        .eq('is_active', true)
+                        .maybeSingle();
+
+                    if (gatewayData) {
+                        console.log(`[AI Service] Resolving Nexus Gateway: ${gatewayData.name} (${gatewayData.id})`);
+                        effectiveProvider.id = gatewayData.id;
+                        effectiveProvider.type = gatewayData.provider_type as any;
+                        if (gatewayData.base_url) {
+                            effectiveProvider.baseUrl = gatewayData.base_url;
+                        }
+                        // Clear base_url if switching types and gateway has none (revert to default)
+                        if (!gatewayData.base_url && finalProviderType !== effectiveProvider.type) {
+                            delete effectiveProvider.baseUrl;
+                        }
+                    } else if (options.forceProviderId) {
+                        // Only warn if we explicitly forced an ID and it wasn't a valid gateway
+                        // If it's just finalProviderType, it might be a standard string like 'openai'
+                        console.warn(`[AI Service] Gateway ${options.forceProviderId} not found in nexus_providers. Using legacy mapping.`);
+                        if (options.forceProviderId === 'system-default') {
+                            effectiveProvider.type = 'openrouter';
+                        }
+                    }
+                } catch (gwError) {
+                    console.error('[AI Service] Error fetching gateway config:', gwError);
+                }
+            }
+
+            // Standard Default defaults
+            if (effectiveProvider.type === 'openrouter' && !effectiveProvider.baseUrl) {
                 effectiveProvider.baseUrl = 'https://openrouter.ai/api/v1';
             }
         }
@@ -1007,11 +1143,45 @@ export async function resolveAIConfig(
             effectiveModel.name = finalModelId;
         }
 
+
+        // --- MULTI-KEY INJECTION (PRIORITY) ---
+        // We attempt to fetch a valid key from the provider_keys table BEFORE falling back to access tokens.
+        if (effectiveProvider.type === 'openrouter' || effectiveProvider.type === 'openai' || options.forceProviderId) {
+            const currentKey = effectiveProvider.apiKey;
+            const isManaged = !currentKey || currentKey === 'managed-by-system' || currentKey.trim() === '';
+
+            const shouldRotate = options.forceSystemDefault || (!userSettings?.ai_api_key && isManaged);
+
+            if (shouldRotate) {
+                let targetKeyProviderId = options.forceProviderId || effectiveProvider.id;
+
+                // Validation: Map 'system-default' to real provider type if possible
+                if (targetKeyProviderId === 'system-default' && effectiveProvider.type) {
+                    targetKeyProviderId = effectiveProvider.type;
+                }
+
+                const validKeyData = await getValidProviderKey(targetKeyProviderId, supabaseClient);
+                if (validKeyData) {
+                    console.log(`[AI Service] Rotated to active API Key ID: ${validKeyData.id} for provider ${targetKeyProviderId}`);
+                    effectiveProvider.apiKey = validKeyData.key;
+                    (effectiveProvider as any)._keyId = validKeyData.id;
+                } else if (isManaged) {
+                    console.warn(`[AI Service] No active keys found for provider ${targetKeyProviderId}. Model may fail or trigger fallback.`);
+                }
+            }
+        }
+
+        // Final Key Assignment & Legacy Fallback
         if (targetApiKey && targetApiKey.trim() !== '') {
-            effectiveProvider.apiKey = targetApiKey;
-        } else if (accessToken && (!effectiveProvider.apiKey || effectiveProvider.apiKey === 'managed-by-system')) {
+            // Explicit cloud/system key override (if not already handled above, though redundant if we use effectiveProvider.apiKey)
+            if (!effectiveProvider.apiKey || effectiveProvider.apiKey === 'managed-by-system') {
+                effectiveProvider.apiKey = targetApiKey;
+            }
+        }
+
+        if (accessToken && (!effectiveProvider.apiKey || effectiveProvider.apiKey === 'managed-by-system' || effectiveProvider.apiKey.trim() === '')) {
             // Fallback: Use user's access token if no specific API key is found (common for system proxies)
-            console.log('[AI Service] Using User Access Token as Model API Key');
+            console.log('[AI Service] Using User Access Token as Model API Key (Proxy Mode)');
             effectiveProvider.apiKey = accessToken;
 
             // Ensure we point to our internal proxy if no baseUrl is set for a managed request
@@ -1281,7 +1451,7 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
             const localDefaultModelId = store.get('defaultModelId');
 
             // Resolve AI Configuration
-            const { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken, localDefaultModelId);
+            let { effectiveProvider, effectiveModel } = await resolveAIConfig(scopedSupabase, provider, model, accessToken, localDefaultModelId);
             // Determine if the provider is a local model (Ollama, LM Studio, etc.)
             // We also check for localhost in the baseUrl to handle custom providers pointing to local instances.
             const isLocalBaseUrl = effectiveProvider.baseUrl?.includes('localhost') ||
@@ -1993,9 +2163,162 @@ You are in FAST mode.
 
                         // Check if it's a rate limit or API error - retry after delay
                         if (errorMessage.includes('rate') || errorMessage.includes('limit') || errorMessage.includes('429')) {
-                            console.log('Rate limited, waiting 5 seconds before retry...');
-                            await new Promise(resolve => setTimeout(resolve, 5000));
-                            continue; // Retry the iteration
+                            console.log('Rate limit detected.');
+
+                            // 1. Report the key as limited if we have a tracked key ID
+                            const keyId = (effectiveProvider as any)._keyId;
+                            if (keyId) {
+                                await reportRateLimit(keyId, scopedSupabase);
+                            }
+
+                            // 2. Attempt to rotate key or fallback
+                            console.log('[AI Service] Attempting to rotate key or fallback...');
+                            if (window && !window.isDestroyed()) {
+                                window.webContents.send('ai:stream-chunk', {
+                                    content: `⚠️ Rate limit hit. Switching accounts/models...\n`,
+                                    done: false,
+                                    isNarration: true,
+                                });
+                            }
+
+                            // Re-resolve config to get a NEW key (getValidProviderKey filters out the one we just marked)
+                            const newConfig = await resolveAIConfig(scopedSupabase, provider, model, accessToken, localDefaultModelId);
+
+                            // Check if we got a valid key (different from before, or just valid)
+                            if (newConfig.effectiveProvider.apiKey && newConfig.effectiveProvider.apiKey !== effectiveProvider.apiKey) {
+                                console.log('[AI Service] Successfully rotated API Key.');
+                                effectiveProvider = newConfig.effectiveProvider;
+                                effectiveModel = newConfig.effectiveModel;
+
+                                // Re-create model with new key
+                                chatModel = await createChatModel(effectiveProvider, effectiveModel, {
+                                    streaming: false,
+                                    systemPromptLength: effectiveSystemPrompt?.length || 0, // Reuse prompt
+                                    temperature: isLocalModelType ? 0.0 : 0.1
+                                });
+                                // Re-bind tools
+                                if (typeof (chatModel as any).bindTools === 'function') {
+                                    modelWithTools = (chatModel as any).bindTools(deduplicatedTools, { strict: false } as any); // Simplistic re-bind, assumes no strict mode nuances for now or re-uses logic
+                                    // Actually reusing the strict logic from above would be better, but for brevity:
+                                    // existing logic was complex. Let's just create a new function or duplicate the binding logic briefly?
+                                    // Better: Just reset the loop? No, "continue" resets the loop but doesn't re-create the model unless we assign 'chatModel' variable outside.
+                                    // 'chatModel' is a local variable. 'modelWithTools' is what we use.
+                                    // So we update modelWithTools.
+                                } else {
+                                    modelWithTools = chatModel;
+                                }
+                                await new Promise(resolve => setTimeout(resolve, 2000));
+                                continue; // Retry with new key
+                            }
+
+
+                            // 3. FALLBACK MODEL STRATEGY (Advanced)
+                            // If key rotation failed (no keys left), we proceed to the Fallback Chain.
+
+                            // Fetch the chain if we haven't already
+                            let fallbackChain: any[] = [];
+                            try {
+                                const { data: sData } = await scopedSupabase
+                                    .from('system_settings')
+                                    .select('value')
+                                    .eq('key', 'reavion_nexus_fallback_chain')
+                                    .maybeSingle();
+                                if (sData?.value) {
+                                    fallbackChain = typeof sData.value === 'string' ? JSON.parse(sData.value) : sData.value;
+                                }
+                            } catch (e) {
+                                console.error('[AI Service] Failed to load fallback chain:', e);
+                            }
+
+                            // Default fallback if DB is empty or fails
+                            if (!fallbackChain || fallbackChain.length === 0) {
+                                // Default to Nexus Gateway IDs
+                                fallbackChain = [
+                                    { model: "google/gemini-2.0-flash-001", gateway: "openrouter" },
+                                    { model: "anthropic/claude-3.5-haiku", gateway: "openrouter" },
+                                    { model: "meta-llama/llama-3.1-70b-instruct", gateway: "openrouter" }
+                                ];
+                            }
+
+                            // Normalize chain to objects if it contains strings (backward compatibility)
+                            const normalizedChain = fallbackChain.map(item => {
+                                if (typeof item === 'string') return { model: item, gateway: 'openrouter' };
+                                // Support both 'provider' (legacy from prev step) and 'gateway' (new) keys
+                                return {
+                                    model: item.model,
+                                    gateway: item.gateway || item.provider || 'openrouter'
+                                };
+                            });
+
+                            // Determine which model to try next
+                            const currentModelId = effectiveModel.id;
+                            let nextStep: { model: string, gateway: string } | null = null;
+
+                            // Find current index
+                            // We match both Model ID and Gateway ID to be precise
+                            // effectiveProvider.id should match the gateway ID now
+                            const currentGatewayId = effectiveProvider.id;
+
+                            const idx = normalizedChain.findIndex(item =>
+                                item.model === currentModelId &&
+                                (item.gateway === currentGatewayId || (!currentGatewayId && item.gateway === 'openrouter'))
+                            );
+
+                            if (idx !== -1 && idx < normalizedChain.length - 1) {
+                                nextStep = normalizedChain[idx + 1];
+                            } else if (idx === -1) {
+                                // If current config is NOT in chain, start at beginning
+                                nextStep = normalizedChain[0];
+                            } else {
+                                // End of chain
+                                console.warn('[AI Service] End of fallback chain reached.');
+                                if (window && !window.isDestroyed()) {
+                                    window.webContents.send('ai:stream-chunk', {
+                                        content: `⚠️ All available fallback models exhausted. Please try again later.\n`,
+                                        done: true,
+                                        isNarration: true,
+                                    });
+                                }
+                                break;
+                            }
+
+                            if (nextStep) {
+                                console.log(`[AI Service] Switching to Fallback: Model=${nextStep.model}, Gateway=${nextStep.gateway}`);
+                                if (window && !window.isDestroyed()) {
+                                    window.webContents.send('ai:stream-chunk', {
+                                        content: `⚠️ Switching to backup: ${nextStep.model}...\n`,
+                                        done: false,
+                                        isNarration: true,
+                                    });
+                                }
+
+                                // Force system default logic for this new model AND gateway
+                                const fallbackConfig = await resolveAIConfig(
+                                    scopedSupabase,
+                                    provider,
+                                    { id: nextStep.model } as any,
+                                    accessToken,
+                                    localDefaultModelId,
+                                    {
+                                        forceSystemDefault: true,
+                                        forceProviderId: nextStep.gateway
+                                    }
+                                );
+
+                                effectiveProvider = fallbackConfig.effectiveProvider;
+                                effectiveModel = fallbackConfig.effectiveModel;
+
+                                // Update model instance
+                                chatModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false });
+                                if (typeof (chatModel as any).bindTools === 'function') {
+                                    modelWithTools = (chatModel as any).bindTools(deduplicatedTools, { strict: false } as any);
+                                } else {
+                                    modelWithTools = chatModel;
+                                }
+
+                                await new Promise(resolve => setTimeout(resolve, 3000));
+                                continue;
+                            }
                         }
 
                         // VISION FALLBACK: Handle models that don't support image input
