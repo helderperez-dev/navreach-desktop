@@ -923,10 +923,13 @@ export async function resolveAIConfig(
     let userSettings: any = null;
 
     try {
-        // 1. Fetch System Settings
-        const { data: systemData, error: systemError } = await supabaseClient
-            .from('system_settings')
-            .select('key, value');
+        // 1. Fetch System Settings & Fallback Chain
+        const [systemRes, fallbackChainRes] = await Promise.all([
+            supabaseClient.from('system_settings').select('key, value'),
+            supabaseClient.from('ai_fallback_chain').select('*').order('sort_order', { ascending: true })
+        ]);
+
+        const { data: systemData, error: systemError } = systemRes;
 
         if (systemError) {
             console.error('[AI Service] Supabase system_settings fetch failed:', systemError);
@@ -955,28 +958,37 @@ export async function resolveAIConfig(
         // The "System Default" is the FIRST item in the Fallback Chain.
         // Legacy keys (default_ai_provider, default_ai_model) are fallbacks or deprecated.
 
-        let sysProviderType = sysSettings['default_ai_provider'];
-        let sysModelId = sysSettings['default_ai_model'];
+        let sysProviderType = sysSettings['default_ai_provider']; // Legacy
+        let sysModelId = sysSettings['default_ai_model'];         // Legacy
 
-        try {
-            const rawChain = sysSettings['reavion_nexus_fallback_chain'];
-            if (rawChain) {
-                const chain = typeof rawChain === 'string' ? JSON.parse(rawChain) : rawChain;
-                if (Array.isArray(chain) && chain.length > 0) {
-                    const firstItem = chain[0];
-                    // Support both object {model, gateway} and legacy string formats
-                    if (typeof firstItem === 'string') {
-                        sysModelId = firstItem;
-                        sysProviderType = 'openrouter'; // Default for legacy strings
-                    } else {
-                        sysModelId = firstItem.model;
-                        sysProviderType = firstItem.gateway || firstItem.provider || 'openrouter';
+        // NEW LOGIC: Use dedicated table
+        const fallbackChain = fallbackChainRes.data || [];
+        if (fallbackChain.length > 0) {
+            const firstItem = fallbackChain[0];
+            sysModelId = firstItem.model_id;
+            sysProviderType = firstItem.provider_id;
+            console.log(`[AI Service] System Default derived from ai_fallback_chain: ${sysModelId} (${sysProviderType})`);
+        } else {
+            // BACK COMPATIBILITY: Legacy JSON fallback
+            try {
+                const rawChain = sysSettings['reavion_nexus_fallback_chain'];
+                if (rawChain) {
+                    const chain = typeof rawChain === 'string' ? JSON.parse(rawChain) : rawChain;
+                    if (Array.isArray(chain) && chain.length > 0) {
+                        const firstItem = chain[0];
+                        // Support both object {model, gateway} and legacy string formats
+                        if (typeof firstItem === 'string') {
+                            sysModelId = firstItem;
+                            sysProviderType = 'openrouter'; // Default for legacy strings
+                        } else {
+                            sysModelId = firstItem.model;
+                            sysProviderType = firstItem.gateway || firstItem.provider || 'openrouter';
+                        }
                     }
-                    console.log(`[AI Service] System Default derived from Fallback Chain: ${sysModelId} (${sysProviderType})`);
                 }
+            } catch (e) {
+                console.error('[AI Service] Error parsing fallback chain for defaults:', e);
             }
-        } catch (e) {
-            console.error('[AI Service] Error parsing fallback chain for defaults:', e);
         }
 
         const cloudProviderType = userSettings?.ai_provider;
@@ -2218,13 +2230,26 @@ You are in FAST mode.
                             // Fetch the chain if we haven't already
                             let fallbackChain: any[] = [];
                             try {
-                                const { data: sData } = await scopedSupabase
-                                    .from('system_settings')
-                                    .select('value')
-                                    .eq('key', 'reavion_nexus_fallback_chain')
-                                    .maybeSingle();
-                                if (sData?.value) {
-                                    fallbackChain = typeof sData.value === 'string' ? JSON.parse(sData.value) : sData.value;
+                                const { data: fcData } = await scopedSupabase
+                                    .from('ai_fallback_chain')
+                                    .select('*')
+                                    .order('sort_order', { ascending: true });
+
+                                if (fcData && fcData.length > 0) {
+                                    fallbackChain = fcData.map((item: any) => ({
+                                        model: item.model_id,
+                                        gateway: item.provider_id
+                                    }));
+                                } else {
+                                    // Legacy Fallback
+                                    const { data: sData } = await scopedSupabase
+                                        .from('system_settings')
+                                        .select('value')
+                                        .eq('key', 'reavion_nexus_fallback_chain')
+                                        .maybeSingle();
+                                    if (sData?.value) {
+                                        fallbackChain = typeof sData.value === 'string' ? JSON.parse(sData.value) : sData.value;
+                                    }
                                 }
                             } catch (e) {
                                 console.error('[AI Service] Failed to load fallback chain:', e);

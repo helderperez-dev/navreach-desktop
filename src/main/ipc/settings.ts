@@ -85,11 +85,12 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       const scopedSupabase = await getScopedSupabase(accessToken);
 
       // Fetch all user-scoped settings
-      const [providersRes, serversRes, toolsRes, sysSettingsRes] = await Promise.all([
+      const [providersRes, serversRes, toolsRes, sysSettingsRes, fallbackChainRes] = await Promise.all([
         scopedSupabase.from('model_providers').select('*').order('created_at'),
         scopedSupabase.from('mcp_servers').select('*').order('created_at'),
         scopedSupabase.from('api_tools').select('*').order('created_at'),
-        scopedSupabase.from('system_settings').select('key, value')
+        scopedSupabase.from('system_settings').select('key, value'),
+        scopedSupabase.from('ai_fallback_chain').select('*').order('sort_order', { ascending: true })
       ]);
 
       const sysSettings = (sysSettingsRes.data || []).reduce((acc: any, curr: any) => {
@@ -97,8 +98,18 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
         return acc;
       }, {});
 
-      let defaultProviderType = sysSettings['default_ai_provider'];
-      let defaultModelId = sysSettings['default_ai_model'];
+      let defaultProviderType = undefined;
+      let defaultModelId = undefined;
+
+      // NEW LOGIC: Use dedicated table (ai_fallback_chain)
+      const fallbackChain = fallbackChainRes.data || [];
+      if (fallbackChain && fallbackChain.length > 0) {
+        defaultModelId = fallbackChain[0].model_id;
+        defaultProviderType = fallbackChain[0].provider_id;
+      }
+
+      if (!defaultProviderType) defaultProviderType = sysSettings['default_ai_provider'];
+      if (!defaultModelId) defaultModelId = sysSettings['default_ai_model'];
 
       // BACK COMPATIBILITY: Derive defaults from fallback chain if legacy keys are missing
       if (!defaultProviderType || !defaultModelId) {
