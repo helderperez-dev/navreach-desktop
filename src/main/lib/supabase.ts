@@ -84,11 +84,6 @@ export async function getScopedSupabase(accessToken?: string, refreshToken?: str
     // We explicitly include the Authorization header as a fallback/primary for RLS stability,
     // while still maintaining the stateful auth for autoRefreshToken support.
     const client = createClient(supabaseUrl || '', supabaseAnonKey || '', {
-        global: {
-            headers: {
-                Authorization: `Bearer ${accessToken}`
-            }
-        },
         auth: {
             persistSession: true, // Use storage to support auto-refresh mechanics
             autoRefreshToken: true,

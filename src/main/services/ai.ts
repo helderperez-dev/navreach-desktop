@@ -219,6 +219,7 @@ let cachedLlamaModelPath: string | null = null;
 
 async function getValidProviderKey(providerId: string, supabaseClient: any): Promise<{ id: string, key: string } | null> {
     try {
+        console.log(`[AI Service] Fetching provider keys for: ${providerId}`);
         const { data, error } = await supabaseClient
             .from('provider_keys')
             .select('id, key, priority')
@@ -228,11 +229,16 @@ async function getValidProviderKey(providerId: string, supabaseClient: any): Pro
             .order('priority', { ascending: true }); // Get highest priority (lowest number) first
 
         if (error) {
-            console.error('[AI Service] Error fetching provider keys:', error);
+            console.error('[AI Service] Error fetching provider keys:', JSON.stringify(error));
             return null;
         }
 
-        if (!data || data.length === 0) return null;
+        if (!data || data.length === 0) {
+            console.warn(`[AI Service] No active keys found for provider: ${providerId}`);
+            return null;
+        }
+
+        console.log(`[AI Service] Found ${data.length} keys for provider: ${providerId}`);
 
         // Group by priority to allow load balancing within the same priority tier
         // The data is already sorted by priority, so the first item has the best (lowest) priority value.
@@ -253,16 +259,15 @@ async function getValidProviderKey(providerId: string, supabaseClient: any): Pro
 async function reportRateLimit(keyId: string, supabaseClient: any) {
     if (!keyId) return;
     try {
-        // Set rate limited until start of next day
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        tomorrow.setHours(0, 0, 0, 0);
+        // Set rate limited for 1 hour (much more reasonable than next day)
+        const oneHourLater = new Date();
+        oneHourLater.setHours(oneHourLater.getHours() + 1);
 
-        console.log(`[AI Service] Marking key ${keyId} as rate limited until ${tomorrow.toISOString()}`);
+        console.log(`[AI Service] Marking key ${keyId} as rate limited until ${oneHourLater.toISOString()}`);
 
         await supabaseClient
             .from('provider_keys')
-            .update({ rate_limited_until: tomorrow.toISOString() })
+            .update({ rate_limited_until: oneHourLater.toISOString() })
             .eq('id', keyId);
     } catch (e) {
         console.error('[AI Service] Failed to report rate limit:', e);
@@ -924,9 +929,14 @@ export async function resolveAIConfig(
 
     try {
         // 1. Fetch System Settings & Fallback Chain
+        // Fallback chain is ordered: FREE models first (is_free DESC), then by priority (sort_order ASC)
         const [systemRes, fallbackChainRes] = await Promise.all([
             supabaseClient.from('system_settings').select('key, value'),
-            supabaseClient.from('ai_fallback_chain').select('*').order('sort_order', { ascending: true })
+            supabaseClient.from('ai_fallback_chain')
+                .select('*')
+                .eq('is_active', true)
+                .order('is_free', { ascending: false })  // Free models first
+                .order('sort_order', { ascending: true }) // Then by priority
         ]);
 
         const { data: systemData, error: systemError } = systemRes;
@@ -1155,30 +1165,75 @@ export async function resolveAIConfig(
             effectiveModel.name = finalModelId;
         }
 
-
-        // --- MULTI-KEY INJECTION (PRIORITY) ---
-        // We attempt to fetch a valid key from the provider_keys table BEFORE falling back to access tokens.
-        if (effectiveProvider.type === 'openrouter' || effectiveProvider.type === 'openai' || options.forceProviderId) {
+        // --- MULTI-KEY INJECTION WITH FALLBACK CHAIN ---
+        // This is the core of the resilient model selection.
+        // Priority: 1. Try keys for the current provider -> 2. If no keys, iterate through fallback chain.
+        const externallManagedTypes = ['openrouter', 'openai', 'deepseek-direct', 'anthropic', 'z-ai'];
+        if (externallManagedTypes.includes(effectiveProvider.type as string) || options.forceProviderId) {
             const currentKey = effectiveProvider.apiKey;
             const isManaged = !currentKey || currentKey === 'managed-by-system' || currentKey.trim() === '';
-
             const shouldRotate = options.forceSystemDefault || (!userSettings?.ai_api_key && isManaged);
 
             if (shouldRotate) {
                 let targetKeyProviderId = options.forceProviderId || effectiveProvider.id;
-
-                // Validation: Map 'system-default' to real provider type if possible
                 if (targetKeyProviderId === 'system-default' && effectiveProvider.type) {
                     targetKeyProviderId = effectiveProvider.type;
                 }
 
-                const validKeyData = await getValidProviderKey(targetKeyProviderId, supabaseClient);
+                let validKeyData = await getValidProviderKey(targetKeyProviderId, supabaseClient);
+
+                // --- FALLBACK CHAIN LOOP ---
+                // If no key found for the primary target, iterate through the fallback chain for another option.
+                if (!validKeyData && fallbackChain && fallbackChain.length > 0) {
+                    console.log(`[AI Service] Primary provider (${targetKeyProviderId}) has no active keys. Engaging fallback chain...`);
+
+                    for (const fallbackItem of fallbackChain) {
+                        // Skip if it's the same provider we already tried
+                        if (fallbackItem.provider_id === targetKeyProviderId) {
+                            continue;
+                        }
+
+                        const isFreeModel = fallbackItem.is_free ? '🆓 FREE' : '💰 PAID';
+                        console.log(`[AI Service] Fallback: Trying ${isFreeModel} model ${fallbackItem.model_id} (${fallbackItem.provider_id})...`);
+                        const fallbackKey = await getValidProviderKey(fallbackItem.provider_id, supabaseClient);
+
+                        if (fallbackKey) {
+                            console.log(`[AI Service] Fallback SUCCESS: Using ${isFreeModel} model ${fallbackItem.model_id}.`);
+                            validKeyData = fallbackKey;
+
+                            // Update effective provider and model to the fallback
+                            effectiveProvider.id = fallbackItem.provider_id;
+                            effectiveProvider.type = fallbackItem.provider_id as any; // This will be resolved below
+                            effectiveModel.id = fallbackItem.model_id;
+                            effectiveModel.name = fallbackItem.model_id;
+                            effectiveModel.providerId = fallbackItem.provider_id;
+
+                            // Re-resolve provider type and base URL for the new provider
+                            // Standard defaults
+                            if (fallbackItem.provider_id === 'openrouter') {
+                                effectiveProvider.type = 'openrouter';
+                                effectiveProvider.baseUrl = 'https://openrouter.ai/api/v1';
+                            } else if (fallbackItem.provider_id.includes('openai')) {
+                                effectiveProvider.type = 'openai';
+                                effectiveProvider.baseUrl = 'https://api.openai.com/v1';
+                            } else if (fallbackItem.provider_id.includes('anthropic')) {
+                                effectiveProvider.type = 'anthropic';
+                                effectiveProvider.baseUrl = 'https://api.anthropic.com';
+                            } else if (fallbackItem.provider_id.includes('deepseek')) {
+                                effectiveProvider.type = 'openai'; // DeepSeek is OpenAI-compatible
+                                effectiveProvider.baseUrl = 'https://api.deepseek.com/v1';
+                            }
+                            break; // Found a valid key, exit the loop
+                        }
+                    }
+                }
+
                 if (validKeyData) {
-                    console.log(`[AI Service] Rotated to active API Key ID: ${validKeyData.id} for provider ${targetKeyProviderId}`);
+                    console.log(`[AI Service] Rotated to active API Key ID: ${validKeyData.id} for provider ${effectiveProvider.id}`);
                     effectiveProvider.apiKey = validKeyData.key;
                     (effectiveProvider as any)._keyId = validKeyData.id;
                 } else if (isManaged) {
-                    console.warn(`[AI Service] No active keys found for provider ${targetKeyProviderId}. Model may fail or trigger fallback.`);
+                    console.warn(`[AI Service] CRITICAL: No active keys found for ANY provider in fallback chain. Model invocation will likely fail.`);
                 }
             }
         }
@@ -1197,10 +1252,14 @@ export async function resolveAIConfig(
             effectiveProvider.apiKey = accessToken;
 
             // Ensure we point to our internal proxy if no baseUrl is set for a managed request
-            if (!effectiveProvider.baseUrl) {
+            // OR if we are using a known external provider type that definitely won't accept our Supabase token
+            const needsProxyRedirect = !effectiveProvider.baseUrl ||
+                ['openrouter', 'openai', 'anthropic', 'z-ai'].includes(effectiveProvider.type as string);
+
+            if (needsProxyRedirect) {
                 const gatewayUrl = (process.env.VITE_API_URL || 'https://reavion.com/api').replace(/\/$/, '');
                 effectiveProvider.baseUrl = `${gatewayUrl}/ai`;
-                console.log(`[AI Service] Using System Managed Gateway: ${effectiveProvider.baseUrl}`);
+                console.log(`[AI Service] Using System Managed Gateway: ${effectiveProvider.baseUrl} (Redirected for Token Auth)`);
             }
         } else if (effectiveProvider.type !== provider.type && (!effectiveProvider.apiKey || effectiveProvider.apiKey.trim() === '')) {
             console.warn(`[AI Service] Provider switched to ${effectiveProvider.type} but no API Key found in settings!`);
@@ -2185,6 +2244,8 @@ You are in FAST mode.
 
                             // 2. Attempt to rotate key or fallback
                             console.log('[AI Service] Attempting to rotate key or fallback...');
+                            /*
+                            // Suppressed per user request
                             if (window && !window.isDestroyed()) {
                                 window.webContents.send('ai:stream-chunk', {
                                     content: `⚠️ Rate limit hit. Switching accounts/models...\n`,
@@ -2192,6 +2253,7 @@ You are in FAST mode.
                                     isNarration: true,
                                 });
                             }
+                            */
 
                             // Re-resolve config to get a NEW key (getValidProviderKey filters out the one we just marked)
                             const newConfig = await resolveAIConfig(scopedSupabase, provider, model, accessToken, localDefaultModelId);
@@ -2416,13 +2478,16 @@ You are in FAST mode.
                             if (!isToolIncompatible && !isTruncationError) {
                                 try {
                                     console.log('[Auto-Recovery] Stage 1: Retrying with reasoning DISABLED...');
+                                    /* 
+                                    // Suppressed per user request
                                     if (window && !window.isDestroyed()) {
                                         window.webContents.send('ai:stream-chunk', {
                                             content: `⚠️ Model config error. Retrying with reasoning disabled...\n`,
                                             done: false,
                                             isNarration: true,
                                         });
-                                    }
+                                    } 
+                                    */
 
                                     const downgradedModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false, disableReasoning: true });
                                     if (typeof (downgradedModel as any).bindTools === 'function') {
@@ -2445,6 +2510,8 @@ You are in FAST mode.
                             if (!success) {
                                 try {
                                     console.log('[Auto-Recovery] Stage 2: Retrying in SAFE MODE (No tools)...');
+                                    /*
+                                    // Suppressed per user request
                                     if (window && !window.isDestroyed()) {
                                         window.webContents.send('ai:stream-chunk', {
                                             content: `⚠️ Model incompatible with tools. Switching to plain text chat mode...\n`,
@@ -2452,6 +2519,7 @@ You are in FAST mode.
                                             isNarration: true,
                                         });
                                     }
+                                    */
                                     const plainModel = await createChatModel(effectiveProvider, effectiveModel, { streaming: false, safeMode: true });
 
                                     // CRITICAL: Strip any ToolMessages or tool-related metadata for safe mode retries

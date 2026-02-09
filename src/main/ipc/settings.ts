@@ -79,19 +79,27 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
       apiTools: []
     };
 
+    console.log('[Settings] get-all called with token:', accessToken ? 'YES (truncated: ' + accessToken.substring(0, 10) + '...)' : 'NO');
     if (!accessToken) return safeLocalSettings;
 
     try {
       const scopedSupabase = await getScopedSupabase(accessToken);
+      const { data: { user } } = await scopedSupabase.auth.getUser();
+      console.log('[Settings] Scoped client authenticated as:', user?.email || 'ANONYMOUS', 'ID:', user?.id || 'NONE');
 
       // Fetch all user-scoped settings
       const [providersRes, serversRes, toolsRes, sysSettingsRes, fallbackChainRes] = await Promise.all([
         scopedSupabase.from('model_providers').select('*').order('created_at'),
         scopedSupabase.from('mcp_servers').select('*').order('created_at'),
         scopedSupabase.from('api_tools').select('*').order('created_at'),
-        scopedSupabase.from('system_settings').select('key, value'),
-        scopedSupabase.from('ai_fallback_chain').select('*').order('sort_order', { ascending: true })
+        // Use global client for system settings as they are not user-scoped
+        supabase.from('system_settings').select('key, value'),
+        supabase.from('ai_fallback_chain').select('*').order('sort_order', { ascending: true })
       ]);
+
+      // Debug logging
+      console.log('[Settings] Fetched model_providers:', providersRes.data?.length || 0, 'items', providersRes.error ? `Error: ${providersRes.error.message}` : '');
+      console.log('[Settings] Fetched ai_fallback_chain:', fallbackChainRes.data?.length || 0, 'items', fallbackChainRes.error ? `Error: ${fallbackChainRes.error.message}` : '');
 
       const sysSettings = (sysSettingsRes.data || []).reduce((acc: any, curr: any) => {
         acc[curr.key] = curr.value;
@@ -175,16 +183,15 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
 
       // In-memory merge with system defaults
       if (defaultProviderType && defaultModelId) {
-        const systemProvider: ModelProvider = {
+        const systemProvider: any = {
           id: 'system-default',
           name: 'Reavion',
-          type: defaultProviderType,
-          apiKey: 'managed-by-system',
+          type: 'openai',
           enabled: true,
           models: [
             {
               id: defaultModelId,
-              name: 'Reavion Nexus',
+              name: 'Reavion', // User wants branded default name
               providerId: 'system-default',
               contextWindow: 128000,
               enabled: true
@@ -194,9 +201,12 @@ export function setupSettingsHandlers(ipcMain: IpcMain): void {
 
         const finalProviders = [systemProvider, ...modelProviders.filter((p: any) => p.id !== 'system-default')];
 
+        const currentUser = getUserIdFromToken(accessToken);
+        console.log('[Settings] Returning providers for User ID:', currentUser, 'Count:', finalProviders.length);
+
         return {
           ...localSettings,
-          defaultModelId, // Include the system default ID
+          defaultModelId,
           modelProviders: finalProviders,
           mcpServers,
           apiTools
