@@ -47,6 +47,21 @@ export function getUserIdFromToken(accessToken: string): string | null {
     }
 }
 
+/**
+ * Decode the email from a JWT access token.
+ */
+export function getEmailFromToken(accessToken: string): string | null {
+    try {
+        const parts = accessToken.split('.');
+        if (parts.length !== 3) return null;
+
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf-8'));
+        return payload.email || null;
+    } catch (e) {
+        return null;
+    }
+}
+
 // Keep a per-token cache to avoid redundant client creation and setSession calls
 // Using a Map keyed by accessToken ensures that concurrent sessions/windows don't conflict
 const clientCache = new Map<string, any>();
@@ -84,6 +99,9 @@ export async function getScopedSupabase(accessToken?: string, refreshToken?: str
     // We explicitly include the Authorization header as a fallback/primary for RLS stability,
     // while still maintaining the stateful auth for autoRefreshToken support.
     const client = createClient(supabaseUrl || '', supabaseAnonKey || '', {
+        global: {
+            headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {}
+        },
         auth: {
             persistSession: true, // Use storage to support auto-refresh mechanics
             autoRefreshToken: true,

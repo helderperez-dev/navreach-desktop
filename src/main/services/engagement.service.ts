@@ -15,6 +15,7 @@ export class EngagementService {
     }
 
     async logEngagement(accessToken: string, log: Omit<EngagementLog, 'user_id'>) {
+        console.log('[EngagementService] Logging engagement (v2-fix applied)...');
         const supabase = await getScopedSupabase(accessToken);
         const userId = this.getUserIdFromToken(accessToken);
 

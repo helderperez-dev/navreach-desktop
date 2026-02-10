@@ -196,7 +196,7 @@ import { createSiteTools } from './site-tools';
 import { createIntegrationTools } from './integration-tools';
 import { createUtilityTools } from './utility-tools';
 import { DynamicStructuredTool } from '@langchain/core/tools';
-import { supabase, getScopedSupabase, getUserIdFromToken, mainTokenStore } from '../lib/supabase';
+import { supabase, getScopedSupabase, getUserIdFromToken, getEmailFromToken, mainTokenStore } from '../lib/supabase';
 import Store from 'electron-store';
 import type { AppSettings } from '../../shared/types';
 import { systemSettingsService } from './settings.service';
@@ -1529,7 +1529,7 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
                 effectiveProvider.baseUrl?.includes('127.0.0.1') ||
                 effectiveProvider.baseUrl?.includes('0.0.0.0');
 
-            const isLocalModelType = false; // Unified model handling (all tools enabled)
+            const isLocalModelType = isLocalBaseUrl || effectiveProvider.type === 'ollama' || effectiveProvider.type === 'lmstudio' || effectiveProvider.type === 'local';
 
 
             if (effectiveProvider.id !== provider.id || effectiveModel.id !== model.id) {
@@ -1889,7 +1889,9 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
                     const { data: knowledge } = await (scopedSupabase as any)
                         .from('platform_knowledge')
                         .select('domain, url, action, selector, instruction, notes')
-                        .eq('is_active', true);
+                        .eq('is_active', true)
+                        .limit(100);
+
 
                     if (knowledge && knowledge.length > 0) {
                         contextInjection += "\n**PLATFORM KNOWLEDGE BASE (Use these overrides!):**\n";
@@ -1913,7 +1915,8 @@ Rules: Short labels. No emojis. Unique ideas. Max 3.`;
                 if (userKBContent && userKBContent.length > 0) {
                     contextInjection += "\n**User Knowledge Base ({{kb.ID}}):**\n";
                     userKBContent.forEach((c: any) => {
-                        const kbContent = isLocalModelType ? c.content.slice(0, 100) + '...' : c.content;
+                        // Consistently truncate KB content to prevent massive system prompts that choke models
+                        const kbContent = c.content.length > 1000 ? c.content.slice(0, 1000) + '... [Truncated]' : c.content;
                         contextInjection += `- ${c.title || 'Untitled Knowledge'}: {{kb.${c.id}}}\n  Content: ${kbContent}\n`;
                     });
                 }
@@ -2040,12 +2043,13 @@ You are in FAST mode.
                 let isPro = false;
                 let aiActionsLimit = 10;
                 let currentUsage = 0;
+                let userId: string | null = null;
 
                 if (accessToken) {
                     try {
                         const currentToken = getAccessToken();
                         if (!currentToken) throw new Error('No access token available');
-                        const userId = getUserIdFromToken(currentToken);
+                        userId = getUserIdFromToken(currentToken);
                         console.log(`[AI Service] Starting usage init for user: ${userId}`);
                         const [subRes, limits, usage] = await Promise.all([
                             scopedSupabase
@@ -2065,13 +2069,16 @@ You are in FAST mode.
 
                         isPro = !!subRes.data;
                         if (isPro) {
-                            console.log(`[AI Service] Confirmed Pro status via DB: ${subRes.data.status} (ID: ${subRes.data.id})`);
+                            console.log(`[AI Service] ✅ Confirmed Pro status via DB: ${subRes.data.status} (ID: ${subRes.data.id}) for user: ${userId}`);
+                        } else if (subRes.error) {
+                            console.error(`[AI Service] ❌ Subscription query error for ${userId}:`, subRes.error);
                         } else {
-                            console.log(`[AI Service] No active/trialing/past_due subscription found in DB for ${userId}`);
+                            console.log(`[AI Service] ℹ️ No active subscription found in DB for ${userId}`);
                         }
 
                         aiActionsLimit = limits.ai_actions_limit;
                         currentUsage = usage?.count || 0;
+                        console.log(`[AI Service] Usage state: ${currentUsage}/${aiActionsLimit} (isPro: ${isPro}, isLocal: ${isLocalModelType})`);
 
                         // FALLBACK TO STRIPE DIRECTLY IF SUPABASE RECORD MISSING
                         // This ensures Pro users are never blocked even if webhooks/DB sync is delayed
@@ -2086,32 +2093,48 @@ You are in FAST mode.
 
                                 if (profileErr) console.error('[AI Service] Profile lookup error:', profileErr);
 
-                                if (profile) {
-                                    let cid = profile.stripe_customer_id;
+                                let cid = profile?.stripe_customer_id;
+                                let email = profile?.email;
 
+                                // If profile check failed or missing email, try token fallback
+                                if (!email) {
+                                    email = getEmailFromToken(currentToken);
+                                    if (email) console.log(`[AI Service] Using email from token for fallback: ${email}`);
+                                }
+
+                                if (email || cid) {
                                     // If CID missing, try recovering by email
-                                    if (!cid && profile.email) {
-                                        console.log(`[AI Service] No Stripe CID found for profile ${userId}, trying recovery by email: ${profile.email}`);
-                                        const customer = await stripeService.createCustomer(profile.email);
+                                    if (!cid && email) {
+                                        console.log(`[AI Service] No Stripe CID found for user ${userId}, trying recovery by email: ${email}`);
+                                        const customer = await stripeService.createCustomer(email);
                                         cid = customer.id;
-                                        // Proactively update profile in background
-                                        scopedSupabase.from('profiles').update({ stripe_customer_id: cid }).eq('id', userId).then();
+                                        // Proactively update profile in background if we have user ID
+                                        if (userId) {
+                                            scopedSupabase.from('profiles').update({ stripe_customer_id: cid }).eq('id', userId).then();
+                                        }
                                     }
 
                                     if (cid) {
                                         const stripeSubs = await stripeService.getSubscriptions(cid);
-                                        const activeSub = stripeSubs.find((s: any) => s.status === 'active' || s.status === 'trialing' || s.status === 'past_due');
+                                        console.log(`[AI Service] Found ${stripeSubs.length} subscriptions for customer ${cid}`);
+
+                                        const activeSub = stripeSubs.find((s: any) => {
+                                            const status = s.status;
+                                            console.log(`[AI Service] Checking subscription ${s.id}: status=${status}`);
+                                            return status === 'active' || status === 'trialing' || status === 'past_due';
+                                        });
+
                                         if (activeSub) {
                                             isPro = true;
-                                            console.log(`[AI Service] Pro status RECOVERED via Stripe direct lookup for user ${userId} (${profile.email})`);
+                                            console.log(`[AI Service] Pro status RECOVERED via Stripe direct lookup for user ${userId} (${email}). Sub ID: ${activeSub.id}`);
                                         } else {
-                                            console.log(`[AI Service] No active Stripe subscription found for customer ${cid}`);
+                                            console.log(`[AI Service] No active Stripe subscription found for customer ${cid}. Statuses: ${stripeSubs.map(s => s.status).join(', ')}`);
                                         }
                                     } else {
                                         console.log(`[AI Service] No Stripe customer ID found/recovered for user ${userId}`);
                                     }
                                 } else {
-                                    console.log(`[AI Service] No profile found for user ${userId}`);
+                                    console.log(`[AI Service] No profile or email found for user ${userId}, cannot perform Stripe fallback.`);
                                 }
                             } catch (stripeErr) {
                                 console.error('[AI Service] Stripe fallback verification failed:', stripeErr);
@@ -2124,7 +2147,9 @@ You are in FAST mode.
                     }
                 }
 
+                console.log(`[AI Service] Starting autonomous loop (Limit: ${hardStopIterations} iterations)`);
                 while (iteration < hardStopIterations) {
+                    console.log(`[AI Service] Beginning iteration ${iteration + 1}...`);
                     // Check if user requested stop
                     if (window && (stopSignals.get(window.id) || (global as any).__REAVION_STOP_ALL__)) {
                         console.log(`[AI Service] Stop signal detected for window ${window.id}. Aborting autonomous loop.`);
@@ -2159,7 +2184,9 @@ You are in FAST mode.
                         // Wrap the invoke call to catch LangChain internal errors
                         const invokeWithErrorHandling = async () => {
                             try {
+                                console.log(`[AI Service] Invoking model ${effectiveModel.id} with ${langchainMessages.length} messages...`);
                                 const result = await modelWithTools.invoke(langchainMessages);
+                                console.log(`[AI Service] Model response received (${typeof result.content === 'string' ? result.content.length : 'N/A'} chars).`);
                                 return result;
                             } catch (e: any) {
                                 // LangChain throws when API returns error - extract useful info
@@ -2789,8 +2816,8 @@ Keep moving!
                     for (const toolCall of toolCalls) {
                         // --- USAGE ENFORCEMENT ---
                         if (accessToken) {
-                            if (!isPro && currentUsage >= aiActionsLimit) {
-                                console.log(`[AI Service] Daily AI action limit reached (${currentUsage}/${aiActionsLimit}). Stopping turn.`);
+                            if (!isLocalModelType && !isPro && currentUsage >= aiActionsLimit) {
+                                console.log(`[AI Service] Daily AI action limit reached (${currentUsage}/${aiActionsLimit}). Stopping turn. (Pro: ${isPro}, Local: ${isLocalModelType}, User: ${userId})`);
                                 if (window && !window.isDestroyed()) {
                                     window.webContents.send('ai:stream-chunk', {
                                         content: `⚠️ You've reached your daily limit of ${aiActionsLimit} free AI actions. Upgrade to Pro to continue.\n`,
