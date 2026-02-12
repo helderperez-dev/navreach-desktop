@@ -35,9 +35,10 @@ config();
 
 // MASK SIGNALS: Disable blink automation signals app-wide
 // This is the most effective way to set navigator.webdriver to false
+const chromeUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
-app.commandLine.appendSwitch('disable-infobars');
-app.commandLine.appendSwitch('no-sandbox'); // Be careful with this, but often helpful for evasion in isolated environments
+app.commandLine.appendSwitch('lang', 'en-US');
+app.userAgentFallback = chromeUA;
 
 // Initialize Analytics & Logging
 analytics.init();
@@ -241,4 +242,3 @@ app.on('will-quit', async () => {
     shutdownLogging()
   ]);
 });
-

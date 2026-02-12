@@ -13,6 +13,7 @@ function sendDebugLog(type: 'info' | 'error' | 'warning', message: string, data?
 }
 
 const webviewContents = new Map<string, Electron.WebContents>();
+const hardenedSessions = new WeakSet<Electron.Session>();
 
 // Navigation is now always allowed - like a regular browser
 // These functions are kept for API compatibility but are no-ops
@@ -324,203 +325,87 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
     (contents as any).setBackgroundColor('#0A0A0B');
   }
 
-  // PREVENT OS FOCUS STEALING:
-  // Intercept the webContents focus event. If the main window isn't currently
-  // the active foreground window in the OS, we prevent the webview from
-  // grabbing focus which would otherwise pull the whole Reavion window to the front.
-  contents.on('focus', () => {
-    const focusedWin = BrowserWindow.getFocusedWindow();
-    const mainWin = BrowserWindow.getAllWindows()[0];
-    if (mainWin && focusedWin !== mainWin) {
-      // If Reavion isn't the active app, don't let the webview grab focus.
-      // We blur the window to ensure it doesn't stay as the active responder.
-      contents.executeJavaScript('window.blur()').catch(() => { });
-    }
-  });
-
   // MIMIC CHROME: Set a modern Chrome User-Agent
-  // This ensures social networks see us as a regular browser, not Electron
+  // This is the only standard change we keep so that sites don't see "Electron" in the UA
   const chromeUA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
   contents.setUserAgent(chromeUA);
+  contents.session.setUserAgent(chromeUA);
 
-  // MIMIC CHROME: Mask Electron/Automation signals and Spoof Fingerprinting
-  // We use a high-quality masking script to bypass advanced detection
-  // This script is now injected into EVERY frame (including iframes) to handle challenges like Turnstile
-  const maskSignalsScript = `
-    (function() {
-      // 1. Ensure navigator properties match a real Chrome
-      const chromeUA = '${chromeUA}';
-      
-      const overrides = {
-        webdriver: false,
-        userAgent: chromeUA,
-        appVersion: chromeUA.replace('Mozilla/', ''),
-        platform: 'MacIntel',
-        vendor: 'Google Inc.',
-        languages: ['en-US', 'en'],
-        deviceMemory: 8,
-        hardwareConcurrency: 8
-      };
+  if (!hardenedSessions.has(contents.session)) {
+    hardenedSessions.add(contents.session);
+    contents.session.setPermissionRequestHandler((_webContents, _permission, callback) => {
+      callback(true);
+    });
 
-      for (const [prop, value] of Object.entries(overrides)) {
+    contents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+      const headers = details.requestHeaders;
+      headers['Accept-Language'] = headers['Accept-Language'] || 'en-US,en;q=0.9';
+      headers['sec-ch-ua'] = headers['sec-ch-ua'] || '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"';
+      headers['sec-ch-ua-mobile'] = headers['sec-ch-ua-mobile'] || '?0';
+      headers['sec-ch-ua-platform'] = headers['sec-ch-ua-platform'] || '"macOS"';
+      headers['Upgrade-Insecure-Requests'] = headers['Upgrade-Insecure-Requests'] || '1';
+      headers['Accept'] = headers['Accept'] || 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8';
+      callback({ requestHeaders: headers });
+    });
+  }
+
+  const injectStealth = () => {
+    contents.executeJavaScript(`
+      (() => {
         try {
-          Object.defineProperty(navigator, prop, {
-            get: () => value,
-            configurable: true
-          });
+          Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+          Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+          Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
+          Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+          Object.defineProperty(navigator, 'mimeTypes', { get: () => [1, 2, 3] });
+          if (!navigator.userAgentData) {
+            Object.defineProperty(navigator, 'userAgentData', {
+              get: () => ({
+                brands: [
+                  { brand: 'Chromium', version: '131' },
+                  { brand: 'Not_A Brand', version: '24' },
+                  { brand: 'Google Chrome', version: '131' }
+                ],
+                mobile: false,
+                platform: 'macOS',
+                getHighEntropyValues: async (hints) => {
+                  const data = {
+                    architecture: 'x86',
+                    bitness: '64',
+                    model: '',
+                    platform: 'macOS',
+                    platformVersion: '14.0.0',
+                    uaFullVersion: '131.0.0.0',
+                    fullVersionList: [
+                      { brand: 'Chromium', version: '131.0.0.0' },
+                      { brand: 'Not_A Brand', version: '24.0.0.0' },
+                      { brand: 'Google Chrome', version: '131.0.0.0' }
+                    ]
+                  };
+                  if (!Array.isArray(hints) || hints.length === 0) return data;
+                  return hints.reduce((acc, key) => {
+                    if (key in data) acc[key] = data[key];
+                    return acc;
+                  }, {} as any);
+                }
+              })
+            });
+          }
+          if (!window.chrome) {
+            Object.defineProperty(window, 'chrome', { get: () => ({ runtime: {} }) });
+          }
         } catch (e) {}
-      }
-      
-      // 2. Mock chrome object (essential for "Is Chrome" checks)
-      if (!window.chrome) {
-        window.chrome = {
-          runtime: {},
-          loadTimes: function() {},
-          csi: function() {},
-          app: {}
-        };
-      } else {
-        // Enhance existing chrome object if needed
-        if (!window.chrome.runtime) window.chrome.runtime = {};
-        if (!window.chrome.app) window.chrome.app = {};
-      }
-
-      // 3. Mock Plugins (standard Chrome profiles)
-      if (!navigator.plugins.length) {
-        const mockPlugins = [
-          { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
-          { name: 'Chrome PDF Viewer', filename: 'mhjfbmdpjiiglhbhkeicmopidxocgoeb', description: '' },
-          { name: 'Chromium PDF Viewer', filename: 'internal-pdf-viewer', description: '' }
-        ];
-        Object.defineProperty(navigator, 'plugins', { get: () => mockPlugins, configurable: true });
-      }
-      
-      // 4. Spoof Screen & Dimensions (Avoid "Headless" signatures)
-      Object.defineProperty(Screen.prototype, 'colorDepth', { get: () => 24, configurable: true });
-      Object.defineProperty(Screen.prototype, 'pixelDepth', { get: () => 24, configurable: true });
-
-      // 5. Hide common automation properties and Electron leaks
-      try {
-        if (window.process) delete window.process;
-        if (window.electron) delete window.electron;
-        if (window.ipcRenderer) delete window.ipcRenderer;
-        
-        // Proxy protection
-        const hiddenProps = ['process', 'electron', 'ipcRenderer', 'webdriver'];
-        /* 
-           Note: We avoid wrapping window in a Proxy as it breaks some frameworks.
-           Instead we just delete the properties.
-        */
-      } catch(e) {}
-      
-      // 6. Advanced evasion for Google/ReCAPTCHA/Turnstile
-      const removeCDC = () => {
-        for (const prop in window) {
-          if (prop.match(/^cdc_[a-z0-9]+$/)) {
-            try { delete window[prop]; } catch(e) {}
-          }
-        }
-      };
-      removeCDC();
-      
-      // Spoof WebGL fingerprint consistently
-      try {
-          const getParameter = WebGLRenderingContext.prototype.getParameter;
-          WebGLRenderingContext.prototype.getParameter = function(parameter) {
-            if (parameter === 37445) return 'Intel Inc.';
-            if (parameter === 37446) return 'Intel(R) Iris(TM) Plus Graphics';
-            return getParameter.apply(this, arguments);
-          };
-      } catch(e) {}
-
-      // 7. Prevent focus stealing
-      // We override focus methods to prevent background pages from grabbing focus
-      // but we allow it if we are explicitly performing an interaction.
-      try {
-        window.focus = function() {
-          console.log('[Reavion] Blocked window.focus()');
-        };
-        
-        const originalElementFocus = HTMLElement.prototype.focus;
-        HTMLElement.prototype.focus = function() {
-          if (window.__REAVION_INTERNAL_FOCUS__) {
-            return originalElementFocus.apply(this, arguments);
-          }
-        };
-
-        // Proactively blur anything that grabs focus without an internal automation flag
-        // or if the document itself doesn't have OS-level focus.
-        document.addEventListener('focusin', (e) => {
-          if (!window.__REAVION_INTERNAL_FOCUS__ && !document.hasFocus()) {
-            try { (e.target as any)?.blur(); } catch(err) {}
-          }
-        }, true);
-      } catch (e) {}
-    })();
-  `;
-
-  // MIMIC CHROME: Inject mask signals into every frame as soon as it loads
-  // This is critical because Turnstile/ReCAPTCHA run in iframes
-  contents.on('did-frame-finish-load', (_event, _isMainFrame, _frameProcessId, frameRoutingId) => {
-    try {
-      // executeJavaScript only works on the main frame by default via contents object,
-      // so we must find the frame object to inject into sub-frames.
-      const findFrame = (root: any, id: number): any => {
-        if (root.routingId === id) return root;
-        for (const child of root.frames) {
-          const found = findFrame(child, id);
-          if (found) return found;
-        }
-        return null;
-      };
-
-      const frame = findFrame(contents.mainFrame, frameRoutingId);
-      if (frame) {
-        frame.executeJavaScript(maskSignalsScript).catch(() => { });
-      } else {
-        contents.executeJavaScript(maskSignalsScript).catch(() => { });
-      }
-    } catch (e) {
-      contents.executeJavaScript(maskSignalsScript).catch(() => { });
-    }
-  });
-
-  contents.on('dom-ready', () => {
-    // Re-inject on dom-ready just in case
-    contents.executeJavaScript(maskSignalsScript).catch(() => { });
-
-    // Inject high-visibility CSS cursor - LESS AGGRESSIVE
-    contents.insertCSS(`
-      html, body {
-        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='%23000000' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0, auto;
-      }
-      a, button, [role="button"], input, textarea, select, .click-target {
-        cursor: url("data:image/svg+xml,%3Csvg width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4.5 2L10.5 18.5L13.125 11.375L20.25 8.75L4.5 2Z' fill='%23000000' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0, pointer !important;
-      }
-      #reavion-pointer-host { 
-        all: initial; 
-        position: fixed !important; 
-        top: 0 !important; 
-        left: 0 !important; 
-        width: 100vw !important; 
-        height: 100vh !important; 
-        z-index: 2147483647 !important; 
-        pointer-events: none !important; 
-      }
+      })();
     `).catch(() => { });
-  });
+  };
+
+  injectStealth();
+  contents.on('dom-ready', injectStealth);
+  contents.on('did-navigate', injectStealth);
+  contents.on('did-navigate-in-page', injectStealth);
 
   // Inject recorder and inspector scripts
   contents.on('did-finish-load', () => {
-    // CRITICAL: Prevent focus stealing on page load
-    // When a page finishes loading, it often tries to focus itself or an input element.
-    // We proactively blur the window if Reavion isn't the active app.
-    const focusedWin = BrowserWindow.getFocusedWindow();
-    const mainWin = BrowserWindow.getAllWindows()[0];
-    if (mainWin && focusedWin !== mainWin) {
-      contents.executeJavaScript('window.blur(); document.activeElement?.blur();').catch(() => { });
-    }
-
     // Send navigation event to initiator
     const initiator = recordingInitiators.get(tabId);
     if (initiator && !initiator.isDestroyed()) {
@@ -542,33 +427,6 @@ export function registerWebviewContents(tabId: string, contents: Electron.WebCon
       });
     }
   });
-
-  // Also prevent focus stealing on navigation start
-  contents.on('did-start-navigation', () => {
-    const focusedWin = BrowserWindow.getFocusedWindow();
-    const mainWin = BrowserWindow.getAllWindows()[0];
-    if (mainWin && focusedWin !== mainWin) {
-      contents.executeJavaScript('window.blur();').catch(() => { });
-    }
-  });
-
-  // Platform Redirect Protector: Blocks tracking syncs from hijacking the main frame
-  contents.on('will-navigate', (event: any, url: string) => {
-    if (url.includes('ns1p.net')) {
-      event.preventDefault();
-      sendDebugLog('info', 'Blocked will-navigate tracking redirect: ' + url);
-    }
-  });
-
-  // Aggressive Network-level Block: Prevents any resources or redirects to tracking domains
-  // This is the most robust way to block trick redirects that skip will-navigate
-  contents.session.webRequest.onBeforeRequest(
-    { urls: ['*://*.ns1p.net/*', '*://*.scorecardresearch.com/*'] },
-    (details, callback) => {
-      sendDebugLog('info', 'Network-level block for tracking domain: ' + details.url);
-      callback({ cancel: true });
-    }
-  );
 
   // Initialize logs
   if (!consoleLogs.has(tabId)) {

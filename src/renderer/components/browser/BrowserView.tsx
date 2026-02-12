@@ -340,9 +340,7 @@ export function BrowserView() {
           className="absolute inset-0 w-full h-full"
           // @ts-ignore - webview attributes
           partition={currentWorkspace ? `persist:workspace_${currentWorkspace.id}` : undefined}
-          // @ts-ignore - webview attributes
-          allowpopups="true"
-          webpreferences="nativeWindowOpen=yes,backgroundThrottling=no"
+        // @ts-ignore - webview attributes
         />
       </div>
 
