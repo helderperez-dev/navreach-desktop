@@ -41,13 +41,16 @@ export function ModelSelector() {
     }
   }, [selectedModel, enabledProviders, setSelectedModel]);
 
-  const handleModelChange = (modelId: string) => {
-    for (const provider of enabledProviders) {
-      const model = provider.models.find((m) => m.id === modelId);
-      if (model) {
-        setSelectedModel({ ...model, providerId: provider.id });
-        return;
-      }
+  const handleModelChange = (compositeId: string) => {
+    const [providerId, ...modelIdParts] = compositeId.split('::');
+    const modelId = modelIdParts.join('::');
+
+    const provider = enabledProviders.find(p => p.id === providerId);
+    if (!provider) return;
+
+    const model = provider.models.find((m) => m.id === modelId);
+    if (model) {
+      setSelectedModel({ ...model, providerId: provider.id });
     }
   };
 
@@ -63,7 +66,7 @@ export function ModelSelector() {
   }
 
   return (
-    <Select value={selectedModel?.id || ''} onValueChange={handleModelChange}>
+    <Select value={selectedModel ? `${selectedModel.providerId}::${selectedModel.id}` : ''} onValueChange={handleModelChange}>
       <SelectTrigger className={cn(
         "h-7 px-2 text-[11px] border-0 bg-transparent shadow-none hover:bg-white/5 transition-all text-muted-foreground/60 hover:text-foreground gap-1.5 focus:ring-0 w-auto rounded-md [&>svg:last-child]:hidden [&>span:last-child]:hidden"
       )}>
@@ -76,11 +79,14 @@ export function ModelSelector() {
             <SelectLabel className="text-xs text-muted-foreground">
               {provider.id === 'system-default' ? 'Reavion' : provider.name}
             </SelectLabel>
-            {provider.models.map((model) => (
-              <SelectItem key={model.id} value={model.id} className="text-xs">
-                {provider.id === 'system-default' ? 'Reavion Nexus' : model.name}
-              </SelectItem>
-            ))}
+            {provider.models.map((model) => {
+              const compositeId = `${provider.id}::${model.id}`;
+              return (
+                <SelectItem key={compositeId} value={compositeId} className="text-xs">
+                  {provider.id === 'system-default' ? 'Reavion Nexus' : model.name}
+                </SelectItem>
+              );
+            })}
           </SelectGroup>
         ))}
       </SelectContent>

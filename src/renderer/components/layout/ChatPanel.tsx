@@ -828,6 +828,34 @@ export function ChatPanel() {
     }
   };
 
+  const stopActiveRun = async () => {
+    try {
+      await window.api.ai.stop();
+    } catch (e) {
+      console.error('Failed to stop AI:', e);
+    }
+
+    const webview = document.querySelector('webview') as any;
+    if (webview?.stop) webview.stop();
+
+    // Clear streaming state
+    setIsStreaming(false);
+    setAgentStartTime(null);
+    setStreamingContent('');
+    streamingContentRef.current = '';
+    setLiveNarration([]);
+    toolHistoryRef.current = [];
+    savedMessagesRef.current.clear();
+    useChatStore.getState().setRunningConversationId(null);
+
+    if (activeConversationId) {
+      addMessage(activeConversationId, {
+        role: 'system',
+        content: 'Stopped',
+      });
+    }
+  };
+
   return (
     <div className="relative flex flex-col h-full bg-[#030303] min-w-0 w-full overflow-hidden">
       <div className="flex items-center justify-between h-14 px-5 border-b border-white/[0.03] sticky top-0 z-20 gap-2 bg-black/20 backdrop-blur-md">
@@ -867,11 +895,7 @@ export function ChatPanel() {
                 size="icon"
                 className="h-8 w-8"
                 onClick={async () => {
-                  try {
-                    await window.api.ai.stop();
-                  } catch (e) {
-                    console.error('Failed to stop AI:', e);
-                  }
+                  await stopActiveRun();
                   createConversation();
                   setHasStarted(false);
                   window.api.ai.resetContext(currentWorkspace?.id);
@@ -1147,32 +1171,7 @@ export function ChatPanel() {
                     onClick={async (e) => {
                       e.preventDefault();
                       e.stopPropagation();
-                      // Tool actions are already saved immediately when they complete
-                      // Clear streaming state
-                      // Clear streaming state
-                      setIsStreaming(false);
-                      setAgentStartTime(null);
-                      setStreamingContent('');
-                      streamingContentRef.current = '';
-                      setLiveNarration([]);
-                      toolHistoryRef.current = [];
-                      savedMessagesRef.current.clear();
-
-                      // Clear running state
-                      useChatStore.getState().setRunningConversationId(null);
-
-                      // Add a simple stop indicator
-                      if (activeConversationId) {
-                        addMessage(activeConversationId, {
-                          role: 'system',
-                          content: 'Stopped',
-                        });
-                      }
-                      try {
-                        await window.api.ai.stop();
-                      } catch (e) {
-                        console.error('Failed to stop AI:', e);
-                      }
+                      await stopActiveRun();
                     }}
                     className="w-8 h-8 rounded-full bg-foreground flex items-center justify-center hover:bg-foreground/90 transition-colors"
                     title="Stop generation"

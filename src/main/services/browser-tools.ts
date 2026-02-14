@@ -1005,6 +1005,9 @@ function buildTaskScript(coreLogic: string): string {
     '    if (typeof window.safeMoveToElement !== "function") {\n' +
     '      throw new Error("Browser automation helpers failed to initialize. The page may require a reload.");\n' +
     '    }\n' +
+    '    if (window.__REAVION_STOP__) {\n' +
+    '      return { success: false, error: "Stopped by user" };\n' +
+    '    }\n' +
     coreLogic + '\n' +
     '  } catch (err) {\n' +
     '    return { success: false, error: err.message || String(err), stack: err.stack };\n' +

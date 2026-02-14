@@ -87,21 +87,30 @@ export function BrowserView() {
     if (!webview) return;
 
     const register = async () => {
+      // Check if method exists and is ready to be called
       if (webview.getWebContentsId) {
-        const webContentsId = webview.getWebContentsId();
-        if (webContentsId && registeredIdRef.current !== webContentsId) {
-          console.log('[BrowserView] Registering webview:', webContentsId);
-          setWebContentsId(webContentsId);
-          try {
-            const result = await (window.api.browser.registerWebview(tabId, webContentsId) as any);
-            if (result && result.success) {
-              registeredIdRef.current = webContentsId;
-              setIsReady(true);
-            } else {
-              console.error('Failed to register webview:', result?.reason || 'Unknown reason');
+        try {
+          const webContentsId = webview.getWebContentsId();
+          if (webContentsId && registeredIdRef.current !== webContentsId) {
+            console.log('[BrowserView] Registering webview:', webContentsId);
+            setWebContentsId(webContentsId);
+            try {
+              const result = await (window.api.browser.registerWebview(tabId, webContentsId) as any);
+              if (result && result.success) {
+                registeredIdRef.current = webContentsId;
+                setIsReady(true);
+              } else {
+                console.error('Failed to register webview:', result?.reason || 'Unknown reason');
+              }
+            } catch (e) {
+              console.error('Failed to register webview (IPC error):', e);
             }
-          } catch (e) {
-            console.error('Failed to register webview (IPC error):', e);
+          }
+        } catch (webviewError: any) {
+          // Ignore "not ready" errors - we rely on dom-ready event for final registration
+          // This handles the "WebView must be attached to the DOM" error on initial mount
+          if (!webviewError.message?.includes('dom-ready') && !webviewError.message?.includes('attached to the DOM')) {
+            console.warn('[BrowserView] Webview access error:', webviewError);
           }
         }
       }

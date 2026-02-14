@@ -71,65 +71,66 @@ export function WorkspaceSelector({ isCollapsed }: { isCollapsed?: boolean }) {
         </Button>
     );
 
-    const menu = (
-        <DropdownMenu open={open} onOpenChange={setOpen}>
-            <DropdownMenuTrigger asChild>
-                {trigger}
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-                className="w-56"
-                align={isCollapsed ? "center" : "start"}
-                side={isCollapsed ? "right" : "bottom"}
-                sideOffset={isCollapsed ? 12 : 4}
-            >
-                <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 px-2 py-1.5">
-                    Workspaces
-                </DropdownMenuLabel>
-                <div className="px-1 py-1">
-                    {workspaces.map((workspace) => (
-                        <DropdownMenuItem
-                            key={workspace.id}
-                            onSelect={() => setCurrentWorkspace(workspace.id)}
-                            className="flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded-md"
-                        >
-                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border/10 bg-background text-[10px] font-bold uppercase">
-                                {workspace.name[0]}
-                            </div>
-                            <span className="flex-1 truncate text-xs font-medium">{workspace.name}</span>
-                            {workspace.id === currentWorkspace?.id && (
-                                <Check className="h-3.5 w-3.5 text-primary" />
-                            )}
-                        </DropdownMenuItem>
-                    ))}
-                </div>
-                <DropdownMenuSeparator className="bg-border/10" />
-                <div className="px-1 py-1">
-                    <DropdownMenuItem
-                        onSelect={() => setShowNewWorkspaceDialog(true)}
-                        className="flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded-md text-muted-foreground hover:text-foreground"
-                    >
-                        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border/20 bg-background/50">
-                            <Plus className="h-3 w-3" />
-                        </div>
-                        <span className="text-xs font-medium">New Workspace</span>
-                    </DropdownMenuItem>
-                </div>
-            </DropdownMenuContent>
-        </DropdownMenu>
-    );
-
     return (
         <Dialog open={showNewWorkspaceDialog} onOpenChange={setShowNewWorkspaceDialog}>
-            {isCollapsed ? (
-                <Tooltip delayDuration={400} open={isCollapsed ? undefined : false}>
-                    <TooltipTrigger asChild>
-                        {menu}
-                    </TooltipTrigger>
-                    <TooltipContent side="right" sideOffset={8}>
-                        {displayName}
-                    </TooltipContent>
-                </Tooltip>
-            ) : menu}
+            <DropdownMenu open={open} onOpenChange={setOpen}>
+                {isCollapsed ? (
+                    <Tooltip delayDuration={400}>
+                        <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                                {trigger}
+                            </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={8}>
+                            {displayName}
+                        </TooltipContent>
+                    </Tooltip>
+                ) : (
+                    <DropdownMenuTrigger asChild>
+                        {trigger}
+                    </DropdownMenuTrigger>
+                )}
+
+                <DropdownMenuContent
+                    className="w-56"
+                    align={isCollapsed ? "center" : "start"}
+                    side={isCollapsed ? "right" : "bottom"}
+                    sideOffset={isCollapsed ? 12 : 4}
+                >
+                    <DropdownMenuLabel className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 px-2 py-1.5">
+                        Workspaces
+                    </DropdownMenuLabel>
+                    <div className="px-1 py-1">
+                        {workspaces.map((workspace) => (
+                            <DropdownMenuItem
+                                key={workspace.id}
+                                onSelect={() => setCurrentWorkspace(workspace.id)}
+                                className="flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded-md"
+                            >
+                                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-border/10 bg-background text-[10px] font-bold uppercase">
+                                    {workspace.name[0]}
+                                </div>
+                                <span className="flex-1 truncate text-xs font-medium">{workspace.name}</span>
+                                {workspace.id === currentWorkspace?.id && (
+                                    <Check className="h-3.5 w-3.5 text-primary" />
+                                )}
+                            </DropdownMenuItem>
+                        ))}
+                    </div>
+                    <DropdownMenuSeparator className="bg-border/10" />
+                    <div className="px-1 py-1">
+                        <DropdownMenuItem
+                            onSelect={() => setShowNewWorkspaceDialog(true)}
+                            className="flex items-center gap-2 px-2 py-1.5 cursor-pointer rounded-md text-muted-foreground hover:text-foreground"
+                        >
+                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded border border-dashed border-border/20 bg-background/50">
+                                <Plus className="h-3 w-3" />
+                            </div>
+                            <span className="text-xs font-medium">New Workspace</span>
+                        </DropdownMenuItem>
+                    </div>
+                </DropdownMenuContent>
+            </DropdownMenu>
 
             <DialogContent>
                 <DialogHeader>

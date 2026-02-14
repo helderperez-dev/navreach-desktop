@@ -77,7 +77,18 @@ const POINTER_HELPERS = `
     if (!p) {
       p = document.createElement('div');
       p.className = 'pointer';
-      p.innerHTML = '<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M0 0L8 22L11.5 12.5L21 9L0 0Z" fill="#000000" stroke="#ffffff" stroke-width="2"/></svg>';
+      const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      s.setAttribute('width', '32');
+      s.setAttribute('height', '32');
+      s.setAttribute('viewBox', '0 0 32 32');
+      s.setAttribute('fill', 'none');
+      const k = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      k.setAttribute('d', 'M0 0L8 22L11.5 12.5L21 9L0 0Z');
+      k.setAttribute('fill', '#000000');
+      k.setAttribute('stroke', '#ffffff');
+      k.setAttribute('stroke-width', '2');
+      s.appendChild(k);
+      p.appendChild(s);
       root.appendChild(p);
       const initX = window.__LAST_MOUSE_POS__.x || 100;
       const initY = window.__LAST_MOUSE_POS__.y || 100;
@@ -167,567 +178,421 @@ const POINTER_HELPERS = `
   };
 `;
 
-const BASE_SCRIPT_HELPERS = `
+
+
+const X_CONSTANTS = `
+  console.log("[Reavion] X_CONSTANTS executing");
+  var __reavionHelpersOk = true;
+  var __reavionHelpersError = null;
   ${POINTER_HELPERS}
-// BLOCK FOCUS STEALING from the site
-if (!window.__REAVION_FOCUS_PROTECTED__) {
-  window.__REAVION_FOCUS_PROTECTED__ = true;
-  try {
-    window.focus = function() {
-       console.log("[Reavion] Blocked window.focus()");
-    };
-    
-    const originalElementFocus = HTMLElement.prototype.focus;
-    HTMLElement.prototype.focus = function() {
-      if (window.__REAVION_INTERNAL_FOCUS__) {
-        return originalElementFocus.apply(this, arguments);
-      }
-    };
-  } catch (e) {}
-}
-
-async function safeFocus(el) {
-  if (!el) return;
-  window.__REAVION_INTERNAL_FOCUS__ = true;
-  try {
-    if (typeof el.focus === 'function') el.focus({ preventScroll: true });
-  } finally {
-    window.__REAVION_INTERNAL_FOCUS__ = false;
-  }
-}
-
-var logs = [];
-function log(msg, data) {
-  logs.push({ time: new Date().toISOString(), msg, data });
-}
-
-function isVisible(el) {
-  if (!el || !el.isConnected) return false;
-  try {
-    const rect = el.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return false;
-    const style = window.getComputedStyle(el);
-    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-  } catch (e) {
-    return false;
-  }
-}
-
-function getTweetAuthorName(tweetNode) {
-  const nameEl = tweetNode.querySelector('[data-testid="User-Name"] span:first-child');
-  return nameEl ? nameEl.innerText.trim() : null;
-}
-
-function getTweetAuthorAvatar(tweetNode) {
-  const avatarImg = tweetNode.querySelector('[data-testid="Tweet-User-Avatar"] img');
-  return avatarImg ? avatarImg.src : null;
-}
-
-function getTweetAuthor(tweet) {
-  if (!tweet) return null;
-  const userNameNode = tweet.querySelector('[data-testid="User-Name"]');
-  if (userNameNode) {
-    const handleEl = userNameNode.querySelector('div[dir="ltr"] span');
-    if (handleEl && handleEl.innerText.startsWith("@")) {
-      return handleEl.innerText.toLowerCase().replace("@", "");
-    }
-  }
-  const links = Array.from(tweet.querySelectorAll('a'));
-  const handleLink = links.find(a => a.getAttribute("href")?.startsWith("/") && !a.getAttribute("href")?.includes("/status/"));
-  return handleLink ? handleLink.getAttribute("href").replace("/", "").toLowerCase() : null;
-}
-
-function getTweetFullMetadata(t) {
-  if (!t) return {};
-  const author = getTweetAuthor(t);
-  const authorName = getTweetAuthorName(t);
-  const avatarUrl = getTweetAuthorAvatar(t);
-  const timeLink = t.querySelector("time")?.parentElement;
-  const tweetId = timeLink && timeLink.href ? timeLink.href.split("/").pop() : "unknown";
-  const textEl = t.querySelector('[data-testid="tweetText"]');
-  const text = textEl ? textEl.innerText.replace(/\\n/g, " ").slice(0, 5000) : "";
-  return {
-    target_username: author,
-    target_name: authorName,
-    target_avatar_url: avatarUrl,
-    tweet_id: tweetId,
-    target_tweet_text: text
-  };
-}
-
-// --- X ALGORITHM OPTIMIZATION HELPERS ---
-// Based on X's open-sourced algorithm, these helpers score tweets for maximum algorithmic impact
-
-function getTweetAge(tweetNode) {
-  // Returns age in minutes. Fresher = better for algorithmic velocity
-  const timeEl = tweetNode.querySelector('time');
-  if (!timeEl) return 9999; // Unknown = old
-  const datetime = timeEl.getAttribute('datetime');
-  if (!datetime) return 9999;
-  const posted = new Date(datetime).getTime();
-  const now = Date.now();
-  return Math.floor((now - posted) / (1000 * 60));
-}
-
-function hasVideoContent(tweetNode) {
-  // Videos get VQV_WEIGHT bonus in X algorithm
-  return !!tweetNode.querySelector('video, [data-testid="videoPlayer"], [data-testid="videoComponent"]');
-}
-
-function hasImageContent(tweetNode) {
-  // Images get photo_expand score in X algorithm
-  return !!tweetNode.querySelector('[data-testid="tweetPhoto"]');
-}
-
-function getTweetEngagementMetrics(tweetNode) {
-  // Extract visible engagement metrics
-  const parseCount = (str) => {
-    if (!str) return 0;
-    const s = str.toUpperCase().trim();
-    const match = s.match(/([0-9,.]+)\s*([KMB])?/);
-    if (!match) return 0;
-    const numStr = match[1].replace(/,/g, '');
-    const suffix = match[2];
-    const val = parseFloat(numStr);
-    if (isNaN(val)) return 0;
-    let multiplier = 1;
-    if (suffix === 'K') multiplier = 1000;
-    else if (suffix === 'M') multiplier = 1000000;
-    else if (suffix === 'B') multiplier = 1000000000;
-    return Math.floor(val * multiplier);
-  };
-
-  const replyBtn = tweetNode.querySelector('[data-testid="reply"]');
-  const rtBtn = tweetNode.querySelector('[data-testid="retweet"], [data-testid="unretweet"]');
-  const likeBtn = tweetNode.querySelector('[data-testid="like"], [data-testid="unlike"]');
-  
-  return {
-    replies: parseCount(replyBtn?.getAttribute('aria-label')?.match(/\d+[KMB]?/)?.[0]),
-    retweets: parseCount(rtBtn?.getAttribute('aria-label')?.match(/\d+[KMB]?/)?.[0]),
-    likes: parseCount(likeBtn?.getAttribute('aria-label')?.match(/\d+[KMB]?/)?.[0]),
-  };
-}
-
-function getTweetAlgoScore(tweetNode) {
-  // Score based on X algorithm weights for maximum visibility
-  // Higher score = better target for engagement
-  let score = 50; // Base score
-  
-  const age = getTweetAge(tweetNode);
-  const hasVideo = hasVideoContent(tweetNode);
-  const hasImage = hasImageContent(tweetNode);
-  const metrics = getTweetEngagementMetrics(tweetNode);
-  const verified = getVerificationStatus(tweetNode);
-  
-  // FRESHNESS: X algorithm heavily favors recent content (velocity!)
-  if (age < 15) score += 40;        // Golden: < 15 mins
-  else if (age < 60) score += 30;   // Hot: < 1 hour
-  else if (age < 180) score += 15;  // Warm: < 3 hours
-  else if (age < 720) score += 5;   // Lukewarm: < 12 hours
-  else score -= 10;                 // Cold: > 12 hours
-  
-  // MEDIA: Videos get VQV bonus, images get photo_expand bonus
-  if (hasVideo) score += 25;
-  if (hasImage) score += 10;
-  
-  // ENGAGEMENT VELOCITY: High engagement = proven content
-  if (metrics.retweets > 10) score += 15;
-  if (metrics.likes > 50) score += 10;
-  if (metrics.replies > 5) score += 10;
-  
-  // VERIFICATION: Verified accounts have more reach potential
-  if (verified === 'gold') score += 15;  // Org accounts
-  else if (verified === 'blue') score += 5;
-  
-  // NEGATIVE: Already engaged = diminishing returns
-  const isLiked = !!tweetNode.querySelector('[data-testid="unlike"]');
-  const isRetweeted = !!tweetNode.querySelector('[data-testid="unretweet"]');
-  if (isLiked) score -= 30;
-  if (isRetweeted) score -= 20;
-  
-  // NEGATIVE: Ads have no algorithmic benefit
-  const isPromoted = !!tweetNode.querySelector('[data-testid="placementTracking"]');
-  if (isPromoted) score -= 100;
-  
-  return Math.max(0, Math.min(100, score));
-}
-
-function wait(ms) {
-  const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
-  const isFast = multiplier < 1.0;
-  
-  // HUMAN BEHAVIOR:
-  // 1. Base Randomness: +/- 30%
-  // 2. Hesitation: 10% chance to add extra 200-800ms
-  // 3. Jitter: small noise
-  
-  const randomFactor = 0.7 + Math.random() * 0.6; // 0.7 to 1.3
-  const hesitation = Math.random() < 0.1 ? (200 + Math.random() * 600) : 0;
-  
-  let adjustedMs = (ms * multiplier * randomFactor) + hesitation;
-  if (isFast) {
-    // Turbo mode: No randomness, no hesitation, and capped at 500ms max for long waits
-    adjustedMs = Math.min(ms * multiplier, 500); 
-  }
-
-  return new Promise((resolve, reject) => {
-    const start = Date.now();
-    const checking = () => {
-      if (window.__REAVION_STOP__) {
-        reject(new Error('Stopped by user'));
-        return;
-      }
-      if (Date.now() - start >= adjustedMs) {
-        resolve();
-      } else {
-        setTimeout(checking, 20); 
-      }
-    };
-    checking();
-  });
-}
-
-async function safeClick(el, label, options = {}) {
-  const clickable = el.closest('button,[role="button"]') || el;
-  log('Clicking ' + label, { tagName: clickable.tagName });
-
-  const rectBefore = clickable.getBoundingClientRect();
-  const isTurbo = (window.__REAVION_SPEED_MULTIPLIER__ || 1.0) < 0.3;
-  
-  if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
-    clickable.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' }); 
-    await wait(options.scrollWait || (isTurbo ? 200 : 400)); 
-  }
-
-  const rect = clickable.getBoundingClientRect();
-  const x = Math.round(rect.left + rect.width / 2);
-  const y = Math.round(rect.top + rect.height / 2);
-  
-  if (typeof window.movePointer === 'function') await window.movePointer(x, y);
-
-  await wait(options.focusWait || (isTurbo ? 50 : 100)); // Small pause after arriving before clicking (human hesitation/verification)
-
-  if (typeof window.showVisualClick === 'function') window.showVisualClick(x, y);
-
-  try {
-    if (options.native) {
-      clickable.click();
-    } else {
-      // Dispatch realistic event chain with coordinates
-      const common = { 
-        bubbles: true, 
-        cancelable: true, 
-        view: window,
-        clientX: x,
-        clientY: y,
-        screenX: x,
-        screenY: y,
-        buttons: 1,
-        pointerId: 1,
-        pointerType: 'mouse',
-        isPrimary: true
-      };
-
-      clickable.dispatchEvent(new PointerEvent('pointerdown', common));
-      clickable.dispatchEvent(new MouseEvent('mousedown', common));
-      
-      await wait(options.clickDelay || 50); // Human-like click duration
-      
-      clickable.dispatchEvent(new PointerEvent('pointerup', common));
-      clickable.dispatchEvent(new MouseEvent('mouseup', common));
-      clickable.click();
-    }
-  } catch (e) {
-    log('Native click failed on ' + label, { error: e.toString() });
-    throw e;
-  }
-
-  await wait(options.afterWait || (isTurbo ? 300 : 800)); 
-}
-
-async function clickOutside() {
-  log('Clicking outside to close any open modals or menus');
-  
-  // 1. Robust Close for Modals: Try finding close buttons first
-  const closeBtn = document.querySelector('[data-testid="app-bar-close"]') || 
-                   document.querySelector('[aria-label="Close"]') ||
-                   document.querySelector('[data-testid="close"]');
-                   
-  if (closeBtn && isVisible(closeBtn)) {
+  // BLOCK FOCUS STEALING from the site
+  if (!window.__REAVION_FOCUS_PROTECTED__) {
+    window.__REAVION_FOCUS_PROTECTED__ = true;
     try {
-      await safeClick(closeBtn, 'Close Modal Button', { native: true });
-      return;
+      window.focus = function() {
+         console.log("[Reavion] Blocked window.focus()");
+      };
+      
+      const originalElementFocus = HTMLElement.prototype.focus;
+      HTMLElement.prototype.focus = function() {
+        if (window.__REAVION_INTERNAL_FOCUS__) {
+          return originalElementFocus.apply(this, arguments);
+        }
+      };
     } catch (e) {}
   }
 
-  // 2. Click on the mask/backdrop if present (X uses this for lightweight modals)
-  const mask = document.querySelector('[data-testid="mask"]');
-  if (mask && isVisible(mask)) {
-    const x = 50;
-    const y = window.innerHeight / 2;
+  var logs = [];
+  function log(msg, data) {
+    logs.push({ time: new Date().toISOString(), msg, data });
+  }
+`;
+
+const X_UTILS = `
+  async function safeFocus(el) {
+    if (!el) return;
+    window.__REAVION_INTERNAL_FOCUS__ = true;
+    try {
+      if (typeof el.focus === 'function') el.focus({ preventScroll: true });
+    } finally {
+      window.__REAVION_INTERNAL_FOCUS__ = false;
+    }
+  }
+
+  function wait(ms) {
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1;
+    const isFast = multiplier < 1.0;
+    const randomFactor = 0.7 + Math.random() * 0.6;
+    const hesitation = Math.random() < 0.1 ? (200 + Math.random() * 600) : 0;
+    
+    let adjustedMs = (ms * multiplier * randomFactor) + hesitation;
+    if (isFast) adjustedMs = Math.min(ms * multiplier, 500);
+
+    return new Promise((resolve, reject) => {
+      const start = Date.now();
+      const checking = () => {
+        if (window.__REAVION_STOP__) {
+          reject(new Error('Stopped by user'));
+          return;
+        }
+        if (Date.now() - start >= adjustedMs) {
+          resolve();
+        } else {
+          setTimeout(checking, 20); 
+        }
+      };
+      checking();
+    });
+  }
+
+  async function safeClick(el, label, options = {}) {
+    if (window.__REAVION_STOP__) throw new Error('Stopped by user');
+    const clickable = el.closest('button,[role="button"]') || el;
+    log('Clicking ' + label, { tagName: clickable.tagName });
+
+    const rectBefore = clickable.getBoundingClientRect();
+    const isTurbo = (window.__REAVION_SPEED_MULTIPLIER__ || 1.0) < 0.3;
+    
+    if (rectBefore.top < 100 || rectBefore.bottom > window.innerHeight - 100) {
+      clickable.scrollIntoView({ behavior: 'auto', block: 'center', inline: 'center' }); 
+      await wait(options.scrollWait || (isTurbo ? 200 : 400)); 
+    }
+
+    const rect = clickable.getBoundingClientRect();
+    const x = Math.round(rect.left + rect.width / 2);
+    const y = Math.round(rect.top + rect.height / 2);
+    
     if (typeof window.movePointer === 'function') await window.movePointer(x, y);
+    await wait(options.focusWait || (isTurbo ? 50 : 100));
     if (typeof window.showVisualClick === 'function') window.showVisualClick(x, y);
-    mask.click();
-    await wait(500);
-    return;
-  }
-
-  // 3. Fallback: Generic click in a safe margin area (away from sidebar and feed)
-  const safeX = window.innerWidth - 30;
-  const safeY = 100;
-  if (typeof window.movePointer === 'function') await window.movePointer(safeX, safeY);
-  if (typeof window.showVisualClick === 'function') window.showVisualClick(safeX, safeY);
-  const target = document.elementFromPoint(safeX, safeY) || document.body;
-  target.click();
-  await wait(500);
-}
-
-function getVerificationStatus(tweetNode) {
-  if (!tweetNode) return null;
-  const badge = tweetNode.querySelector('[data-testid="icon-verified"]');
-  if (!badge) return null;
-
-  const ariaLabel = (badge.getAttribute('aria-label') || badge.parentNode.getAttribute('aria-label') || '').toLowerCase();
-  if (ariaLabel.includes('organization') || ariaLabel.includes('gold')) return 'gold';
-  if (ariaLabel.includes('government') || ariaLabel.includes('grey')) return 'grey';
-
-  // Fallback to color check if aria-label is generic "Verified account"
-  const style = window.getComputedStyle(badge);
-  const color = style.fill || style.color || '';
-
-  // X Blue is typically rgb(29, 155, 240) or #1d9bf0
-  if (color.includes('29, 155, 240') || color.includes('1d9bf0')) return 'blue';
-
-  // Gold/Org often uses a gradient (url(#id)) or specific gold/yellow colors
-  if (color.includes('url') || color.includes('244, 231, 42') || color.includes('gold')) return 'gold';
-
-  return 'blue'; // Default custom
-}
-
-function getMyHandle() {
-  // Method 1: Most stable - Profile link in sidebar
-  const profileLink = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
-  if (profileLink) {
-    const href = profileLink.getAttribute('href');
-    if (href && href !== '/profile') return href.replace('/', '').toLowerCase();
-  }
-
-  // Method 2: Account Switcher Button
-  const accountBtn = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
-  if (accountBtn) {
-    const spans = Array.from(accountBtn.querySelectorAll('span'));
-    const handleSpan = spans.find(s => s.innerText.startsWith('@'));
-    if (handleSpan) return handleSpan.innerText.toLowerCase().replace('@', '');
-  }
-
-  // Method 3: Script-injected identity (if we ever add it)
-  if (window.__REAVION_MY_HANDLE__) return window.__REAVION_MY_HANDLE__;
-
-  return null;
-}
-
-async function findTweetRobustly(index, expectedAuthor) {
-  const getVisibleTweets = () => Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
-  let tweets = getVisibleTweets();
-  const cleanExp = expectedAuthor ? expectedAuthor.toLowerCase().replace('@', '') : null;
-
-  if (cleanExp) {
-    if (tweets[index] && getTweetAuthor(tweets[index]).includes(cleanExp)) return { tweet: tweets[index], index };
-    const matchIndex = tweets.findIndex(t => getTweetAuthor(t).includes(cleanExp));
-    if (matchIndex !== -1) return { tweet: tweets[matchIndex], index: matchIndex, recovered: true };
-
-    window.scrollBy(0, 400);
-    await wait(300);
-    tweets = getVisibleTweets();
-    const secondScanIndex = tweets.findIndex(t => getTweetAuthor(t).includes(cleanExp));
-    if (secondScanIndex !== -1) return { tweet: tweets[secondScanIndex], index: secondScanIndex, recovered: true };
-  }
-
-  if (tweets[index]) return { tweet: tweets[index], index };
-  return { tweet: tweets[0] || null, index: 0, error: tweets.length === 0 ? 'No tweets found' : null };
-}
-
-async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
-  log('Attempting followAuthorOfTweet', { desiredAction });
-
-  // 1. Try Direct Follow Button (often on "Who to follow" lists or specific layouts)
-  const directFollow = tweet.querySelector('[data-testid$="-follow"]');
-  if (directFollow && isVisible(directFollow)) {
-    await safeClick(directFollow, 'Direct Follow');
-    return { success: true, message: 'Followed (direct)' };
-  }
-
-  // 2. Try Caret Menu (Standard Timeline Approach)
-  const caret = tweet.querySelector('[data-testid="caret"]');
-  if (caret) {
-    await safeClick(caret, 'Caret Menu', { afterWait: 600 });
-    const menu = document.querySelector('[data-testid="Dropdown"]');
-    
-    if (menu) {
-      const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
-      const followStrings = ['Follow', 'Sigue a', 'Siga', 'Seguir'];
-      const unfollowStrings = ['Unfollow', 'Dejar de seguir', 'Deixar de seguir'];
-      
-      const getText = (el) => (el.innerText || '').trim();
-      
-      const followItem = items.find(el => {
-        const txt = getText(el);
-        return followStrings.some(s => txt.includes(s));
-      });
-      const unfollowItem = items.find(el => {
-        const txt = getText(el);
-        return unfollowStrings.some(s => txt.includes(s));
-      });
-
-      if ((desiredAction === 'unfollow' || desiredAction === 'toggle') && unfollowItem) {
-        await safeClick(unfollowItem, 'Unfollow Menu Item', { afterWait: 400 });
-        const confirm = document.querySelector('[data-testid="confirmationSheetConfirm"]');
-        if (confirm && isVisible(confirm)) await safeClick(confirm, 'Confirm Unfollow');
-        return { success: true, message: 'Unfollowed' };
-      }
-
-      if ((desiredAction === 'follow' || desiredAction === 'toggle') && followItem) {
-        await safeClick(followItem, 'Follow Menu Item');
-        return { success: true, message: 'Followed' };
-      }
-
-      if (desiredAction === 'follow' && unfollowItem) {
-        await clickOutside();
-        return { success: true, already: true, message: 'Already followed' };
-      }
-      if (desiredAction === 'unfollow' && followItem) {
-        await clickOutside();
-        return { success: true, already: true, message: 'Already unfollowed' };
-      }
-
-      // Close menu if nothing matches or we want to try fallback
-      await safeClick(caret, 'Close Caret Menu', { afterWait: 300 });
-    } else {
-      log('Dropdown menu not found');
-    }
-  }
-
-  // 3. Fallback: Hover Card Strategy (The "Classic" robust way)
-  // If we couldn't find/click in menu, try hovering the avatar
-  if (desiredAction === 'follow' || desiredAction === 'toggle') {
-    log('Trying Hover Card fallback...');
-    const avatar = tweet.querySelector('[data-testid="Tweet-User-Avatar"]');
-    if (avatar) {
-      // Move to avatar and hover
-      const rect = avatar.getBoundingClientRect();
-      const x = rect.left + rect.width / 2;
-      const y = rect.top + rect.height / 2;
-      
-      if (typeof window.movePointer === 'function') await window.movePointer(x, y);
-      avatar.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
-      avatar.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
-      
-      // Wait for hover card
-      await wait(1500); 
-      
-      const hoverCard = document.querySelector('[data-testid="hoverCard"]') || 
-                        document.querySelector('#layers div[data-testid="UserCell"]')?.closest('[role="tooltip"]');
-                        
-      if (hoverCard) {
-        // Find follow button in card. Note: It might be "Pending" or "Following"
-        const cardFollow = hoverCard.querySelector('[data-testid$="-follow"]');
-        const cardUnfollow = hoverCard.querySelector('[data-testid$="-unfollow"]');
-        
-        if (cardUnfollow) {
-          await clickOutside();
-          return { success: true, already: true, message: 'Already followed (verified via hover)' };
-        }
-        
-        if (cardFollow && isVisible(cardFollow)) {
-           await safeClick(cardFollow, 'Hover Card Follow');
-           // Move mouse away to close card
-           if (typeof window.movePointer === 'function') await window.movePointer(0, 0);
-           return { success: true, message: 'Followed via Hover Card' };
-        }
-      }
-    }
-  }
-
-  return { success: false, error: 'Follow target not found (tried Direct, Caret, and Hover)' };
-}
-
-async function typeHumanLike(el, text) {
-  if (!el) return;
-  await safeFocus(el);
-  
-  const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
-  
-  // Initial pause before starting to type
-  await wait(200 + Math.random() * 300);
-
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i];
-    
-    // Ensure focus every 10 characters or if focus is lost
-    if (i % 10 === 0 || document.activeElement !== el) {
-       await safeFocus(el);
-    }
-
-    // 1. TYPO CHANCE (2% chance for a minor mistake)
-    if (i > 3 && i < text.length - 2 && Math.random() < 0.02) {
-       try {
-         const keys = "qwertyuiopasdfghjklzxcvbnm";
-         const typo = keys[Math.floor(Math.random() * keys.length)];
-         document.execCommand('insertText', false, typo);
-         await wait(80 + Math.random() * 120);
-         document.execCommand('delete', false); // Backspace
-         await wait(120 + Math.random() * 180);
-       } catch (e) {
-         log('Typo simulation failed', { error: e.toString() });
-       }
-    }
 
     try {
-      document.execCommand('insertText', false, char);
+      if (options.native) {
+        clickable.click();
+      } else {
+        const common = { 
+          bubbles: true, cancelable: true, view: window,
+          clientX: x, clientY: y, screenX: x, screenY: y,
+          buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true
+        };
+        clickable.dispatchEvent(new PointerEvent('pointerdown', common));
+        clickable.dispatchEvent(new MouseEvent('mousedown', common));
+        await wait(options.clickDelay || 50);
+        clickable.dispatchEvent(new PointerEvent('pointerup', common));
+        clickable.dispatchEvent(new MouseEvent('mouseup', common));
+        clickable.click();
+      }
     } catch (e) {
-      log('Insert text failed', { char, error: e.toString() });
-      // Fallback: direct manipulation if execCommand fails (though less "human" event-wise)
-      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-        el.value += char;
+      log('Native click failed on ' + label, { error: e.toString() });
+      throw e;
+    }
+    await wait(options.afterWait || (isTurbo ? 300 : 800)); 
+  }
+
+  async function clickOutside() {
+    log('Clicking outside');
+    const closeBtn = document.querySelector('[data-testid="app-bar-close"]') || 
+                     document.querySelector('[aria-label="Close"]') ||
+                     document.querySelector('[data-testid="close"]');       
+    if (closeBtn && isVisible(closeBtn)) {
+      try { await safeClick(closeBtn, 'Close Modal', { native: true }); return; } catch (e) {}
+    }
+    const mask = document.querySelector('[data-testid="mask"]');
+    if (mask && isVisible(mask)) {
+      const x = 50, y = window.innerHeight / 2;
+      if (typeof window.movePointer === 'function') await window.movePointer(x, y);
+      if (typeof window.showVisualClick === 'function') window.showVisualClick(x, y);
+      mask.click();
+      await wait(500);
+      return;
+    }
+    const safeX = window.innerWidth - 30, safeY = 100;
+    if (typeof window.movePointer === 'function') await window.movePointer(safeX, safeY);
+    if (typeof window.showVisualClick === 'function') window.showVisualClick(safeX, safeY);
+    const target = document.elementFromPoint(safeX, safeY) || document.body;
+    target.click();
+    await wait(500);
+  }
+
+  async function typeHumanLike(el, text) {
+    if (!el) return;
+    await safeFocus(el);
+    const multiplier = window.__REAVION_SPEED_MULTIPLIER__ || 1.0;
+    await wait(200 + Math.random() * 300);
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      if (i % 10 === 0 || document.activeElement !== el) await safeFocus(el);
+      try { document.execCommand('insertText', false, char); } 
+      catch (e) { log('Insert failed', { char }); if (el.tagName === 'TEXTAREA') el.value += char; }
+      if (Math.random() < 0.05 && typeof window.movePointer === 'function' && window.__LAST_MOUSE_POS__) {
+         window.movePointer(window.__LAST_MOUSE_POS__.x, window.__LAST_MOUSE_POS__.y).catch(() => {});
+      }
+      let delay = 40 + Math.random() * 80;
+      if (['.', '!', '?'].includes(char)) delay += 250;
+      await wait(delay * multiplier);
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+`;
+
+const X_ANALYSIS_FUNCS = `
+  function isVisible(el) {
+    if (!el || !el.isConnected) return false;
+    try {
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return false;
+      const style = window.getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+    } catch (e) { return false; }
+  }
+
+  function getTweetAuthorName(tweetNode) {
+    const nameEl = tweetNode.querySelector('[data-testid="User-Name"] span:first-child');
+    return nameEl ? nameEl.innerText.trim() : null;
+  }
+
+  function getTweetAuthorAvatar(tweetNode) {
+    const avatarImg = tweetNode.querySelector('[data-testid="Tweet-User-Avatar"] img');
+    return avatarImg ? avatarImg.src : null;
+  }
+
+  function getTweetAuthor(tweet) {
+    if (!tweet) return null;
+    const userNameNode = tweet.querySelector('[data-testid="User-Name"]');
+    if (userNameNode) {
+      const handleEl = userNameNode.querySelector('div[dir="ltr"] span');
+      if (handleEl && handleEl.innerText.startsWith("@")) {
+        return handleEl.innerText.toLowerCase().replace("@", "");
       }
     }
+    const links = Array.from(tweet.querySelectorAll('a'));
+    const handleLink = links.find(a => a.getAttribute("href")?.startsWith("/") && !a.getAttribute("href")?.includes("/status/"));
+    return handleLink ? handleLink.getAttribute("href").replace("/", "").toLowerCase() : null;
+  }
 
-    // 2. MICRO MOUSE MOVEMENTS (5% chance to move mouse slightly while typing)
-    if (Math.random() < 0.05 && typeof window.movePointer === 'function' && window.__LAST_MOUSE_POS__) {
-       const jitterX = window.__LAST_MOUSE_POS__.x + (Math.random() * 10 - 5);
-       const jitterY = window.__LAST_MOUSE_POS__.y + (Math.random() * 10 - 5);
-       // We don't await this to not block typing
-       window.movePointer(jitterX, jitterY).catch(() => {});
-    }
+  function getTweetAge(tweetNode) {
+    const timeEl = tweetNode.querySelector('time');
+    if (!timeEl) return 9999;
+    const datetime = timeEl.getAttribute('datetime');
+    if (!datetime) return 9999;
+    return Math.floor((Date.now() - new Date(datetime).getTime()) / (1000 * 60));
+  }
 
-    // 3. KEYSTROKE DELAY
-    // Base delay 40-120ms
-    let delay = 40 + Math.random() * 80;
+  function hasVideoContent(tweetNode) {
+    return !!tweetNode.querySelector('video, [data-testid="videoPlayer"], [data-testid="videoComponent"]');
+  }
+
+  function hasImageContent(tweetNode) {
+    return !!tweetNode.querySelector('[data-testid="tweetPhoto"]');
+  }
+
+  function getTweetEngagementMetrics(tweetNode) {
+    const parseCount = (str) => {
+      if (!str) return 0;
+      const match = str.toUpperCase().trim().match(/([0-9,.]+)\\s*([KMB])?/);
+      if (!match) return 0;
+      const val = parseFloat(match[1].replace(/,/g, ''));
+      const multiplier = { K: 1000, M: 1000000, B: 1000000000 }[match[2]] || 1;
+      return Math.floor(val * multiplier);
+    };
+    const replyBtn = tweetNode.querySelector('[data-testid="reply"]');
+    const rtBtn = tweetNode.querySelector('[data-testid="retweet"], [data-testid="unretweet"]');
+    const likeBtn = tweetNode.querySelector('[data-testid="like"], [data-testid="unlike"]');
+    return {
+      replies: parseCount(replyBtn?.getAttribute('aria-label')?.match(/\\d+[KMB]?/)?.[0]),
+      retweets: parseCount(rtBtn?.getAttribute('aria-label')?.match(/\\d+[KMB]?/)?.[0]),
+      likes: parseCount(likeBtn?.getAttribute('aria-label')?.match(/\\d+[KMB]?/)?.[0]),
+    };
+  }
+
+  function getVerificationStatus(tweetNode) {
+    if (!tweetNode) return null;
+    const badge = tweetNode.querySelector('[data-testid="icon-verified"]');
+    if (!badge) return null;
+    const ariaLabel = (badge.getAttribute('aria-label') || badge.parentNode.getAttribute('aria-label') || '').toLowerCase();
+    if (ariaLabel.includes('organization') || ariaLabel.includes('gold')) return 'gold';
+    if (ariaLabel.includes('government') || ariaLabel.includes('grey')) return 'grey';
+    const style = window.getComputedStyle(badge);
+    const color = style.fill || style.color || '';
+    if (color.includes('29, 155, 240') || color.includes('1d9bf0')) return 'blue';
+    if (color.includes('url') || color.includes('244, 231, 42') || color.includes('gold')) return 'gold';
+    return 'blue'; 
+  }
+
+  function getTweetAlgoScore(tweetNode) {
+    let score = 50; 
+    const age = getTweetAge(tweetNode);
+    const hasVideo = hasVideoContent(tweetNode);
+    const hasImage = hasImageContent(tweetNode);
+    const metrics = getTweetEngagementMetrics(tweetNode);
+    const verified = getVerificationStatus(tweetNode);
     
-    // 4. PUNCTUATION/LOGICAL PAUSE
-    if (['.', '!', '?', ',', ';'].includes(char)) {
-       delay += 250 + Math.random() * 400;
-    } else if (char === ' ') {
-       delay += 30 + Math.random() * 60;
-    }
+    if (age < 15) score += 40;       
+    else if (age < 60) score += 30;  
+    else if (age < 180) score += 15; 
+    else if (age < 720) score += 5;  
+    else score -= 10;                
     
-    // 5. BIG HESITATION (1% chance to pause for 1-2 seconds)
-    if (Math.random() < 0.01) {
-       delay += 1000 + Math.random() * 1000;
-    }
-
-    await wait(delay * multiplier);
+    if (hasVideo) score += 25;
+    if (hasImage) score += 10;
+    if (metrics.retweets > 10) score += 15;
+    if (metrics.likes > 50) score += 10;
+    if (metrics.replies > 5) score += 10;
+    if (verified === 'gold') score += 15;
+    else if (verified === 'blue') score += 5;
+    
+    const isLiked = !!tweetNode.querySelector('[data-testid="unlike"]');
+    const isRetweeted = !!tweetNode.querySelector('[data-testid="unretweet"]');
+    if (isLiked) score -= 30;
+    if (isRetweeted) score -= 20;
+    if (!!tweetNode.querySelector('[data-testid="placementTracking"]')) score -= 100;
+    return Math.max(0, Math.min(100, score));
   }
   
-  // Final verification events
-  el.dispatchEvent(new Event('input', { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-}
+  function getTweetFullMetadata(tweet) {
+     if (!tweet) return {};
+     const author = getTweetAuthor(tweet);
+     const authorName = getTweetAuthorName(tweet);
+     const timeLink = tweet.querySelector('time')?.parentElement;
+     const tweetId = timeLink && timeLink.href ? timeLink.href.split('/').pop() : 'unknown';
+     const textEl = tweet.querySelector('[data-testid="tweetText"]');
+     const text = textEl ? textEl.innerText.replace(/\\n/g, ' ').slice(0, 5000) : ''; 
+     
+     // Detect Quote Tweet / Retweet context
+     let parent_tweet_text = '';
+     // Often quotes appear in specific containers or with specific accessibility labels
+     // Simple heuristic: check for secondary text block
+     const textBlocks = Array.from(tweet.querySelectorAll('[data-testid="tweetText"]'));
+     if (textBlocks.length > 1) {
+         parent_tweet_text = textBlocks[1].innerText.replace(/\\n/g, ' ').slice(0, 1000);
+     }
+     
+     return {
+         target_username: author,
+         target_name: authorName,
+         target_avatar_url: getTweetAuthorAvatar(tweet),
+         tweet_id: tweetId,
+         target_tweet_text: text,
+         parent_tweet_text
+     };
+  }
+
+  function getMyHandle() {
+    const profileLink = document.querySelector('a[data-testid="AppTabBar_Profile_Link"]');
+    if (profileLink) {
+       const href = profileLink.getAttribute('href');
+       if (href && href !== '/profile') return href.replace('/', '').toLowerCase();
+    }
+    const accountBtn = document.querySelector('[data-testid="SideNav_AccountSwitcher_Button"]');
+    if (accountBtn) {
+       const span = Array.from(accountBtn.querySelectorAll('span')).find(s => s.innerText.startsWith('@'));
+       if (span) return span.innerText.toLowerCase().replace('@', '');
+    }
+    return window.__REAVION_MY_HANDLE__ || null;
+  }
+`;
+
+const X_ENGAGEMENT_FUNCS = `
+  async function findTweetRobustly(index, expectedAuthor) {
+    const getVisibleTweets = () => Array.from(document.querySelectorAll('[data-testid="tweet"]')).filter(isVisible);
+    let tweets = getVisibleTweets();
+    const cleanExp = expectedAuthor ? expectedAuthor.toLowerCase().replace('@', '') : null;
+
+    if (cleanExp) {
+      if (tweets[index] && getTweetAuthor(tweets[index]).includes(cleanExp)) return { tweet: tweets[index], index };
+      const matchIndex = tweets.findIndex(t => getTweetAuthor(t).includes(cleanExp));
+      if (matchIndex !== -1) return { tweet: tweets[matchIndex], index: matchIndex, recovered: true };
+
+      window.scrollBy(0, 400);
+      await wait(300);
+      tweets = getVisibleTweets();
+      const secondScanIndex = tweets.findIndex(t => getTweetAuthor(t).includes(cleanExp));
+      if (secondScanIndex !== -1) return { tweet: tweets[secondScanIndex], index: secondScanIndex, recovered: true };
+    }
+
+    if (tweets[index]) return { tweet: tweets[index], index };
+    return { tweet: tweets[0] || null, index: 0, error: tweets.length === 0 ? 'No tweets found' : null };
+  }
+
+  function normalizeReplyText(text) {
+    return (text || '').toLowerCase().replace(/https?:\\/\\/\\S+/g, ' ').replace(/[^a-z0-9\\s]/g, ' ').replace(/\\s+/g, ' ').trim();
+  }
+
+  function isContextMatch(context, target, parent) {
+    const nC = normalizeReplyText(context);
+    if (!nC) return false;
+    const nT = normalizeReplyText(target || '');
+    const nP = normalizeReplyText(parent || '');
+    if (!nT && !nP) return true;
+    if (nT.includes(nC) || nP.includes(nC)) return true;
+    const toks = nC.split(' ').filter(t => t.length >= 3);
+    if (toks.length < 3) return false;
+    const tToks = new Set((nT + ' ' + nP).split(' ').filter(t => t.length >= 3));
+    let hits = 0;
+    toks.forEach(t => { if (tToks.has(t)) hits++; });
+    return (hits / toks.length) >= 0.4;
+  }
+
+  function isDuplicateReply(text) {
+    const n = normalizeReplyText(text);
+    if (!n) return false;
+    window.__REAVION_RECENT_REPLIES__ = window.__REAVION_RECENT_REPLIES__ || [];
+    return window.__REAVION_RECENT_REPLIES__.some(t => t === n || (t.length > 30 && (n.includes(t) || t.includes(n))));
+  }
+
+  function registerReply(text) {
+    const n = normalizeReplyText(text);
+    if (!n) return;
+    window.__REAVION_RECENT_REPLIES__ = window.__REAVION_RECENT_REPLIES__ || [];
+    window.__REAVION_RECENT_REPLIES__ = [n, ...window.__REAVION_RECENT_REPLIES__.filter(t => t !== n)].slice(0, 20);
+  }
+
+  async function followAuthorOfTweet(tweet, desiredAction = 'follow') {
+    log('followAuthorOfTweet', { desiredAction });
+    const directFollow = tweet.querySelector('[data-testid$="-follow"]');
+    if (directFollow && isVisible(directFollow)) {
+      await safeClick(directFollow, 'Direct Follow');
+      return { success: true, message: 'Followed (direct)' };
+    }
+    const caret = tweet.querySelector('[data-testid="caret"]');
+    if (caret) {
+      await safeClick(caret, 'Caret');
+      const menu = document.querySelector('[data-testid="Dropdown"]');
+      if (menu) {
+        const items = Array.from(menu.querySelectorAll('[role="menuitem"]'));
+        const getText = (el) => (el.innerText || '').trim().toLowerCase();
+        const followItem = items.find(el => getText(el).includes('follow') || getText(el).includes('seguir'));
+        const unfollowItem = items.find(el => getText(el).includes('unfollow') || getText(el).includes('dejar de seguir'));
+
+        if ((desiredAction === 'unfollow' || desiredAction === 'toggle') && unfollowItem) {
+          await safeClick(unfollowItem, 'Unfollow Item');
+          const conf = document.querySelector('[data-testid="confirmationSheetConfirm"]');
+          if (conf && isVisible(conf)) await safeClick(conf, 'Confirm Unfollow');
+          return { success: true, message: 'Unfollowed' };
+        }
+        if ((desiredAction === 'follow' || desiredAction === 'toggle') && followItem) {
+          await safeClick(followItem, 'Follow Item');
+          return { success: true, message: 'Followed' };
+        }
+        await safeClick(caret, 'Close Caret');
+      }
+    }
+    return { success: false, error: 'Follow target not found' };
+  }
+`;
+
+const X_UNIVERSAL_SCRIPT = `
+  ${X_CONSTANTS}
+  ${X_UTILS}
+  ${X_ANALYSIS_FUNCS}
+  ${X_ENGAGEMENT_FUNCS}
+  window.__REAVION_HELPERS_OK__ = true;
 `;
 
 const WAIT_FOR_RESULTS_SCRIPT = `
   (async function () {
-    ${BASE_SCRIPT_HELPERS}
+    ${X_UNIVERSAL_SCRIPT}
 
     // Results are awaited via the check() polling loop below
     return await new Promise((resolve) => {
@@ -1090,7 +955,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
-            ${BASE_SCRIPT_HELPERS}
+            ${X_UNIVERSAL_SCRIPT}
             const host = window.location.hostname || '';
             if (!host.includes('x.com') && !host.includes('twitter.com')) return { success: false, error: 'Not on x.com' };
 
@@ -1158,23 +1023,25 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const replyTool = new DynamicStructuredTool({
     name: 'x_reply',
-    description: 'On X.com (Twitter), reply to a post.',
+    description: 'On X.com (Twitter), reply to a post. Reply text MUST reference the target post content (no generic or repeated replies).',
     schema: z.object({
       text: z.string().min(1).describe('The DIRECT content of the reply. STRICTLY the message logic only. NO "I will repl..." or narration.'),
       index: z.union([z.number(), z.string()]).nullable().describe('0-based index of the post.').default(0),
-      skip_self: z.boolean().nullable().describe('Whether to skip replying to own posts. Default is true.'),
-      skip_verified: z.boolean().nullable().describe('Whether to skip verified users. Default is false.'),
-      skip_if_liked: z.boolean().nullable().describe('Skip if the post is already liked by the logged-in user. Default is true.'),
-      skip_keywords: z.string().nullable().describe('Comma-separated keywords to skip. Default is empty string.'),
+      reply_context: z.string().nullable().describe('Required: the target post text that this reply is based on.'),
+      skip_self: z.boolean().nullable().optional().describe('Whether to skip replying to own posts. Default is true.').default(true),
+      skip_verified: z.boolean().nullable().optional().describe('Whether to skip verified users. Default is false.').default(false),
+      skip_if_liked: z.boolean().nullable().optional().describe('Skip if the post is already liked by the logged-in user. Default is true.').default(true),
+      skip_keywords: z.string().nullable().optional().describe('Comma-separated keywords to skip. Default is empty string.').default(''),
       expected_author: z.string().nullable().describe('Handle of the author (without @) to verify target. Highly recommended to prevent index mismatches.'),
     }),
-    func: async ({ text, index, skip_self, skip_verified, skip_if_liked, skip_keywords, expected_author }: {
+    func: async ({ text, index, reply_context, skip_self, skip_verified, skip_if_liked, skip_keywords, expected_author }: {
       text: string;
       index: number | string | null;
-      skip_self: boolean | null;
-      skip_verified: boolean | null;
-      skip_if_liked: boolean | null;
-      skip_keywords: string | null;
+      reply_context?: string | null;
+      skip_self?: boolean | null;
+      skip_verified?: boolean | null;
+      skip_if_liked?: boolean | null;
+      skip_keywords?: string | null;
       expected_author: string | null;
     }) => {
       const contents = await ctx.getContents();
@@ -1187,7 +1054,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const result = await contents.executeJavaScript(`
           (async function() {
             try {
-              ${BASE_SCRIPT_HELPERS}
+              ${X_UNIVERSAL_SCRIPT}
             const host = window.location.hostname || '';
             if (!host.includes('x.com') && !host.includes('twitter.com')) return { success: false, error: 'Not on x.com' };
 
@@ -1220,6 +1087,13 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
             // Extract metadata for logging using unified helper
             const metadata = getTweetFullMetadata(tweetNode);
             const target_username = metadata.target_username;
+            const context = ${JSON.stringify(reply_context || '')};
+            if (!isContextMatch(context, metadata.target_tweet_text || '', metadata.parent_tweet_text || '')) {
+              return { success: false, error: 'Reply context mismatch: provide the exact target tweet text for this reply.' };
+            }
+            if (isDuplicateReply(${JSON.stringify(text)})) {
+              return { success: false, error: 'Reply text duplicated: generate a fresh reply tied to this post.' };
+            }
 
             // 2. SKIP FILTERS
             const myHandle = getMyHandle();
@@ -1300,6 +1174,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
             await safeClick(send, 'Send Reply');
             await wait(1500);
+            registerReply(${JSON.stringify(text)});
 
 
             // Post-action: Like
@@ -1355,7 +1230,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const result = await contents.executeJavaScript(`
           (async function() {
             try {
-              ${BASE_SCRIPT_HELPERS}
+              ${X_UNIVERSAL_SCRIPT}
             const host = window.location.hostname || '';
             if (!host.includes('x.com') && !host.includes('twitter.com')) return { success: false, error: 'Not on x.com' };
 
@@ -1440,7 +1315,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const result = await contents.executeJavaScript(`
           (async function() {
             try {
-              ${BASE_SCRIPT_HELPERS}
+              ${X_UNIVERSAL_SCRIPT}
               
               const desired = ${JSON.stringify(rAction)};
               const idx = ${rIndex};
@@ -1586,7 +1461,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
         const result = await contents.executeJavaScript(`
           (async function() {
-            ${BASE_SCRIPT_HELPERS}
+            ${X_UNIVERSAL_SCRIPT}
             try {
               const mode = ${JSON.stringify(mode)};
               
@@ -1741,7 +1616,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
         const result = await contents.executeJavaScript(`
                 (async () => {
-                    ${BASE_SCRIPT_HELPERS}
+                    ${X_UNIVERSAL_SCRIPT}
                     try {
                         const getTestIdText = (id) => {
                             const el = document.querySelector(\`[data-testid="\${id}"]\`);
@@ -1834,27 +1709,29 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
   const engageTool = new DynamicStructuredTool({
     name: 'x_engage',
-    description: 'Perform multiple ALGORITHM-OPTIMIZED actions on a tweet. Supports the "Quintuple Threat" pattern: like, follow, retweet, reply, quote. Each action sends positive signals to X algorithm.',
+    description: 'Perform multiple ALGORITHM-OPTIMIZED actions on a tweet. Supports the "Quintuple Threat" pattern: like, follow, retweet, reply, quote. Each action sends positive signals to X algorithm. Reply text MUST be aligned with the target post content.',
     schema: z.object({
       targetIndex: z.preprocess((val) => (val === null ? 0 : Number(val)), z.number().default(0)).describe('The 0-based index of the tweet in the visible feed.'),
       actions: z.string().describe('Comma-separated actions: like, follow, retweet, reply, quote. For maximum impact use "like,follow,reply" (Triple Threat) or add quote for Quadruple.'),
       replyText: z.string().optional().describe('Required if "reply" action is specified.'),
       quoteText: z.string().optional().describe('Required if "quote" action is specified. Add your value-add commentary.'),
+      replyContext: z.string().optional().describe('Required if "reply" action is specified. Must match the target post text used to craft the reply.'),
       expected_author: z.string().nullable().optional().describe('Handle of the author (without @) to verify target. Highly recommended.'),
       skip_self: z.boolean().default(true).describe('Skip if the target post is by the logged-in user. Default is true.'),
       skip_if_liked: z.boolean().default(true).describe('Skip if the post is already liked by the logged-in user. Default is true.'),
     }),
-    func: async ({ targetIndex, actions, replyText, quoteText, expected_author, skip_self, skip_if_liked }: any) => {
+    func: async ({ targetIndex, actions, replyText, quoteText, replyContext, expected_author, skip_self, skip_if_liked }: any) => {
       const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
           (async function () {
-            ${BASE_SCRIPT_HELPERS}
+            ${X_UNIVERSAL_SCRIPT}
             try {
                 
                 const index = ${targetIndex};
                 const actionList = ${JSON.stringify(actions)}.split(',').map(a => a.trim().toLowerCase());
                 const rText = ${JSON.stringify(replyText || '')};
+                const rContext = ${JSON.stringify(replyContext || '')};
                 const expAuth = ${JSON.stringify(expected_author || null)};
                 const skipSelf = ${skip_self ?? true};
                 const skipIfLiked = ${skip_if_liked ?? true};
@@ -1867,6 +1744,19 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                 // Extract metadata for logging
                 const metadata = getTweetFullMetadata(tweet);
                 const target_username = metadata.target_username;
+                const effectiveContext = rContext || metadata.target_tweet_text || metadata.parent_tweet_text || '';
+
+                if (actionList.includes('reply')) {
+                    if (!isContextMatch(effectiveContext, metadata.target_tweet_text || '', metadata.parent_tweet_text || '')) {
+                        return { success: false, error: 'Reply context mismatch: provide the exact target tweet text for this reply.' };
+                    }
+                    if (!rText) {
+                        return { success: false, error: 'Reply text missing for reply action.' };
+                    }
+                    if (isDuplicateReply(rText)) {
+                        return { success: false, error: 'Reply text duplicated: generate a fresh reply tied to this post.' };
+                    }
+                }
                 
                 // --- CHECKS ---
                 const myHandle = getMyHandle();
@@ -1938,6 +1828,14 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                             results.push('Reply Skipped (No Text)');
                             continue;
                         }
+                        if (!isContextMatch(effectiveContext, metadata.target_tweet_text || '', metadata.parent_tweet_text || '')) {
+                            results.push('Reply Skipped (Context Mismatch)');
+                            continue;
+                        }
+                        if (isDuplicateReply(rText)) {
+                            results.push('Reply Skipped (Duplicate Text)');
+                            continue;
+                        }
                         const replyBtn = tweet.querySelector('[data-testid="reply"]');
                         if (replyBtn && isVisible(replyBtn)) {
                             await safeClick(replyBtn, 'Reply');
@@ -1957,6 +1855,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
                                     await safeClick(send, 'Send Reply');
                                     results.push('Replied');
                                     await wait(1000);
+                                    registerReply(rText);
                                 } else {
                                     results.push('Reply Send Missing');
                                 }
@@ -2091,7 +1990,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
-            ${BASE_SCRIPT_HELPERS}
+            ${X_UNIVERSAL_SCRIPT}
             try {
               // 1. Find Tweet
               const findResult = await findTweetRobustly(${index}, ${JSON.stringify(expected_author || null)});
@@ -2210,7 +2109,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
         const result = await contents.executeJavaScript(`
           (async function() {
-            ${BASE_SCRIPT_HELPERS}
+            ${X_UNIVERSAL_SCRIPT}
             try {
               const myHandle = getMyHandle();
               let postUrl = ${JSON.stringify(post_url || null)};
@@ -2339,7 +2238,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
 
         const result = await contents.executeJavaScript(`
           (async function() {
-            ${BASE_SCRIPT_HELPERS}
+            ${X_UNIVERSAL_SCRIPT}
             try {
               // Simulate genuine profile browsing behavior
               await wait(500);
@@ -2432,7 +2331,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const result = await contents.executeJavaScript(`
           (async function() {
             try {
-              ${BASE_SCRIPT_HELPERS}
+              ${X_UNIVERSAL_SCRIPT}
               
               const target_name = document.querySelector('[data-testid="UserName"] span')?.innerText || '';
               const target_avatar_url = document.querySelector('img[src*="profile_images"]')?.src || '';
@@ -2534,7 +2433,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const result = await contents.executeJavaScript(`
           (async function() {
             try {
-              ${BASE_SCRIPT_HELPERS}
+              ${X_UNIVERSAL_SCRIPT}
               
               // 1. Navigate to the correct tab if needed
               const tabUrls = {
@@ -2635,7 +2534,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         const result = await contents.executeJavaScript(`
           (async function() {
             try {
-              ${BASE_SCRIPT_HELPERS}
+              ${X_UNIVERSAL_SCRIPT}
               
               // 1. Ensure we are on a page that supports tabs (Home or Search)
               const url = window.location.href;
@@ -2726,7 +2625,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
-            ${BASE_SCRIPT_HELPERS}
+            ${X_UNIVERSAL_SCRIPT}
             try {
               const findResult = await findTweetRobustly(${index}, ${JSON.stringify(expected_author)});
               if (!findResult.tweet) return { success: false, error: 'Tweet not found' };
@@ -2769,105 +2668,135 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       try {
         const result = await contents.executeJavaScript(`
           (async function() {
-            ${BASE_SCRIPT_HELPERS}
             try {
-              // 1. Get VISIBLE tweets only, to match findTweetRobustly indexing logic
-              const allTweets = Array.from(document.querySelectorAll('[data-testid="tweet"]'));
-              const tweets = allTweets.filter(isVisible).slice(0, ${limit || 15});
+              // --- INLINE HELPERS START (Safe Mode) ---
+              // Defined as vars or functions to avoid redeclaration errors
+              function _safeText(el) { return el ? el.innerText.replace(/\\n/g, ' ').slice(0, 5000) : ''; }
+              function _safeDate(el) {
+                  const t = el.querySelector('time');
+                  if (!t) return 9999;
+                  const dt = t.getAttribute('datetime');
+                  if (!dt) return 9999;
+                  return Math.floor((Date.now() - new Date(dt).getTime()) / (1000 * 60));
+              }
+              function _safeMetrics(el) {
+                  const parse = (s) => {
+                      if (!s) return 0;
+                      const m = s.toUpperCase().trim().match(/([0-9,.]+)\\s*([KMB])?/);
+                      if (!m) return 0;
+                      const v = parseFloat(m[1].replace(/,/g, ''));
+                      const mu = { K: 1e3, M: 1e6, B: 1e9 }[m[2]] || 1;
+                      return Math.floor(v * mu);
+                  };
+                  return {
+                     replies: parse(el.querySelector('[data-testid="reply"]')?.getAttribute('aria-label') || ''),
+                     retweets: parse(el.querySelector('[data-testid="retweet"]')?.getAttribute('aria-label') || ''),
+                     likes: parse(el.querySelector('[data-testid="like"]')?.getAttribute('aria-label') || '')
+                  };
+              }
+
+              // --- MAIN LOGIC ---
+              console.log("[Reavion] Starting SAFE MODE x_scan_posts...");
               
-              const data = tweets.map((t, i) => {
-                 const author = getTweetAuthor(t);
-                 const authorName = getTweetAuthorName(t);
-                 const timeLink = t.querySelector('time')?.parentElement;
-                 const tweetId = timeLink && timeLink.href ? timeLink.href.split('/').pop() : 'unknown';
-                 const textEl = t.querySelector('[data-testid="tweetText"]');
-                 const text = textEl ? textEl.innerText.replace(/\\n/g, ' ').slice(0, 5000) : ''; 
-                 
-                 // Check engagement
-                 const isLiked = !!t.querySelector('[data-testid="unlike"]');
-                 const isRetweeted = !!t.querySelector('[data-testid="unretweet"]');
-                 
-                 // Ads often have placementTracking OR a "Promoted" span that isn't just text
-                 const isPromoted = !!t.querySelector('[data-testid="placementTracking"]') || 
-                                    !!Array.from(t.querySelectorAll('span')).find(s => s.innerText === 'Promoted');
-                 
-                 // X ALGORITHM SCORING 🔥
-                 const algoScore = getTweetAlgoScore(t);
-                 const ageMinutes = getTweetAge(t);
-                 const hasVideo = hasVideoContent(t);
-                 const hasImage = hasImageContent(t);
-                 const metrics = getTweetEngagementMetrics(t);
-                 const verifiedType = getVerificationStatus(t);
-                 
-                 // Freshness label for quick reference
-                 let freshness = 'cold';
-                 if (ageMinutes < 15) freshness = 'golden';
-                 else if (ageMinutes < 60) freshness = 'hot';
-                 else if (ageMinutes < 180) freshness = 'warm';
-                 else if (ageMinutes < 720) freshness = 'lukewarm';
-                 
-                 return { 
-                   index: i, 
-                   author, 
-                   authorName,
-                   tweetId,
-                   text, 
-                   // Engagement status
-                   isLiked, 
-                   isRetweeted, 
-                   isPromoted,
-                   isEngaged: isLiked || isRetweeted,
-                   // X ALGORITHM DATA 🚀
-                   algoScore,
-                   ageMinutes,
-                   freshness,
-                   hasVideo,
-                   hasImage,
-                   verifiedType,
-                   metrics,
-                   visible: true 
-                 };
-              });
+              const allTweets = Array.from(document.querySelectorAll('[data-testid="tweet"]'));
+              
+              const visibleTweets = allTweets.filter(el => {
+                 const rect = el.getBoundingClientRect();
+                 return rect.width > 0 && rect.height > 0 && rect.top < window.innerHeight && rect.bottom > 0;
+              }).slice(0, ${limit || 15});
+              
+              const data = visibleTweets.map((t, i) => {
+                 try {
+                     const userLink = t.querySelector('[data-testid="User-Name"] a[href*="/status/"]'); // Fallback author detection
+                     let author = '';
+                     let authorName = '';
+                     
+                     // Try standard author extraction
+                     const nameNode = t.querySelector('[data-testid="User-Name"]');
+                     if (nameNode) {
+                         const span = nameNode.querySelector('span'); // Name
+                         if (span) authorName = span.innerText;
+                         const handleDiv = nameNode.querySelector('div[dir="ltr"] > span'); // Handle
+                         if (handleDiv && handleDiv.innerText.startsWith('@')) {
+                             author = handleDiv.innerText.toLowerCase().replace('@', '');
+                         }
+                     }
+                     
+                     // Fallback author
+                     if (!author && userLink) {
+                         const parts = userLink.getAttribute('href').split('/');
+                         if (parts.length > 1) author = parts[1].toLowerCase();
+                     }
 
-              // Filter by minimum algo score if specified
-              const minScore = ${min_algo_score ?? 0};
-              const filtered = minScore > 0 ? data.filter(p => p.algoScore >= minScore) : data;
+                     const timeLink = t.querySelector('time')?.parentElement;
+                     const tweetId = timeLink && timeLink.href ? timeLink.href.split('/').pop() : 'unknown';
+                     const text = _safeText(t.querySelector('[data-testid="tweetText"]'));
+                     
+                     const metrics = _safeMetrics(t);
+                     const ageMinutes = _safeDate(t);
+                     
+                     // Engagement status
+                     const isLiked = !!t.querySelector('[data-testid="unlike"]');
+                     const isRetweeted = !!t.querySelector('[data-testid="unretweet"]');
+                     const isPromoted = !!t.querySelector('[data-testid="placementTracking"]') || !!Array.from(t.querySelectorAll('span')).find(s => s.innerText === 'Promoted');
 
-              // 2. Handle Scroll AFTER scanning
+                     // Scoring
+                     let algoScore = 50;
+                     if (ageMinutes < 15) algoScore += 40;
+                     else if (ageMinutes < 60) algoScore += 30;
+                     else if (ageMinutes < 180) algoScore += 15;
+                     else if (ageMinutes > 720) algoScore -= 10;
+                     
+                     if (metrics.likes > 50) algoScore += 10;
+                     if (metrics.retweets > 10) algoScore += 15;
+                     if (isLiked) algoScore -= 30;
+                     if (isPromoted) algoScore = 0;
+
+                     let freshness = 'cold';
+                     if (ageMinutes < 15) freshness = 'golden';
+                     else if (ageMinutes < 60) freshness = 'hot';
+                     else if (ageMinutes < 180) freshness = 'warm';
+                     else if (ageMinutes < 720) freshness = 'lukewarm';
+
+                     return {
+                        index: i,
+                        author,
+                        authorName,
+                        tweetId,
+                        text,
+                        isLiked,
+                        isRetweeted,
+                        isPromoted,
+                        isEngaged: isLiked || isRetweeted,
+                        algoScore,
+                        ageMinutes,
+                        freshness,
+                        metrics,
+                        visible: true
+                     };
+                 } catch (err) {
+                     console.error('[Reavion] Error scanning single tweet:', err);
+                     return null;
+                 }
+              }).filter(item => item !== null);
+
+              // Scroll logic
               let scrolled = false;
               if (${scroll_bottom}) {
                  window.scrollBy({ top: 800, behavior: 'smooth' });
                  scrolled = true;
               }
-              
-              // Sort by algoScore descending for priority targeting
-              filtered.sort((a, b) => b.algoScore - a.algoScore);
-              
-              const goldenCount = filtered.filter(p => p.freshness === 'golden').length;
-              const hotCount = filtered.filter(p => p.freshness === 'hot').length;
-              const videoCount = filtered.filter(p => p.hasVideo).length;
-              
-              return { 
-                success: true, 
-                count: filtered.length, 
-                posts: filtered,
-                scrolled,
-                algoInsights: {
-                  goldenPosts: goldenCount,
-                  hotPosts: hotCount,
-                  videoPosts: videoCount,
-                  avgScore: Math.round(filtered.reduce((s, p) => s + p.algoScore, 0) / (filtered.length || 1)),
-                  recommendation: goldenCount > 0 
-                    ? 'PRIORITY: Engage with golden posts first (< 15 min old) for maximum velocity boost!' 
-                    : hotCount > 0 
-                      ? 'GOOD: Hot posts available (< 1 hour). Engage quickly for algorithmic lift.'
-                      : 'MODERATE: No fresh posts. Consider switching to a different search.'
-                },
-                message: filtered.length > 0 
-                  ? ('Scanned ' + data.length + ' posts, ' + filtered.length + ' meet algo criteria. Top score: ' + (filtered[0]?.algoScore || 0) + '/100.' + (scrolled ? ' Scrolled down.' : ''))
-                  : ('No posts found. Are you on a feed? (URL: ' + window.location.href + ')')
+
+              return {
+                 success: true,
+                 count: data.length,
+                 posts: data,
+                 scrolled,
+                 message: 'Scanned ' + data.length + ' posts (SAFE MODE).'
               };
+
             } catch(e) {
+               console.error('[Reavion] FATAL x_scan_posts error:', e);
                return { success: false, error: e.toString() };
             }
           })()
@@ -2877,6 +2806,7 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
         return JSON.stringify({ success: false, error: String(e) });
       }
     }
+
   });
 
   const engagingTool = new DynamicStructuredTool({
@@ -2896,77 +2826,77 @@ export function createXComTools(ctx: SiteToolContext): DynamicStructuredTool[] {
       const contents = await ctx.getContents();
       try {
         const result = await contents.executeJavaScript(`
-          (async function() {
-            ${BASE_SCRIPT_HELPERS}
-            
-            // 1. Check for "Something went wrong" Toast / Bar
-            // Strategies: Toast with Refresh button, or generic error dialog
-            const candidates = Array.from(document.querySelectorAll('[role="alert"], [data-testid="toast"], [role="status"]'));
-            const errorBar = candidates.find(el => {
-                if (!isVisible(el)) return false;
-                const txt = el.innerText.toLowerCase();
-                return (
-                    txt.includes('something went wrong') || 
-                    txt.includes('try again') ||
-                    txt.includes("don't fret") ||
-                    txt.includes('reload')
-                );
-            });
+    (async function () {
+            ${X_UNIVERSAL_SCRIPT}
 
-            if (errorBar) {
-                // Try to find a button: Refresh, Retry, Reload
-                const btns = Array.from(errorBar.querySelectorAll('button, [role="button"]'));
-                const actionBtn = btns.find(b => {
-                    const t = b.innerText.toLowerCase();
-                    return t.includes('refresh') || t.includes('retry') || t.includes('reload') || t.includes('shot'); // "give it another shot"
-                }) || btns[0]; // Fallback to first button if it's the only one (often "Refresh")
+      // 1. Check for "Something went wrong" Toast / Bar
+      // Strategies: Toast with Refresh button, or generic error dialog
+      const candidates = Array.from(document.querySelectorAll('[role="alert"], [data-testid="toast"], [role="status"]'));
+      const errorBar = candidates.find(el => {
+        if (!isVisible(el)) return false;
+        const txt = el.innerText.toLowerCase();
+        return (
+          txt.includes('something went wrong') ||
+          txt.includes('try again') ||
+          txt.includes("don't fret") ||
+          txt.includes('reload')
+        );
+      });
 
-                if (actionBtn) {
-                    await safeClick(actionBtn, 'Error Toast Action Button');
-                    await wait(3000); // Wait for reload/action
-                    return { success: true, recovered: true, action: 'clicked_toast_refresh', message: 'Clicked action button on error toast: ' + actionBtn.innerText };
-                }
-                
-                // If no button, maybe close it?
-                const closeBtn = errorBar.querySelector('[aria-label="Close"]');
-                if (closeBtn) {
-                    await safeClick(closeBtn, 'Error Toast Close Button');
-                    return { success: true, recovered: true, action: 'closed_error_toast', message: 'Closed error toast' };
-                }
-            }
+      if (errorBar) {
+        // Try to find a button: Refresh, Retry, Reload
+        const btns = Array.from(errorBar.querySelectorAll('button, [role="button"]'));
+        const actionBtn = btns.find(b => {
+          const t = b.innerText.toLowerCase();
+          return t.includes('refresh') || t.includes('retry') || t.includes('reload') || t.includes('shot'); // "give it another shot"
+        }) || btns[0]; // Fallback to first button if it's the only one (often "Refresh")
 
-            // 2. Check for Full Page Error ("Retry")
-            // Often has a big "Retry" button
-            const retryBtns = Array.from(document.querySelectorAll('button')).filter(isVisible);
-            const pageRetry = retryBtns.find(b => {
-                const t = b.innerText.toLowerCase();
-                return t === 'retry' || t === 'refresh';
-            });
-            
-            // Confirm it's likely an error page by looking for text
-            const bodyText = document.body.innerText.toLowerCase();
-            const hasErrorText = bodyText.includes('something went wrong') || bodyText.includes('try reloading');
+        if (actionBtn) {
+          await safeClick(actionBtn, 'Error Toast Action Button');
+          await wait(3000); // Wait for reload/action
+          return { success: true, recovered: true, action: 'clicked_toast_refresh', message: 'Clicked action button on error toast: ' + actionBtn.innerText };
+        }
 
-            if (pageRetry && hasErrorText) {
-                 await safeClick(pageRetry, 'Full Page Retry Button');
-                 await wait(3000);
-                 return { success: true, recovered: true, action: 'clicked_page_retry', message: 'Clicked Retry on full page error' };
-            }
+        // If no button, maybe close it?
+        const closeBtn = errorBar.querySelector('[aria-label="Close"]');
+        if (closeBtn) {
+          await safeClick(closeBtn, 'Error Toast Close Button');
+          return { success: true, recovered: true, action: 'closed_error_toast', message: 'Closed error toast' };
+        }
+      }
 
-            // 3. Dialogs blocking UI
-            const blockedDialog = document.querySelector('[role="dialog"][aria-modal="true"]');
-            if (blockedDialog && isVisible(blockedDialog) && blockedDialog.innerText.toLowerCase().includes('something went wrong')) {
-                 // Try to find a way out
-                 const close = blockedDialog.querySelector('[aria-label="Close"]');
-                 if(close) {
-                    await safeClick(close, 'Error Dialog Close');
-                    return { success: true, recovered: true, action: 'closed_error_dialog', message: 'Closed error dialog' };
-                 }
-            }
+      // 2. Check for Full Page Error ("Retry")
+      // Often has a big "Retry" button
+      const retryBtns = Array.from(document.querySelectorAll('button')).filter(isVisible);
+      const pageRetry = retryBtns.find(b => {
+        const t = b.innerText.toLowerCase();
+        return t === 'retry' || t === 'refresh';
+      });
 
-            return { success: false, found: false };
-          })()
-        `);
+      // Confirm it's likely an error page by looking for text
+      const bodyText = document.body.innerText.toLowerCase();
+      const hasErrorText = bodyText.includes('something went wrong') || bodyText.includes('try reloading');
+
+      if (pageRetry && hasErrorText) {
+        await safeClick(pageRetry, 'Full Page Retry Button');
+        await wait(3000);
+        return { success: true, recovered: true, action: 'clicked_page_retry', message: 'Clicked Retry on full page error' };
+      }
+
+      // 3. Dialogs blocking UI
+      const blockedDialog = document.querySelector('[role="dialog"][aria-modal="true"]');
+      if (blockedDialog && isVisible(blockedDialog) && blockedDialog.innerText.toLowerCase().includes('something went wrong')) {
+        // Try to find a way out
+        const close = blockedDialog.querySelector('[aria-label="Close"]');
+        if (close) {
+          await safeClick(close, 'Error Dialog Close');
+          return { success: true, recovered: true, action: 'closed_error_dialog', message: 'Closed error dialog' };
+        }
+      }
+
+      return { success: false, found: false };
+    })()
+    `);
 
         if (result.success && result.recovered) {
           return JSON.stringify(result);
